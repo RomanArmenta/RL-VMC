@@ -1,0 +1,144 @@
+import jax
+import jax.numpy as jnp
+import optax
+from abc import ABC, abstractmethod
+from functools import partial
+
+class BaseTrainer(ABC):
+    """
+    Base class for trainers. Save data from the simulation
+    """
+    def __init__(self, system, hamiltonian, sampler, opt_ansatz, opt_actor=None):
+        self.system = system
+        self.hamiltonian = hamiltonian
+        self.sampler = sampler
+        self.opt_ansatz = opt_ansatz
+        self.opt_actor = opt_actor
+
+    @abstractmethod
+    def step_ansatz(self, walkers, params_psi, opt_state_psi):
+        pass
+
+class GroundStateTrainer(BaseTrainer):
+    """
+    Trainer specialized in finding the truth ground state through energy minimization
+    """
+
+    def __init__(self, system, hamiltonian, sampler, opt_ansatz, sigma_energy_clip=5.0, energy_clip_min = -50., energy_clip_max = 0., grads_clip_min = -20., grads_clip_max = 20., opt_actor=None):
+        super().__init__(system, hamiltonian, sampler, opt_ansatz, opt_actor)
+
+        self.energy_clip_min = energy_clip_min
+        self.energy_clip_max = energy_clip_max
+        self.sigma_energy_clip = sigma_energy_clip
+        self.grads_clip_min = grads_clip_min
+        self.grads_clip_max = grads_clip_max
+
+    @partial(jax.jit, static_argnums=(0,))
+    def step_ansatz(self, walkers, params_psi, opt_state_psi):
+        """
+        computes the energy gradients and updates steps of the ansatz
+        """
+        def energy_loss(p_psi):
+            # compute local energy
+            el_loc = self.hamiltonian.local_energy(self.sampler.ansatz_apply, p_psi, walkers)
+
+            # energy hard clipping
+            el_hard_clip = jnp.clip(jnp.nan_to_num(el_loc, nan=0.0), self.energy_clip_min, self.energy_clip_max)
+            median = jnp.median(el_hard_clip)
+            mad = jnp.mean(jnp.abs(el_hard_clip - median))
+            clip_low = median - self.sigma_energy_clip * mad
+            clip_high = median + self.sigma_energy_clip * mad
+            el_clipped = jnp.clip(el_hard_clip, clip_low, clip_high)
+
+            # log derivative
+            log_psi = self.sampler.ansatz_apply(p_psi, walkers)
+
+            # VLC loss function
+            baseline = jnp.mean(el_clipped)
+            diff_energy = jax.lax.stop_gradient(el_clipped - baseline)
+            loss = 2.0 * jnp.mean(diff_energy * log_psi)
+
+            return loss, (jnp.mean(el_clipped), jnp.var(el_clipped))
+        
+        # autodiff
+        (loss_val, (mean_E, var_E)), grads = jax.value_and_grad(energy_loss, has_aux = True)(params_psi)
+
+        # get rid of nans
+        grads_safe = jax.tree.map(lambda x: jnp.where(jnp.isfinite(x), x, 0.0), grads)
+
+        # optax update
+        updates, new_opt_state = self.opt_ansatz.update(grads_safe, opt_state_psi, params_psi)
+        new_params_psi = optax.apply_updates(params_psi, updates)
+
+        # update cache
+        def sum_log_psi_new(w):
+            return jnp.sum(self.sampler.ansatz_apply(new_params_psi, w))
+        
+        new_log_psi = self.sampler.ansatz_apply(new_params_psi, walkers)
+        new_grad = jnp.clip(jax.grad(sum_log_psi_new)(walkers), self.grads_clip_min, self.grads_clip_max)
+
+        updated_cache = {"log_psi_curr": new_log_psi, "grad_curr": new_grad}
+
+        return new_params_psi, new_opt_state, mean_E, var_E, updated_cache
+    
+    @partial(jax.jit, static_argnums=(0,))
+    def step_actor(self, key, walkers, params_psi, params_actor, opt_state_actor, curr_cache):
+        """
+        Actualiza el Actor neuronal usando RL (REINFORCE) evaluando la recompensa del salto.
+        """
+        k_s, _ = jax.random.split(key)
+
+        def loss_fn(p_actor, w_current, k, cache):
+            # El Actor propone, Metrópolis filtra, y obtenemos las recompensas crudas (rl_data)
+            w_new, stats, new_cache, prop_aux = self.sampler.step(
+                k, w_current, {"ansatz": params_psi, "actor": p_actor}, cache, exploration_mode=True
+            )
+            
+            # Desempaquetamos datos pasados por el Sampler
+            rl_data = prop_aux["rl_data"]
+            log_q_fwd_policy = rl_data["log_q_fwd_policy"]
+            proposal_dist = rl_data["proposal_dist"]
+            raw_penalty = rl_data["raw_penalty"]
+            gamma = rl_data["gamma"]
+            beta = rl_data["beta"]
+            
+            # Reconstruimos la recompensa (ahora tenemos alpha exacto gracias al log_ratio del step)
+            safe_log_ratio = stats["mean_log_ratio"] 
+            alpha_exact = jnp.exp(safe_log_ratio - jax.nn.softplus(safe_log_ratio))
+            
+            grad_penalty = jnp.clip(raw_penalty, 0.0, 50.0)
+            penalty_for_reject = 0.1 * (1.0 - alpha_exact)
+            
+            term_dist = beta * proposal_dist * alpha_exact
+            term_penalty = gamma * grad_penalty
+            
+            rewards = term_dist - term_penalty - penalty_for_reject
+            
+            # Cálculo del Advantage para estabilizar REINFORCE
+            mean_r = jnp.mean(rewards)
+            std_r = jnp.std(rewards) + 1e-8
+            advantage = (rewards - mean_r) / std_r
+            
+            # Loss Function: Policy Gradient (Maximizamos ventaja = Minimizamos -ventaja * prob)
+            pg_loss = -jnp.mean(jax.lax.stop_gradient(advantage) * log_q_fwd_policy)
+            
+            # Guardamos datos extra en stats
+            stats["mean_reward"] = mean_r
+            stats["reward_dist"] = jnp.mean(term_dist)
+            stats["reward_penalty"] = jnp.mean(term_penalty)
+            
+            return pg_loss, (w_new, stats, new_cache)
+
+        # Calculamos gradientes de la pérdida RL respecto a los pesos del Actor
+        (loss_val, aux), grads = jax.value_and_grad(loss_fn, has_aux=True)(params_actor, walkers, k_s, curr_cache)
+        w_new, stats, new_cache = aux
+        
+        # Norma del gradiente para monitoreo de estabilidad
+        grad_norm = jnp.sqrt(sum(jnp.sum(g**2) for g in jax.tree_util.tree_leaves(grads)))
+        stats["actor_grad_norm"] = grad_norm 
+        
+        # Actualización Optax
+        updates, new_opt_state = self.opt_actor.update(grads, opt_state_actor, params_actor)
+        new_params_actor = optax.apply_updates(params_actor, updates)
+        
+        return new_params_actor, new_opt_state, w_new, stats, loss_val, new_cache

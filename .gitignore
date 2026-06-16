@@ -1,0 +1,9 @@
+# .gitignore
+logs/
+results/
+__pycache__/
+*.pkl
+*.csv
+*.png
+.env
+venv/

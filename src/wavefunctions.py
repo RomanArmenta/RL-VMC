@@ -1,0 +1,101 @@
+import os
+import os
+import deepqmc
+from abc import ABC, abstractmethod
+from system import PhysicalSystem
+from deepqmc.molecule import Molecule
+from deepqmc.app import instantiate_ansatz
+from deepqmc.hamil import MolecularHamiltonian
+from deepqmc.types import PhysicalConfiguration
+from hydra import initialize_config_dir, compose
+from hydra.utils import instantiate
+import jax
+import jax.numpy as jnp
+
+# do i have to import the PhysicalSystem class?
+
+class BaseAnsatz(ABC):
+    """
+    universal interface for ansatz in our VMC implementation
+    """
+
+    def __init__(self, system: PhysicalSystem):
+        self.system = system
+
+    @abstractmethod
+    def init(self, rng_key, batch_walkers):
+        """
+        Initializes and retunrs the parameters of the wavefunction
+        """
+        pass
+
+    @abstractmethod
+    def apply(self, params, walkers):
+        """
+        Evaluates the natural logarithm of the wavefunctions norm: log |Psi|
+        must return a tensor of shape (batch_size,) 
+        """
+        pass
+
+class DeepQMCAnsatz(BaseAnsatz):
+    """
+    wrapper for DeepQMC ansatz.
+    """
+    def __init__(self, system: PhysicalSystem, config_name: str = "default"):
+        super().__init__(system)
+
+        self.mol = Molecule(
+            coords = self.system.coords,
+            charges = self.system.charges,
+            charge = self.system.charge,
+            spin = self.system.spin
+        )
+
+        self.hamil = MolecularHamiltonian(mol = self.mol)
+
+        deepqmc_dir = os.path.dirname(deepqmc.__file__)
+        config_dir = os.path.join(deepqmc_dir, "conf", "ansatz")
+
+        with initialize_config_dir(version_base=None, config_dir=config_dir):
+            cfg = compose(config_name=config_name)
+            _ansatz_factory = instantiate(cfg, _recursive_=True, _convert_="all")
+
+        self.ansatz = instantiate_ansatz(self.hamil, _ansatz_factory)
+
+        self._batched_apply = jax.vmap(self.ansatz.apply, in_axes = (None, 0))
+
+    def init(self, rng_key, batch_walkers):
+        """
+        generates weights from the model evaluating a single test walker
+        """
+
+        single_walker = batch_walkers[0]
+
+        phys_conf = PhysicalConfiguration(
+            R = self.system.coords,
+            r = single_walker,
+            mol_idx = jnp.array(0, dtype=jnp.int32)
+        )
+
+        return self.ansatz.init(rng_key, phys_conf)
+    
+    def apply(self, params, walkers):
+        """
+        evaluates a batch of walkers and returns a 1D tensor of log |Psi|
+        """
+        batch_size = walkers.shape[0]
+
+        # clone into [batch_size, N_nuclei, 3]
+        R_batch = jnp.tile(self.system.coords, (batch_size, 1, 1))
+
+        # all walkers in the same molecule (index 0)
+        mol_idx_batch = jnp.zeros(batch_size, dtype=jnp.int32)
+        phys_conf_batch = PhysicalConfiguration(
+            R = R_batch,
+            r = walkers,
+            mol_idx = mol_idx_batch
+        )
+
+        out = self._batched_apply(params, phys_conf_batch)
+        return out.log
+
