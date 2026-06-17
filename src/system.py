@@ -4,7 +4,7 @@ import jax.numpy as jnp
 @dataclass
 class PhysicalSystem:
     """
-    container for the static properties of our physical system. Ive call it "static_state".
+    container for the static properties of our physical system. Ive call it "static_state" before.
     """
     name: str
     n_elec: int

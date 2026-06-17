@@ -9,7 +9,6 @@ def compiled_measure_phase(sampler_obj, w_start, k_start, p_psi, p_act, init_cac
         w, k, cache = carry
         k, subkey = jax.random.split(k)
         
-        # Ejecutamos el paso usando diccionario unificado para parámetros
         params_dict = {"ansatz": p_psi, "actor": p_act}
         w_new, stats, new_cache, _ = sampler_obj.step(subkey, w, params_dict, cache, exploration_mode=False)
         

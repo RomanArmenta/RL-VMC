@@ -84,17 +84,15 @@ class GroundStateTrainer(BaseTrainer):
     @partial(jax.jit, static_argnums=(0,))
     def step_actor(self, key, walkers, params_psi, params_actor, opt_state_actor, curr_cache):
         """
-        Actualiza el Actor neuronal usando RL (REINFORCE) evaluando la recompensa del salto.
+        Updates neuronal actor using RL REINFORCE evaluating the Jump reward
         """
         k_s, _ = jax.random.split(key)
 
         def loss_fn(p_actor, w_current, k, cache):
-            # El Actor propone, Metrópolis filtra, y obtenemos las recompensas crudas (rl_data)
             w_new, stats, new_cache, prop_aux = self.sampler.step(
                 k, w_current, {"ansatz": params_psi, "actor": p_actor}, cache, exploration_mode=True
             )
             
-            # Desempaquetamos datos pasados por el Sampler
             rl_data = prop_aux["rl_data"]
             log_q_fwd_policy = rl_data["log_q_fwd_policy"]
             proposal_dist = rl_data["proposal_dist"]
@@ -102,7 +100,6 @@ class GroundStateTrainer(BaseTrainer):
             gamma = rl_data["gamma"]
             beta = rl_data["beta"]
             
-            # Reconstruimos la recompensa (ahora tenemos alpha exacto gracias al log_ratio del step)
             safe_log_ratio = stats["mean_log_ratio"] 
             alpha_exact = jnp.exp(safe_log_ratio - jax.nn.softplus(safe_log_ratio))
             
@@ -114,30 +111,24 @@ class GroundStateTrainer(BaseTrainer):
             
             rewards = term_dist - term_penalty - penalty_for_reject
             
-            # Cálculo del Advantage para estabilizar REINFORCE
             mean_r = jnp.mean(rewards)
             std_r = jnp.std(rewards) + 1e-8
             advantage = (rewards - mean_r) / std_r
             
-            # Loss Function: Policy Gradient (Maximizamos ventaja = Minimizamos -ventaja * prob)
             pg_loss = -jnp.mean(jax.lax.stop_gradient(advantage) * log_q_fwd_policy)
             
-            # Guardamos datos extra en stats
             stats["mean_reward"] = mean_r
             stats["reward_dist"] = jnp.mean(term_dist)
             stats["reward_penalty"] = jnp.mean(term_penalty)
             
             return pg_loss, (w_new, stats, new_cache)
 
-        # Calculamos gradientes de la pérdida RL respecto a los pesos del Actor
         (loss_val, aux), grads = jax.value_and_grad(loss_fn, has_aux=True)(params_actor, walkers, k_s, curr_cache)
         w_new, stats, new_cache = aux
         
-        # Norma del gradiente para monitoreo de estabilidad
         grad_norm = jnp.sqrt(sum(jnp.sum(g**2) for g in jax.tree_util.tree_leaves(grads)))
         stats["actor_grad_norm"] = grad_norm 
         
-        # Actualización Optax
         updates, new_opt_state = self.opt_actor.update(grads, opt_state_actor, params_actor)
         new_params_actor = optax.apply_updates(params_actor, updates)
         
