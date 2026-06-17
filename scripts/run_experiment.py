@@ -1,6 +1,9 @@
 import os
 os.environ["JAX_ENABLE_X64"] = "True"
 
+import sys
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
 import time
 import argparse
 import datetime
@@ -14,13 +17,13 @@ from flax import linen as nn
 import optax
 from functools import partial
 
-from system import PhysicalSystem
-from wavefunctions import DeepQMCAnsatz
-from hamiltonians import FullCoulombHamiltonian
-from samplers import MALASampler, RLMALASampler
-from trainers import GroundStateTrainer
-from actors import DirectionalActor
-from aux_functions import calculate_iat, compiled_measure_phase
+from src.system import PhysicalSystem
+from src.wavefunctions import DeepQMCAnsatz
+from src.hamiltonians import FullCoulombHamiltonian
+from src.samplers import MALASampler, RLMALASampler
+from src.trainers import GroundStateTrainer
+from src.actors import DirectionalActor
+from src.aux_functions import calculate_iat, compiled_measure_phase
 
 # Physical suystems to study
 SYSTEMS = {

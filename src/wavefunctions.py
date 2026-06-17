@@ -2,7 +2,7 @@ import os
 import os
 import deepqmc
 from abc import ABC, abstractmethod
-from system import PhysicalSystem
+from src.system import PhysicalSystem
 from deepqmc.molecule import Molecule
 from deepqmc.app import instantiate_ansatz
 from deepqmc.hamil import MolecularHamiltonian

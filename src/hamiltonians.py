@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 import jax
 import jax.numpy as jnp
 from functools import partial
-from system import PhysicalSystem
+from src.system import PhysicalSystem
 
 class BaseHamiltonian(ABC):
     """
