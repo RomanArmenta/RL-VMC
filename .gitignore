@@ -6,4 +6,5 @@ __pycache__/
 *.csv
 *.png
 .env
+.sh
 venv/

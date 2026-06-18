@@ -139,6 +139,16 @@ def main():
     parser.add_argument("--n_print", type=int, default=500, help="each many steps the stats are printed in terminal")
     parser.add_argument("--n_log", type = int, default=50, help="each many steps the stats are logged or stored")
     parser.add_argument("--steps_for_best", type=int, default=500, help="number of training steps before we start to save the best parameters")
+    parser.add_argument("--min_clip_log_ratio", type=float, default=-20., help="minimum value for the log ratio in the sampler")
+    parser.add_argument("--max_clip_log_ratio", type=float, default=20., help="maximum value for the log ratio in the sampler")
+    parser.add_argument("--nan_clip_log_ratio", type=float, default=-20., help="replaces nan values of the log ratio for this value")
+    parser.add_argument("--posinf_clip_log_ratio", type=float, default=20., help="replaces minus infinity values of the log ratio for this value")
+    parser.add_argument("--neginf_clip_log_ratio", type=float, default=-20., help="replaces plus infinity values of the log ratio for this value")
+    parser.add_argument("--scale_clip_min", type=float, default=0.0, help="minimum value of the scale factor for the sigma of the proposal of an actor")
+    parser.add_argument("--scale_clip_max", type=float, default=1.0, help="maximum value of the scale factor for the sigma of the proposal of an actor")
+    parser.add_argument("--sigma_energy_clip", type=float, default=5.0, help="we 'clip' or limit the values to go no out of this values of sigma from its distribution")
+    parser.add_argument("--energy_clip_min", type=float, default=-50., help="minimum of clip for raw energy calculations")
+    parser.add_argument("--energy_clip_max", type=float, default=0.0, help="maximum of clip for raw energy calculations")
     args = parser.parse_args()
 
     # system setup
@@ -162,11 +172,13 @@ def main():
     os.makedirs(out_dir, exist_ok=True)
 
     print("=============================================================================================")
-    print("Initializing VMC experiment...")
-    print(f"Molecule: {molecule.name} | Batch: {args.batch_size} | DeepQMC model: {args.config_name}")
-    print(f"Tau: {args.tau} | lr_ansatz: {args.lr_ansatz} | lr_actor: {args.lr_actor}")
-    print(f"train_steps: {args.train_steps} | warmup_steps: {args.warmup_steps} | measure_steps: {args.measure_steps}")
-    print(f"gamma: {args.gamma} | beta: {args.beta} | seed: {args.seed}")
+    print(" Initializing VMC experiment with the following parameters:")
+    print("=============================================================================================")
+
+    print("=============================================================================================")
+    for arg_name, arg_value in vars(args).items():
+            # Usamos :>25 para alinear el texto a la derecha y que se vea como una tabla limpia
+            print(f"{arg_name:>25}: {arg_value}")
     print(f"Results will be saved in: {out_dir}")
     print("=============================================================================================")
 
@@ -210,12 +222,42 @@ def main():
             opt_actor = optax.chain(optax.clip_by_global_norm(1.0), optax.adam(learning_rate=sched_actor))
             opt_state_actor = opt_actor.init(params_actor)
 
-            sampler=RLMALASampler(ansatz.apply, actor.apply, args.batch_size, args.tau, args.gamma, args.beta, molecule)
+            sampler=RLMALASampler(ansatz_apply=ansatz.apply, 
+                                  system=molecule,
+                                  batch_size=args.batch_size,
+                                  max_clip_log_ratio=args.max_clip_log_ratio,
+                                  min_clip_log_ratio=args.min_clip_log_ratio,
+                                  nan_clip_log_ratio=args.nan_clip_log_ratio,
+                                  neginf_clip_log_ratio=args.neginf_clip_log_ratio,
+                                  posinf_clip_log_ratio=args.posinf_clip_log_ratio,
+                                  actor_apply=actor.apply,
+                                  tau=args.tau, 
+                                  gamma=args.gamma, 
+                                  beta=args.beta, 
+                                  scale_clip_min=args.scale_clip_min,
+                                  scale_clip_max=args.scale_clip_max,
+                                  min_clip_grads_ansatz=args.min_clip_grads_ansatz,
+                                  max_clip_grads_ansatz=args.max_clip_grads_ansatz)
         else:
-            sampler = MALASampler(ansatz.apply, args.batch_size, args.tau, molecule)
+            sampler = MALASampler(ansatz_apply=ansatz.apply, 
+                                  batch_size=args.batch_size, 
+                                  tau=args.tau, 
+                                  system=molecule,
+                                  min_clip_grads_ansatz=args.min_clip_grads_ansatz,
+                                  max_clip_grads_ansatz=args.max_clip_grads_ansatz)
             opt_actor = None
 
-        trainer = GroundStateTrainer(molecule, hamiltonian, sampler, opt_ansatz, opt_actor=opt_actor)
+        trainer = GroundStateTrainer(
+            system=molecule, 
+            hamiltonian=hamiltonian, 
+            sampler=sampler, 
+            opt_ansatz=opt_ansatz, 
+            opt_actor=opt_actor,
+            sigma_energy_clip=args.sigma_energy_clip,
+            energy_clip_min=args.energy_clip_min,
+            energy_clip_max=args.energy_clip_max,
+            min_clip_grads_ansatz=args.min_clip_grads_ansatz,
+            max_clip_grads_ansatz=args.max_clip_grads_ansatz)
 
         # init cache
         def sum_log_psi(w):

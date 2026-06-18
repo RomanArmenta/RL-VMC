@@ -1,6 +1,0 @@
-nohup: ignoring input
-================================================
- Launching benchmark 
- System: bicyclobutane 
-================================================
-Working in Background. Check logs in: logs/bicyclobutane_log.txt
