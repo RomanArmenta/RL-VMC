@@ -160,6 +160,7 @@ class RLMALASampler(BaseSampler):
         self.gamma = gamma
         self.beta = beta
         self.sigma = jnp.sqrt(2.0 * tau)
+        self.tau = tau
         self.scale_clip_min = scale_clip_min
         self.scale_clip_max = scale_clip_max
         self.actor_apply = actor_apply
