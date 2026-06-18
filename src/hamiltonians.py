@@ -4,7 +4,7 @@ import jax.numpy as jnp
 from functools import partial
 from src.system import PhysicalSystem
 
-class BaseHamiltonian(ABC):
+class _BaseHamiltonian(ABC):
     """
     abstract class for Hamiltonians in VMC
     implements the general computation of kinetic energy using JAX
@@ -42,6 +42,62 @@ class BaseHamiltonian(ABC):
 
             return -0.5 * (lap_val + grad_sq)
 
+        return jax.vmap(kinetic_single)(r_elec)
+    
+    def local_energy(self, ansatz_apply, params, r_elec):
+        """
+        returns the total local energy
+        """
+        k_en = self.kinetic_energy(ansatz_apply, params, r_elec)
+        v_en = self.potential_energy(r_elec)
+        return k_en + v_en
+    
+class BaseHamiltonian(ABC):
+    """
+    abstract class for Hamiltonians in VMC
+    implements the general computation of kinetic energy using JAX
+    """
+
+    def __init__(self, system: PhysicalSystem):
+        self.system = system
+
+    @abstractmethod
+    def potential_energy(self, r_elec):
+        """
+        computes the potential energy V(R). Must be implemented in the inherit class
+        """
+        pass
+
+    def kinetic_energy(self, ansatz_apply, params, r_elec):
+        """
+        computes the local kinetic energy using automatic differentiation 
+        E_k = -0.5 * ( Laplacian( log_psi ) + |Grad ( log_psi ) |^2 )
+        """
+
+        # aux function for single walker
+        def kinetic_single(r_single):
+            def f(x):
+                return ansatz_apply(params, x[None, ...])[0]
+            
+            grad_f = jax.grad(f)
+            grad_val = grad_f(r_single)
+            grad_sq = jnp.sum(grad_val**2)
+
+            n_e = self.system.n_elec
+            dim_total = n_e * 3
+            
+            basis = jnp.eye(dim_total).reshape(dim_total, n_e, 3)
+
+            def scan_body(carry, v):
+                _, hvp = jax.jvp(grad_f, (r_single,), (v,))
+                
+                diag_element = jnp.sum(hvp * v)
+                return carry + diag_element, None
+                
+            lap_val, _ = jax.lax.scan(scan_body, 0.0, basis)
+
+            return -0.5 * (lap_val + grad_sq)
+            
         return jax.vmap(kinetic_single)(r_elec)
     
     def local_energy(self, ansatz_apply, params, r_elec):
