@@ -1,8 +1,0 @@
-nohup: ignoring input
-==========================
- Beginning VMC experiments 
- Systems to compute: 4
- Detected GPUs: 3
-==========================
-[19:04:37] -> GPU 0 is free. Starting training for system: Be
-[19:04:42] -> GPU 1 is free. Starting training for system: B

@@ -5,8 +5,7 @@ __pycache__/
 *.pkl
 *.csv
 *.png
+*.sh
+*.out
 .env
-.sh
 venv/
-.out
-.sh
