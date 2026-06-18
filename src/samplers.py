@@ -7,10 +7,15 @@ class BaseSampler(ABC):
     """
     abstract class for all Monte Carlo samplers. Is Metropolis-Hastings-like 
     """
-    def __init__(self, ansatz_apply, batch_size, system):
+    def __init__(self, ansatz_apply, system, batch_size, max_clip_log_ratio = 20., min_clip_log_ratio = -20., nan_clip_log_ratio=-20., neginf_clip_log_ratio=-20., posinf_clip_log_ratio=20.):
         self.ansatz_apply = ansatz_apply       # apply function for log wavefunction (flax notation-like)
         self.system = system       # state that store hard (ummutable<) variables (for example, nuclei positions in H10 chain)
         self.batch_size = batch_size           # number of parallel independent walkers
+        self.max_clip_log_ratio = max_clip_log_ratio
+        self.min_clip_log_ratio = min_clip_log_ratio
+        self.nan_clip_log_ratio = nan_clip_log_ratio
+        self.neginf_clip_log_ratio = neginf_clip_log_ratio
+        self.posinf_clip_log_ratio = posinf_clip_log_ratio
     
     @abstractmethod
     def propose(self, key_prop, walkers, params, cache, **kwargs):
@@ -43,7 +48,7 @@ class BaseSampler(ABC):
         log_ratio = 2.0 * (prop_log_psi - log_psi_curr) + log_q_ratio
 
         # we did this to pass this safe version to the reward without gradient exploitation
-        safe_log_ratio = jnp.clip(jnp.nan_to_num(log_ratio, nan=-20, neginf=-20., posinf=20.), -20., 20.)
+        safe_log_ratio = jnp.clip(jnp.nan_to_num(log_ratio, nan=self.nan_clip_log_ratio, neginf=self.neginf_clip_log_ratio, posinf=self.posinf_clip_log_ratio), self.min_clip_log_ratio, self.max_clip_log_ratio)
 
         #4. accept / reject
         rnd = jnp.log(jax.random.uniform(key_accept, shape=(self.batch_size,)))
@@ -103,11 +108,12 @@ class MetropolisHastingsSampler(BaseSampler):
         return w_prop, prop_log_psi, None, log_q_ratio, {}
 
 class MALASampler(BaseSampler):
-    def __init__(self, ansatz_apply, batch_size, tau, system, grad_clip=20.):
-        super().__init__(ansatz_apply, batch_size, system)
+    def __init__(self, ansatz_apply, batch_size, tau, system, max_clip_grads_ansatz, min_clip_grads_ansatz, max_clip_log_ratio, min_clip_log_ratio, nan_clip_log_ratio, neginf_clip_log_ratio, posinf_clip_log_ratio):
+        super().__init__(ansatz_apply=ansatz_apply, system=system, batch_size=batch_size, max_clip_log_ratio=max_clip_log_ratio, min_clip_log_ratio=min_clip_log_ratio, nan_clip_log_ratio=nan_clip_log_ratio, neginf_clip_log_ratio=neginf_clip_log_ratio, posinf_clip_log_ratio=posinf_clip_log_ratio)
         self.tau = tau
         self.sigma = jnp.sqrt(2.0 * tau)
-        self.grad_clip = grad_clip
+        self.max_clip_grads_ansatz=max_clip_grads_ansatz
+        self.min_clip_grads_ansatz=min_clip_grads_ansatz
 
     def propose(self, key_prop, walkers, params, cache, **kwargs):
         """
@@ -119,27 +125,22 @@ class MALASampler(BaseSampler):
         - prop_aux: dict with stats, rewards, general data for analysis or training
         """
 
-        # 1. aux vectorized function
-        def sum_log_psi(w):
-            return jnp.sum(self.ansatz_apply(params["ansatz"], w))
-
-
         grad_curr = cache["grad_curr"]
         
-        # 2. langevin proposal
+        # langevin proposal
         noise = jax.random.normal(key_prop, walkers.shape)
         drift_curr = self.tau * grad_curr
         
         w_prop = walkers + drift_curr + self.sigma * noise
         
-        # 3. compute things
+        # compute things
         def log_psi_and_sum(w):
             val = self.ansatz_apply(params["ansatz"], w)
             return jnp.sum(val), val
         
         (_, log_psi_prop), raw_grad_prop = jax.value_and_grad(log_psi_and_sum, has_aux=True)(w_prop)
 
-        grad_prop = jnp.clip(raw_grad_prop, -self.grad_clip, self.grad_clip)
+        grad_prop = jnp.clip(raw_grad_prop, self.min_clip_grads_ansatz, self.max_clip_grads_ansatz)
         drift_prop = self.tau * grad_prop
         
         log_q_fwd = jnp.sum(-0.5 * ((w_prop - walkers - drift_curr) / self.sigma)**2, axis=(-1, -2))
@@ -154,16 +155,16 @@ class RLMALASampler(BaseSampler):
     hybrid sampler guided by reinforcement learning
     combines langevin - like learned drift with a parametric neural actor
     """
-    def __init__(self, ansatz_apply, actor_apply, batch_size, tau, gamma, beta, system, scale_clip_min = -5.0, scale_clip_max = 1.0, grad_clip = 20.):
-        super().__init__(ansatz_apply, batch_size, system)
-        self.grad_clip = grad_clip
-        self.tau = tau
-        self.actor_apply = actor_apply
+    def __init__(self, ansatz_apply, system, batch_size, max_clip_log_ratio, min_clip_log_ratio, nan_clip_log_ratio, neginf_clip_log_ratio, posinf_clip_log_ratio, actor_apply, tau, gamma, beta, scale_clip_min, scale_clip_max, min_clip_grads_ansatz, max_clip_grads_ansatz):
+        super().__init__(ansatz_apply=ansatz_apply, system=system, batch_size=batch_size, max_clip_log_ratio=max_clip_log_ratio, min_clip_log_ratio=min_clip_log_ratio, nan_clip_log_ratio=nan_clip_log_ratio, neginf_clip_log_ratio=neginf_clip_log_ratio, posinf_clip_log_ratio=posinf_clip_log_ratio)
         self.gamma = gamma
         self.beta = beta
         self.sigma = jnp.sqrt(2.0 * tau)
         self.scale_clip_min = scale_clip_min
         self.scale_clip_max = scale_clip_max
+        self.actor_apply = actor_apply
+        self.min_clip_grads_ansatz=min_clip_grads_ansatz
+        self.max_clip_grads_ansatz=max_clip_grads_ansatz
 
     def _compute_log_q(self, x_prop, x_curr, drift_curr, sigma_curr):
         """
@@ -189,7 +190,7 @@ class RLMALASampler(BaseSampler):
 
         drift_actor_curr, raw_sigma_scale_curr = actor_vmap(params["actor"], walkers, jnp.arange(n_elec), self.system.coords, exploration_mode)
 
-        safe_scale_curr = jnp.exp(jnp.clip(raw_sigma_scale_curr, 0.0, 1.0))
+        safe_scale_curr = jnp.exp(jnp.clip(raw_sigma_scale_curr, self.scale_clip_min, self.scale_clip_max))
 
         # 3. hybrid proposal
         drift_curr = (self.tau * grad_curr) + drift_actor_curr
@@ -204,7 +205,7 @@ class RLMALASampler(BaseSampler):
             return jnp.sum(val), val
         
         (_, log_psi_prop), raw_grad_prop = jax.value_and_grad(log_psi_and_sum, has_aux=True)(w_prop)
-        grad_prop = jnp.clip(raw_grad_prop, -self.grad_clip, self.grad_clip)
+        grad_prop = jnp.clip(raw_grad_prop, self.min_clip_grads_ansatz, self.max_clip_grads_ansatz)
 
         # 5. actor backwards
         drift_actor_prop, raw_sigma_scale_prop = actor_vmap(params["actor"], w_prop, jnp.arange(n_elec), self.system.coords, exploration_mode)

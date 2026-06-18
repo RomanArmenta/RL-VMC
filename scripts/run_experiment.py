@@ -168,7 +168,7 @@ def main():
     # directory setup
     timestamp = datetime.datetime.now().strftime("%d%m%Y")
     base_dir = os.path.dirname(os.path.abspath(__file__))
-    out_dir = os.path.join(base_dir, "results", f"{args.system}_{timestamp}")
+    out_dir = os.path.join(base_dir, "./../results", f"{args.system}_{timestamp}")
     os.makedirs(out_dir, exist_ok=True)
 
     print("=============================================================================================")
@@ -244,7 +244,12 @@ def main():
                                   tau=args.tau, 
                                   system=molecule,
                                   min_clip_grads_ansatz=args.min_clip_grads_ansatz,
-                                  max_clip_grads_ansatz=args.max_clip_grads_ansatz)
+                                  max_clip_grads_ansatz=args.max_clip_grads_ansatz,                                
+                                  max_clip_log_ratio=args.max_clip_log_ratio,
+                                  min_clip_log_ratio=args.min_clip_log_ratio,
+                                  nan_clip_log_ratio=args.nan_clip_log_ratio,
+                                  neginf_clip_log_ratio=args.neginf_clip_log_ratio,
+                                  posinf_clip_log_ratio=args.posinf_clip_log_ratio)
             opt_actor = None
 
         trainer = GroundStateTrainer(
