@@ -100,13 +100,14 @@ class GroundStateTrainer(BaseTrainer):
             raw_penalty = rl_data["raw_penalty"]
             gamma = rl_data["gamma"]
             beta = rl_data["beta"]
+            penalty_factor = rl_data["penalty_factor"]
             
             # Reconstruimos la recompensa (ahora tenemos alpha exacto gracias al log_ratio del step)
             safe_log_ratio = stats["mean_log_ratio"] 
             alpha_exact = jnp.exp(safe_log_ratio - jax.nn.softplus(safe_log_ratio))
             
             grad_penalty = jnp.clip(raw_penalty, 0.0, 50.0)
-            penalty_for_reject = 0.1 * (1.0 - alpha_exact)
+            penalty_for_reject = penalty_factor * (1.0 - alpha_exact)
             
             term_dist = beta * proposal_dist * alpha_exact
             term_penalty = gamma * grad_penalty

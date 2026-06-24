@@ -155,10 +155,11 @@ class RLMALASampler(BaseSampler):
     hybrid sampler guided by reinforcement learning
     combines langevin - like learned drift with a parametric neural actor
     """
-    def __init__(self, ansatz_apply, system, batch_size, max_clip_log_ratio, min_clip_log_ratio, nan_clip_log_ratio, neginf_clip_log_ratio, posinf_clip_log_ratio, actor_apply, tau, gamma, beta, scale_clip_min, scale_clip_max, min_clip_grads_ansatz, max_clip_grads_ansatz):
+    def __init__(self, ansatz_apply, system, batch_size, max_clip_log_ratio, min_clip_log_ratio, nan_clip_log_ratio, neginf_clip_log_ratio, posinf_clip_log_ratio, actor_apply, tau, gamma, beta, penalty_factor, scale_clip_min, scale_clip_max, min_clip_grads_ansatz, max_clip_grads_ansatz):
         super().__init__(ansatz_apply=ansatz_apply, system=system, batch_size=batch_size, max_clip_log_ratio=max_clip_log_ratio, min_clip_log_ratio=min_clip_log_ratio, nan_clip_log_ratio=nan_clip_log_ratio, neginf_clip_log_ratio=neginf_clip_log_ratio, posinf_clip_log_ratio=posinf_clip_log_ratio)
         self.gamma = gamma
         self.beta = beta
+        self.penalty_factor = penalty_factor
         self.sigma = jnp.sqrt(2.0 * tau)
         self.tau = tau
         self.scale_clip_min = scale_clip_min
@@ -234,7 +235,8 @@ class RLMALASampler(BaseSampler):
                 "proposal_dist": proposal_dist,
                 "raw_penalty": raw_penalty,
                 "gamma": self.gamma,
-                "beta": self.beta
+                "beta": self.beta,
+                "penalty_factor": self.penalty_factor
             },
             "stats": {
                 "mean_sigma": jnp.mean(sigma_curr),

@@ -161,6 +161,7 @@ def main():
     parser.add_argument("--measure_steps", type=int, default=5_000, help="measurement steps with trained models")
     parser.add_argument("--gamma", type=float, default=0.01, help="weight of the gradient penalty in the reward function")
     parser.add_argument("--beta", type=float, default=10.0, help="weight of the jump reward")
+    parser.add_argument("--penalty_factor", type=float, default=0.1, help="the factor of inportance of the penalty for rejection in the reward function")
     parser.add_argument("--seed", type=int, default=42, help="random seed")
     parser.add_argument("--trans_steps_sched_ansatz", type=int, default=10_000, help="steps needed for the ansatz lr to hit the lower value in the schedeule")
     parser.add_argument("--decay_rate_ansatz", type=float, default=0.5, help="decay rate, the 'velocity' in which the lr ansatz decay") 
@@ -292,7 +293,8 @@ def main():
                                   scale_clip_min=args.scale_clip_min,
                                   scale_clip_max=args.scale_clip_max,
                                   min_clip_grads_ansatz=args.min_clip_grads_ansatz,
-                                  max_clip_grads_ansatz=args.max_clip_grads_ansatz)
+                                  max_clip_grads_ansatz=args.max_clip_grads_ansatz,
+                                  penalty_factor=args.penalty_factor)
         else:
             sampler = MALASampler(ansatz_apply=ansatz.apply, 
                                   batch_size=args.batch_size, 
