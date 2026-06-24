@@ -181,6 +181,7 @@ def main():
     parser.add_argument("--sigma_energy_clip", type=float, default=5.0, help="we 'clip' or limit the values to go no out of this values of sigma from its distribution")
     parser.add_argument("--energy_clip_min", type=float, default=-50., help="minimum of clip for raw energy calculations")
     parser.add_argument("--energy_clip_max", type=float, default=0.0, help="maximum of clip for raw energy calculations")
+    parser.add_argument("--actor_amplitude", type=float, default=0.05, help="amplitude of the drift maximum for RL")
     args = parser.parse_args()
 
     # system setup
@@ -221,12 +222,31 @@ def main():
 
     print(f"Initializing ansatz - {args.config_name}")
     ansatz = DeepQMCAnsatz(molecule, config_name=args.config_name)
-    walkers_init = jax.random.normal(k_init, (args.batch_size, molecule.n_elec, 3)) * 0.5
+    
+    # physically informed initialization
+    def get_smart_initialization(key, batch_size, mol, std=0.2):
+        """
+        assigns initial electronic positions around the atomic nuclei
+        """
+        assignments = []
+        # mol.charges contains atomic numbers
+        for idx, z in enumerate(np.array(mol.charges)):
+            assignments.extend([idx] * int(z))
+            
+        assignments = jnp.array(assignments[:mol.n_elec])
+        
+        base_coords = mol.coords[assignments]
+        
+        noise = jax.random.normal(key, (batch_size, mol.n_elec, 3)) * std
+        return base_coords[None, ...] + noise
+
+    walkers_init = get_smart_initialization(k_init, args.batch_size, molecule)
+
     params_psi_master = ansatz.init(k_init, walkers_init)
     print("Ansatz instantiated")
 
     # we execute this methods (samplers)
-    methods = ["MALA", "RL-MALA"]
+    methods = ["RL-MALA", "MALA"]
 
     for method in methods:
         print("=============================================================================================")
@@ -246,7 +266,7 @@ def main():
 
         # instantiate the sampelr
         if method == "RL-MALA":
-            actor = DirectionalActor(n_elec = molecule.n_elec, n_nuclei=len(molecule.coords))
+            actor = DirectionalActor(n_elec = molecule.n_elec, n_nuclei=len(molecule.coords), actor_amplitude=args.actor_amplitude)
             key, k_act = jax.random.split(key)
             params_actor = actor.init(k_act, walkers, 0, molecule.coords)
 
@@ -346,18 +366,38 @@ def main():
 
             # logging
             if step % args.n_log == 0 or step == args.train_steps - 1:
+                
+                # lr meatric
+                mean_reward = float(stats.get("mean_reward", 0.0)) if method == "RL-MALA" else 0.0
+                
+                # grad norm
+                grad_ansatz_norm = float(jnp.linalg.norm(cache["grad_curr"]))
+                
+                # loss
+                actor_loss_val = float(loss_act) if method == "RL-MALA" and 'loss_act' in locals() else 0.0
+
                 log_data = {
                     "Step": step,
                     "E_mean": float(e_mean),
                     "E_Var": float(e_var),
                     "Acceptance": float(stats.get("acceptance", 0.0)),
                     "EJD": float(stats.get("ejd", 0.0)),
-                    "Reward": float(stats.get("mean_reward", 0.0)) if method=="RL-MALA" else 0.0
+                    "Reward": mean_reward,
+                    "Grad_Ansatz_Norm": grad_ansatz_norm,
+                    "Actor_Loss": actor_loss_val
                 }
                 training_history.append(log_data)
 
                 if step % args.n_print == 0:
-                    print(f"Step: {step:05d} | E: {e_mean:0.4f} Ha | Var: {e_var:6.2f} | Acc: {stats['acceptance']:.2f} | EJD: {stats['ejd']:.4f} | Best E: {e_best:.4f} Ha")
+                    if method == "RL-MALA":
+                        print(f"Step: {step:05d} | E: {e_mean:0.4f} Ha | Var: {e_var:6.2f} | "
+                              f"Acc: {stats['acceptance']:.2f} | EJD: {stats['ejd']:.4f} | "
+                              f"Rew: {mean_reward:5.2f} | |g_psi|: {grad_ansatz_norm:5.2f} | "
+                              f"L_act: {actor_loss_val:5.2f} | Best E: {e_best:.4f}")
+                    else:
+                        print(f"Step: {step:05d} | E: {e_mean:0.4f} Ha | Var: {e_var:6.2f} | "
+                              f"Acc: {stats['acceptance']:.2f} | EJD: {stats['ejd']:.4f} | "
+                              f"|g_psi|: {grad_ansatz_norm:5.2f} | Best E: {e_best:.4f}")
 
 
         print(f"Training ended in {time.time() - t_start:.1f} seconds.")

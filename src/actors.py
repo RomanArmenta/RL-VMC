@@ -5,6 +5,7 @@ class DirectionalActor(nn.Module):
     n_elec: int
     n_nuclei: int
     hidden_dim: int = 64
+    actor_amplitude: float = 0.05
 
     def setup(self):
         self.dense1 = nn.Dense(features=self.hidden_dim)
@@ -16,18 +17,18 @@ class DirectionalActor(nn.Module):
     def __call__(self, walkers, elec_idx, r_nuclei, exploration_mode=True):
         r_i = walkers[:, elec_idx, :][:, None, :]
         
-        vec_iI = r_i - r_nuclei[None, :, :]
+        vec_iI = r_i - r_nuclei[None, :, :] + 1e-8
         d_iI = jnp.linalg.norm(vec_iI, axis=-1, keepdims=True)
-        u_iI = vec_iI / (d_iI + 1e-8)
+        u_iI = vec_iI / (d_iI)
         
         all_indices = jnp.arange(self.n_elec)
         shifted_indices = jnp.roll(all_indices, -elec_idx)
         others_idx = shifted_indices[1:]
         
         r_j = walkers[:, others_idx, :]
-        vec_ij = r_i - r_j
+        vec_ij = r_i - r_j + 1e-8
         d_ij = jnp.linalg.norm(vec_ij, axis=-1, keepdims=True)
-        u_ij = vec_ij / (d_ij + 1e-8)
+        u_ij = vec_ij / (d_ij)
         
         features = jnp.concatenate([jnp.exp(-d_iI).reshape(-1, self.n_nuclei), 
                                     jnp.exp(-d_ij).reshape(-1, self.n_elec - 1)], axis=-1)
@@ -42,7 +43,7 @@ class DirectionalActor(nn.Module):
         drift_elec = jnp.sum(w_elec[..., None] * u_ij, axis=1)
         
         explore_factor = jnp.where(exploration_mode, 1.0, 0.0)
-        drift_res = 0.5 * nn.tanh(drift_nuclei + drift_elec) * explore_factor
+        drift_res = self.actor_amplitude * nn.tanh(drift_nuclei + drift_elec) * explore_factor
 
         sigma_raw = self.out_sigma(x)
         sigma_scale = nn.tanh(sigma_raw)
