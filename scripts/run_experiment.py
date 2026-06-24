@@ -182,6 +182,9 @@ def main():
     parser.add_argument("--energy_clip_min", type=float, default=-50., help="minimum of clip for raw energy calculations")
     parser.add_argument("--energy_clip_max", type=float, default=0.0, help="maximum of clip for raw energy calculations")
     parser.add_argument("--actor_amplitude", type=float, default=0.05, help="amplitude of the drift maximum for RL")
+    parser.add_argument("--results_out_dir", type=str, default=None, help="where the results are stored")
+    parser.add_argument("--n_determinants", type=int, default=10, help="number of Slater determinants in ansatz")
+    parser.add_argument("--backflow_transform", type=str, default='mult', help="type of backflow transform")
     args = parser.parse_args()
 
     # system setup
@@ -201,7 +204,7 @@ def main():
     # directory setup
     timestamp = datetime.datetime.now().strftime("%d%m%Y")
     base_dir = os.path.dirname(os.path.abspath(__file__))
-    out_dir = os.path.join(base_dir, "./../results", f"{args.system}_{timestamp}")
+    out_dir = args.results_out_dir if args.results_out_dir is not None else os.path.join(base_dir, "./../results", f"{args.system}_{timestamp}")
     os.makedirs(out_dir, exist_ok=True)
 
     print("=============================================================================================")
@@ -220,8 +223,8 @@ def main():
 
     hamiltonian = FullCoulombHamiltonian(molecule)
 
-    print(f"Initializing ansatz - {args.config_name}")
-    ansatz = DeepQMCAnsatz(molecule, config_name=args.config_name)
+    print(f"Initializing ansatz | model: {"PauliNet" if args.config_name=="default" else args.config_name} | n_det: {args.n_determinants} | backflow_transform: {args.backflow_transform}")
+    ansatz = DeepQMCAnsatz(molecule, config_name=args.config_name, n_determinants=args.n_determinants, backflow_transform=args.backflow_transform)
     
     # physically informed initialization
     def get_smart_initialization(key, batch_size, mol, std=0.2):
