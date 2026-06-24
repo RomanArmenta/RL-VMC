@@ -37,7 +37,7 @@ class BaseAnsatz(ABC):
         """
         pass
 
-class DeepQMCAnsatz(BaseAnsatz):
+class DeepQMCAnsatz_(BaseAnsatz):
     """
     wrapper for DeepQMC ansatz.
     """
@@ -99,3 +99,72 @@ class DeepQMCAnsatz(BaseAnsatz):
         out = self._batched_apply(params, phys_conf_batch)
         return out.log
 
+class DeepQMCAnsatz(BaseAnsatz):
+    """
+    wrapper for DeepQMC ansatz.
+    """
+    def __init__(self, system: PhysicalSystem, config_name: str = "default", n_determinants: int = 10, backflow_transform: str = 'mult'):
+        super().__init__(system)
+
+        self.mol = Molecule(
+            coords = self.system.coords,
+            charges = self.system.charges,
+            charge = self.system.charge,
+            spin = self.system.spin
+        )
+
+        self.hamil = MolecularHamiltonian(mol = self.mol)
+
+        deepqmc_dir = os.path.dirname(deepqmc.__file__)
+        config_dir = os.path.join(deepqmc_dir, "conf", "ansatz")
+
+        # Manejamos el string "none" para que Hydra lo interprete como objeto nulo (apaga el backflow)
+        bf_val = "null" if backflow_transform.lower() == "none" else f"'{backflow_transform}'"
+        
+        # Inyectamos los argumentos directamente al compose de Hydra
+        overrides = [
+            f"n_determinants={n_determinants}",
+            f"backflow_transform={bf_val}"
+        ]
+
+        with initialize_config_dir(version_base=None, config_dir=config_dir):
+            cfg = compose(config_name=config_name, overrides=overrides)
+            _ansatz_factory = instantiate(cfg, _recursive_=True, _convert_="all")
+
+        self.ansatz = instantiate_ansatz(self.hamil, _ansatz_factory)
+
+        self._batched_apply = jax.vmap(self.ansatz.apply, in_axes = (None, 0))
+
+    def init(self, rng_key, batch_walkers):
+        """
+        generates weights from the model evaluating a single test walker
+        """
+        single_walker = batch_walkers[0]
+
+        phys_conf = PhysicalConfiguration(
+            R = self.system.coords,
+            r = single_walker,
+            mol_idx = jnp.array(0, dtype=jnp.int32)
+        )
+
+        return self.ansatz.init(rng_key, phys_conf)
+    
+    def apply(self, params, walkers):
+        """
+        evaluates a batch of walkers and returns a 1D tensor of log |Psi|
+        """
+        batch_size = walkers.shape[0]
+
+        # clone into [batch_size, N_nuclei, 3]
+        R_batch = jnp.tile(self.system.coords, (batch_size, 1, 1))
+
+        # all walkers in the same molecule (index 0)
+        mol_idx_batch = jnp.zeros(batch_size, dtype=jnp.int32)
+        phys_conf_batch = PhysicalConfiguration(
+            R = R_batch,
+            r = walkers,
+            mol_idx = mol_idx_batch
+        )
+
+        out = self._batched_apply(params, phys_conf_batch)
+        return out.log
