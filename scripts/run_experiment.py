@@ -186,6 +186,8 @@ def main():
     parser.add_argument("--results_out_dir", type=str, default=None, help="where the results are stored")
     parser.add_argument("--n_determinants", type=int, default=10, help="number of Slater determinants in ansatz")
     parser.add_argument("--backflow_transform", type=str, default='mult', help="type of backflow transform")
+    parser.add_argument("--actor_warmup_steps", type=int, default=1_000, help="number of initial VMC steps with actor turn off")
+    parser.add_argument("--max_phys_jump_std", type=float, default=3.0, help="maximum number of standard deviations (tau) for the distance term in reward function")
     args = parser.parse_args()
 
     # system setup
@@ -274,7 +276,19 @@ def main():
             key, k_act = jax.random.split(key)
             params_actor = actor.init(k_act, walkers, 0, molecule.coords)
 
-            sched_actor = optax.exponential_decay(init_value=args.lr_actor, transition_steps=args.trans_steps_sched_actor, decay_rate=args.decay_rate_actor)
+            # sched_actor = optax.exponential_decay(init_value=args.lr_actor, transition_steps=args.trans_steps_sched_actor, decay_rate=args.decay_rate_actor)
+            # 2. Schedule Dinámico para el Actor (¡La Magia del Warm Start!)
+            sched_actor = optax.join_schedules(
+                schedules=[
+                    optax.constant_schedule(0.0),  # phase 1: LR = 0.0 (frozen actor, only MALA)
+                    optax.exponential_decay(       # phase 2: actor LR turns on and decays
+                        init_value=args.lr_actor, 
+                        transition_steps=args.trans_steps_sched_actor, 
+                        decay_rate=args.decay_rate_actor
+                    )
+                ],
+                boundaries=[args.actor_warmup_steps] # step where warmup stops
+            )
             opt_actor = optax.chain(optax.clip_by_global_norm(1.0), optax.adam(learning_rate=sched_actor))
             opt_state_actor = opt_actor.init(params_actor)
 
@@ -319,7 +333,8 @@ def main():
             energy_clip_min=args.energy_clip_min,
             energy_clip_max=args.energy_clip_max,
             min_clip_grads_ansatz=args.min_clip_grads_ansatz,
-            max_clip_grads_ansatz=args.max_clip_grads_ansatz)
+            max_clip_grads_ansatz=args.max_clip_grads_ansatz,
+            max_phys_jump_std=args.max_phys_jump_std)
 
         # init cache
         def sum_log_psi(w):

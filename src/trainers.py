@@ -24,13 +24,14 @@ class GroundStateTrainer(BaseTrainer):
     Trainer specialized in finding the truth ground state through energy minimization
     """
 
-    def __init__(self, system, hamiltonian, sampler, opt_ansatz, opt_actor=None, sigma_energy_clip=5.0, energy_clip_min = -50., energy_clip_max = 0., min_clip_grads_ansatz = -20., max_clip_grads_ansatz = 20.):
+    def __init__(self, system, hamiltonian, sampler, opt_ansatz, opt_actor=None, max_phys_jump_std=3.0, sigma_energy_clip=5.0, energy_clip_min = -50., energy_clip_max = 0., min_clip_grads_ansatz = -20., max_clip_grads_ansatz = 20.):
         super().__init__(system, hamiltonian, sampler, opt_ansatz, opt_actor)
         self.energy_clip_min = energy_clip_min
         self.energy_clip_max = energy_clip_max
         self.sigma_energy_clip = sigma_energy_clip
         self.min_clip_grads_ansatz = min_clip_grads_ansatz
         self.max_clip_grads_ansatz = max_clip_grads_ansatz
+        self.max_phys_jump_std = max_phys_jump_std
 
     @partial(jax.jit, static_argnums=(0,))
     def step_ansatz(self, walkers, params_psi, opt_state_psi):
@@ -108,8 +109,10 @@ class GroundStateTrainer(BaseTrainer):
             
             grad_penalty = jnp.clip(raw_penalty, 0.0, 50.0)
             penalty_for_reject = penalty_factor * (1.0 - alpha_exact)
+
+            max_physical_jump = self.max_phys_jump_std * jnp.sqrt(self.sampler.tau)
             
-            term_dist = beta * proposal_dist * alpha_exact
+            term_dist = beta * jnp.clip(proposal_dist, a_min=0.0, a_max=max_physical_jump) * alpha_exact
             term_penalty = gamma * grad_penalty
             
             rewards = term_dist - term_penalty - penalty_for_reject
