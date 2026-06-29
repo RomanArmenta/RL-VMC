@@ -33,6 +33,8 @@ class GroundStateTrainer(BaseTrainer):
         self.max_clip_grads_ansatz = max_clip_grads_ansatz
         self.max_phys_jump_std = max_phys_jump_std
 
+        print("rewards = beta * term_dist - gamma * term_penalty - penalty_factor * penalty_for_reject")
+
     @partial(jax.jit, static_argnums=(0,))
     def step_ansatz(self, walkers, params_psi, opt_state_psi):
         """
@@ -108,14 +110,14 @@ class GroundStateTrainer(BaseTrainer):
             alpha_exact = jnp.exp(safe_log_ratio - jax.nn.softplus(safe_log_ratio))
             
             grad_penalty = jnp.clip(raw_penalty, 0.0, 50.0)
-            penalty_for_reject = penalty_factor * (1.0 - alpha_exact)
+            penalty_for_reject = (1.0 - alpha_exact)
 
             max_physical_jump = self.max_phys_jump_std * jnp.sqrt(self.sampler.tau)
             
-            term_dist = beta * jnp.clip(proposal_dist, a_min=0.0, a_max=max_physical_jump) * alpha_exact
-            term_penalty = gamma * grad_penalty
+            term_dist =  jnp.clip(proposal_dist, a_min=0.0, a_max=max_physical_jump) * alpha_exact
+            term_penalty = grad_penalty
             
-            rewards = term_dist - term_penalty - penalty_for_reject
+            rewards = beta * term_dist - gamma * term_penalty - penalty_factor * penalty_for_reject
             
             # Cálculo del Advantage para estabilizar REINFORCE
             mean_r = jnp.mean(rewards)
@@ -129,6 +131,7 @@ class GroundStateTrainer(BaseTrainer):
             stats["mean_reward"] = mean_r
             stats["reward_dist"] = jnp.mean(term_dist)
             stats["reward_penalty"] = jnp.mean(term_penalty)
+            stats["penalty_for_reject"] = jnp.mean(penalty_for_reject)
             
             return pg_loss, (w_new, stats, new_cache)
 

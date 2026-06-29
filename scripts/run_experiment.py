@@ -404,7 +404,10 @@ def main():
                     "EJD": float(stats.get("ejd", 0.0)),
                     "Reward": mean_reward,
                     "Grad_Ansatz_Norm": grad_ansatz_norm,
-                    "Actor_Loss": actor_loss_val
+                    "Actor_Loss": actor_loss_val,
+                    "reward_penalty": float(stats.get("reward_penalty", 0.0)),
+                    "reward_dist": float(stats.get("reward_dist", 0.0)),
+                    "penalty_for_reject": float(stats.get("penalty_for_reject", 0.0))
                 }
                 training_history.append(log_data)
 
@@ -413,7 +416,9 @@ def main():
                         print(f"Step: {step:05d} | E: {e_mean:0.4f} Ha | Var: {e_var:6.2f} | "
                               f"Acc: {stats['acceptance']:.2f} | EJD: {stats['ejd']:.4f} | "
                               f"Rew: {mean_reward:5.2f} | |g_psi|: {grad_ansatz_norm:5.2f} | "
-                              f"L_act: {actor_loss_val:5.2f} | Best E: {e_best:.4f}")
+                              f"L_act: {actor_loss_val:5.2f} | Best E: {e_best:.4f} | "
+                              f"Rew_penalty: {log_data["reward_penalty"]:5.2f} | Rew_dist: {log_data["reward_dist"]:5.2f} | "
+                              f"Pen_for_reject: {log_data["penalty_for_reject"]:5.2f}")
                     else:
                         print(f"Step: {step:05d} | E: {e_mean:0.4f} Ha | Var: {e_var:6.2f} | "
                               f"Acc: {stats['acceptance']:.2f} | EJD: {stats['ejd']:.4f} | "
