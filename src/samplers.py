@@ -76,6 +76,7 @@ class BaseSampler(ABC):
         stats = {
             "acceptance": jnp.mean(accept),
             "mean_log_ratio": jnp.mean(safe_log_ratio),
+            "safe_log_ratio_vector": safe_log_ratio,
             "ejd": ejd
         }
 
