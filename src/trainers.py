@@ -367,10 +367,11 @@ class GroundStateTrainer_new(BaseTrainer):
             raw_penalty = rl_data["raw_penalty"]
             gamma = rl_data["gamma"]
             beta = rl_data["beta"]
-            penalty_factor = rl_data["penalty_factor"]
+            kappa = rl_data["kappa"]
+            # penalty_factor = rl_data["penalty_factor"]
             
             # reward
-            safe_log_ratio = stats["mean_log_ratio"] 
+            safe_log_ratio = stats["mean_log_ratio_vector"] 
             alpha_exact = jnp.exp(safe_log_ratio - jax.nn.softplus(safe_log_ratio))
             
             grad_penalty = jnp.clip(raw_penalty, 0.0, 50.0)
@@ -388,7 +389,7 @@ class GroundStateTrainer_new(BaseTrainer):
 
             grad_threshold = 50.0 # Valor empírico ajustable
             soft_node_penalty = jnp.maximum(0.0, raw_penalty - grad_threshold) * 0.01
-            rewards = (p_accept * clipped_dist) - soft_node_penalty
+            rewards = (p_accept * clipped_dist) - soft_node_penalty + kappa * (1 - p_accept) * alpha_exact
 
             # Cálculo del Advantage para estabilizar REINFORCE
             mean_r = jnp.mean(rewards)

@@ -21,7 +21,7 @@ from src.system import PhysicalSystem
 from src.wavefunctions import DeepQMCAnsatz
 from src.hamiltonians import FullCoulombHamiltonian
 from src.samplers import MALASampler, RLMALASampler
-from src.trainers import GroundStateTrainer, GroundStateTrainer_test
+from src.trainers import GroundStateTrainer, GroundStateTrainer_test, GroundStateTrainer_new
 from src.actors import DirectionalActor
 from src.aux_functions import calculate_iat, compiled_measure_phase
 
@@ -188,6 +188,7 @@ def main():
     parser.add_argument("--backflow_transform", type=str, default='mult', help="type of backflow transform")
     parser.add_argument("--actor_warmup_steps", type=int, default=1_000, help="number of initial VMC steps with actor turn off")
     parser.add_argument("--max_phys_jump_std", type=float, default=3.0, help="maximum number of standard deviations (tau) for the distance term in reward function")
+    parser.add_argument("--kappa", type=float, default=1.0, help="parameter fort the new term in reward_new")
     args = parser.parse_args()
 
     # system setup
@@ -304,6 +305,7 @@ def main():
                                   tau=args.tau, 
                                   gamma=args.gamma, 
                                   beta=args.beta, 
+                                  kappa=args.kappa,
                                   scale_clip_min=args.scale_clip_min,
                                   scale_clip_max=args.scale_clip_max,
                                   min_clip_grads_ansatz=args.min_clip_grads_ansatz,
@@ -323,7 +325,7 @@ def main():
                                   posinf_clip_log_ratio=args.posinf_clip_log_ratio)
             opt_actor = None
 
-        trainer = GroundStateTrainer_test(
+        trainer = GroundStateTrainer_new(
             system=molecule, 
             hamiltonian=hamiltonian, 
             sampler=sampler, 
