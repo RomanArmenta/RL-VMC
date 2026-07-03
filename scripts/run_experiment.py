@@ -188,6 +188,7 @@ def main():
     parser.add_argument("--backflow_transform", type=str, default='mult', help="type of backflow transform")
     parser.add_argument("--actor_warmup_steps", type=int, default=1_000, help="number of initial VMC steps with actor turn off")
     parser.add_argument("--max_phys_jump_std", type=float, default=3.0, help="maximum number of standard deviations (tau) for the distance term in reward function")
+    parser.add_argument("--kappa", type=float, default=0.1, help="parameter for the new reward function")
     args = parser.parse_args()
 
     # system setup
@@ -304,6 +305,7 @@ def main():
                                   tau=args.tau, 
                                   gamma=args.gamma, 
                                   beta=args.beta, 
+                                  kappa=args.kappa,
                                   scale_clip_min=args.scale_clip_min,
                                   scale_clip_max=args.scale_clip_max,
                                   min_clip_grads_ansatz=args.min_clip_grads_ansatz,
