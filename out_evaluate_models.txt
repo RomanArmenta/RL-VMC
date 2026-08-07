@@ -1,0 +1,56 @@
+nohup: ignoring input
+JAX was imported before deepqmc, TensorFloat32 precision might be enabled. You may experience numerical issues.
+
+[1/4] Ansatz MALA + Sampler MALA
+  -> Sample 0/1000 | Mode: Actor OFF | E_mean: -28.7407 Ha | Acc: 69.04%
+  -> Sample 100/1000 | Mode: Actor OFF | E_mean: -24.6606 Ha | Acc: 68.26%
+  -> Sample 200/1000 | Mode: Actor OFF | E_mean: -24.6467 Ha | Acc: 70.46%
+  -> Sample 300/1000 | Mode: Actor OFF | E_mean: -24.6604 Ha | Acc: 71.21%
+  -> Sample 400/1000 | Mode: Actor OFF | E_mean: -24.6619 Ha | Acc: 71.25%
+  -> Sample 500/1000 | Mode: Actor OFF | E_mean: -24.6507 Ha | Acc: 71.49%
+  -> Sample 600/1000 | Mode: Actor OFF | E_mean: -24.6491 Ha | Acc: 71.60%
+  -> Sample 700/1000 | Mode: Actor OFF | E_mean: -24.6406 Ha | Acc: 71.37%
+  -> Sample 800/1000 | Mode: Actor OFF | E_mean: -24.6523 Ha | Acc: 71.44%
+  -> Sample 900/1000 | Mode: Actor OFF | E_mean: -24.6695 Ha | Acc: 71.38%
+
+[2/4] Ansatz RL-MALA + Sampler RL-MALA
+  -> Sample 0/1000 | Mode: Actor ON  | E_mean: -22.6451 Ha | Acc: 37.21%
+  -> Sample 100/1000 | Mode: Actor ON  | E_mean: -24.6468 Ha | Acc: 28.32%
+  -> Sample 200/1000 | Mode: Actor ON  | E_mean: -24.6504 Ha | Acc: 29.67%
+  -> Sample 300/1000 | Mode: Actor ON  | E_mean: -24.6535 Ha | Acc: 30.63%
+  -> Sample 400/1000 | Mode: Actor ON  | E_mean: -24.6514 Ha | Acc: 29.73%
+  -> Sample 500/1000 | Mode: Actor ON  | E_mean: -24.6499 Ha | Acc: 29.96%
+  -> Sample 600/1000 | Mode: Actor ON  | E_mean: -24.6513 Ha | Acc: 29.74%
+  -> Sample 700/1000 | Mode: Actor ON  | E_mean: -24.6523 Ha | Acc: 29.67%
+  -> Sample 800/1000 | Mode: Actor ON  | E_mean: -24.6466 Ha | Acc: 29.82%
+  -> Sample 900/1000 | Mode: Actor ON  | E_mean: -24.6501 Ha | Acc: 29.96%
+
+[3/4] Ansatz RL-MALA + Sampler MALA
+  -> Sample 0/1000 | Mode: Actor OFF | E_mean: -11.1057 Ha | Acc: 72.66%
+  -> Sample 100/1000 | Mode: Actor OFF | E_mean: -24.6509 Ha | Acc: 68.65%
+  -> Sample 200/1000 | Mode: Actor OFF | E_mean: -24.6567 Ha | Acc: 70.56%
+  -> Sample 300/1000 | Mode: Actor OFF | E_mean: -24.6883 Ha | Acc: 71.02%
+  -> Sample 400/1000 | Mode: Actor OFF | E_mean: -24.6512 Ha | Acc: 71.21%
+  -> Sample 500/1000 | Mode: Actor OFF | E_mean: -24.6534 Ha | Acc: 71.56%
+  -> Sample 600/1000 | Mode: Actor OFF | E_mean: -24.6510 Ha | Acc: 71.24%
+  -> Sample 700/1000 | Mode: Actor OFF | E_mean: -24.6737 Ha | Acc: 71.57%
+  -> Sample 800/1000 | Mode: Actor OFF | E_mean: -24.6513 Ha | Acc: 71.41%
+  -> Sample 900/1000 | Mode: Actor OFF | E_mean: -24.6579 Ha | Acc: 71.16%
+
+[4/4] Ansatz MALA + Sampler RL-MALA
+  -> Sample 0/1000 | Mode: Actor ON  | E_mean: -30.4000 Ha | Acc: 35.45%
+  -> Sample 100/1000 | Mode: Actor ON  | E_mean: -24.6548 Ha | Acc: 28.33%
+  -> Sample 200/1000 | Mode: Actor ON  | E_mean: -24.6560 Ha | Acc: 29.47%
+  -> Sample 300/1000 | Mode: Actor ON  | E_mean: -24.6469 Ha | Acc: 29.50%
+  -> Sample 400/1000 | Mode: Actor ON  | E_mean: -24.6765 Ha | Acc: 29.53%
+  -> Sample 500/1000 | Mode: Actor ON  | E_mean: -24.6646 Ha | Acc: 29.86%
+  -> Sample 600/1000 | Mode: Actor ON  | E_mean: -24.6565 Ha | Acc: 29.82%
+  -> Sample 700/1000 | Mode: Actor ON  | E_mean: -24.6579 Ha | Acc: 29.68%
+  -> Sample 800/1000 | Mode: Actor ON  | E_mean: -24.6448 Ha | Acc: 30.39%
+  -> Sample 900/1000 | Mode: Actor ON  | E_mean: -24.6582 Ha | Acc: 29.86%
+
+Trajectories and energies saved to: results/B_md_sjbf_final_2026-08-03_DAC/trajectories_B.npz
+
+Generating physical distribution plots...
+Distribution plot saved to: results/B_md_sjbf_final_2026-08-03_DAC/physical_distributions_B.png
+All plots generated successfully.

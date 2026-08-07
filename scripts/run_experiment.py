@@ -22,7 +22,7 @@ from src.wavefunctions import DeepQMCAnsatz
 from src.hamiltonians import FullCoulombHamiltonian
 from src.samplers import MALASampler, RLMALASampler
 from src.trainers import GroundStateTrainer
-from src.actors import DirectionalActor
+from src.actors import DirectionalActor, DirectionalActorCovariant, DirectionalActorIsotropic, DirectionalActorForceAligned
 from src.aux_functions import calculate_iat, compiled_measure_phase
 
 # Physical suystems to study
@@ -253,7 +253,8 @@ def main():
     print("Ansatz instantiated")
 
     # we execute this methods (samplers)
-    methods = ["RL-MALA", "MALA"]
+    methods = ["RL-MALA"]#, "MALA"]
+    #methods = ["RL-MALA", "MALA"]
 
     for method in methods:
         print("=============================================================================================")
@@ -273,7 +274,7 @@ def main():
 
         # instantiate the sampelr
         if method == "RL-MALA":
-            actor = DirectionalActor(n_elec = molecule.n_elec, n_nuclei=len(molecule.coords), actor_amplitude=args.actor_amplitude)
+            actor = DirectionalActorForceAligned(n_elec = molecule.n_elec, n_nuclei=len(molecule.coords), actor_amplitude=args.actor_amplitude)
             key, k_act = jax.random.split(key)
             params_actor = actor.init(k_act, walkers, 0, molecule.coords)
 
