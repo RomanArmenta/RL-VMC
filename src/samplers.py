@@ -82,6 +82,15 @@ class BaseSampler(ABC):
 
         if "stats" in prop_aux:
             stats.update(prop_aux["stats"])
+            
+        # --- NUEVO: Extraemos la telemetría del Actor Covariante ---
+        if "actor_stats_curr" in prop_aux:
+            actor_stats = prop_aux["actor_stats_curr"]
+            stats["sig_para"] = jnp.mean(actor_stats["mean_sigma_para"])
+            stats["sig_perp"] = jnp.mean(actor_stats["mean_sigma_perp"])
+            stats["max_w_nuc"] = jnp.max(actor_stats["max_w_nuclei"])
+            stats["d_act"] = jnp.mean(actor_stats["mean_drift_act"])
+        # ------------------------------------------------------------
         
         return stats
 
@@ -250,7 +259,7 @@ class RLMALASampler_(BaseSampler):
 
         return w_prop, log_psi_prop, grad_prop, log_q_ratio, prop_aux
 
-class RLMALASampler(BaseSampler):
+class RLMALASampler_old(BaseSampler):
     """
     hybrid sampler guided by reinforcement learning
     combines langevin - like learned drift with a parametric neural actor
@@ -385,6 +394,148 @@ class RLMALASampler(BaseSampler):
                 "mag_actor": jnp.mean(jnp.linalg.norm(drift_actor_curr, axis=-1)),
                 "mag_mala": jnp.mean(jnp.linalg.norm(self.tau * grad_curr, axis=-1))
             }
+        }
+
+        return w_prop, log_psi_prop, grad_prop, log_q_ratio, prop_aux
+
+class RLMALASampler(BaseSampler):
+    """
+    hybrid sampler guided by reinforcement learning
+    combines langevin - like learned drift with a parametric neural actor
+
+    new: actor stats
+    """
+    def __init__(self, ansatz_apply, system, batch_size, max_clip_log_ratio, min_clip_log_ratio, nan_clip_log_ratio, neginf_clip_log_ratio, posinf_clip_log_ratio, actor_apply, tau, gamma, beta, kappa, penalty_factor, scale_clip_min, scale_clip_max, min_clip_grads_ansatz, max_clip_grads_ansatz):
+        super().__init__(ansatz_apply=ansatz_apply, system=system, batch_size=batch_size, max_clip_log_ratio=max_clip_log_ratio, min_clip_log_ratio=min_clip_log_ratio, nan_clip_log_ratio=nan_clip_log_ratio, neginf_clip_log_ratio=neginf_clip_log_ratio, posinf_clip_log_ratio=posinf_clip_log_ratio)
+        self.gamma = gamma
+        self.beta = beta
+        self.penalty_factor = penalty_factor
+        self.sigma = jnp.sqrt(2.0 * tau)
+        self.tau = tau
+        self.kappa = kappa
+        self.scale_clip_min = scale_clip_min
+        self.scale_clip_max = scale_clip_max
+        self.actor_apply = actor_apply
+        self.min_clip_grads_ansatz=min_clip_grads_ansatz
+        self.max_clip_grads_ansatz=max_clip_grads_ansatz
+
+    def _compute_log_q(self, x_prop, x_curr, drift_curr, sigma_curr):
+        """
+        Calcula log q (x_prop | x_curr) adaptándose automáticamente
+        a tensores isotrópicos (diagonal) o covariantes (Cholesky).
+        """
+        mean = x_curr + drift_curr
+
+        # Detección estática en tiempo de compilación JIT
+        is_covariant = (sigma_curr.ndim == 4) 
+
+        if is_covariant:
+            # Matemática Covariante: sigma_curr es la matriz de Cholesky L (batch, elec, 3, 3)
+            delta = x_prop - mean
+            
+            # 1. Invertimos la matriz L. Usamos la inversa para resolver L * y = delta
+            inv_L = jnp.linalg.inv(sigma_curr)
+            
+            # 2. Multiplicación matricial por lotes: y = L^-1 * delta
+            y = jnp.einsum('beij,bej->bei', inv_L, delta)
+            
+            # 3. Determinante de Cholesky: log(|det(L)|) = sum(log(diag(L)))
+            log_det = jnp.sum(jnp.log(jnp.diagonal(sigma_curr, axis1=-2, axis2=-1)), axis=-1)
+            
+            # 4. Probabilidad Logarítmica (ignorando la constante 2*pi que se cancela en el ratio)
+            log_prob = -0.5 * jnp.sum(y ** 2, axis=-1) - log_det
+            
+            return jnp.sum(log_prob, axis=-1) # Suma sobre todos los electrones
+            
+        else:
+            # Matemática Element-wise (tu código original)
+            log_prob = -0.5 * ((x_prop - mean) / sigma_curr) ** 2 - jnp.log(sigma_curr)
+            return jnp.sum(log_prob, axis=(-1, -2))
+
+    def propose(self, key_prop, walkers, params, cache, **kwargs):
+        # we can change the exploration mode through kwargs
+        exploration_mode = kwargs.get("exploration_mode", True)
+        n_elec = walkers.shape[1]
+
+        # 1. get currrent gradient
+        grad_curr = cache["grad_curr"]
+
+        # 2. pass it through the actor
+        actor_vmap = jax.vmap(self.actor_apply, in_axes=(None, None, 0, None, None), out_axes=(1, 1, 0))
+        
+        drift_actor_curr, raw_sigma_scale_curr, actor_stats_curr = actor_vmap(params["actor"], walkers, jnp.arange(n_elec), self.system.coords, exploration_mode)
+
+        safe_scale_curr = jnp.exp(jnp.clip(raw_sigma_scale_curr, self.scale_clip_min, self.scale_clip_max))
+
+        # -----------------------------------------------------
+        # 3. Hybrid Proposal (Hacia adelante)
+        # -----------------------------------------------------
+        drift_curr = (self.tau * grad_curr) + drift_actor_curr
+        noise = jax.random.normal(key_prop, walkers.shape)
+
+        if raw_sigma_scale_curr.ndim == 4:
+            # Modo Covariante: Multiplicación matricial (einsum)
+            sigma_curr = self.sigma * raw_sigma_scale_curr
+            jump_curr = jnp.einsum('beij,bej->bei', sigma_curr, noise)
+        else:
+            # Modo Element-wise: Multiplicación escalar/diagonal
+            safe_scale_curr = jnp.exp(jnp.clip(raw_sigma_scale_curr, self.scale_clip_min, self.scale_clip_max))
+            sigma_curr = self.sigma * safe_scale_curr
+            jump_curr = sigma_curr * noise
+            
+        w_prop = walkers + drift_curr + jump_curr
+
+        # 4. evaluate new proposal
+        def log_psi_and_sum(w):
+            val = self.ansatz_apply(params["ansatz"], w)
+            return jnp.sum(val), val
+        
+        (_, log_psi_prop), raw_grad_prop = jax.value_and_grad(log_psi_and_sum, has_aux=True)(w_prop)
+        grad_prop = jnp.clip(raw_grad_prop, self.min_clip_grads_ansatz, self.max_clip_grads_ansatz)
+
+        # -----------------------------------------------------
+        # 5. Actor backwards (Hacia atrás)
+        # -----------------------------------------------------
+        drift_actor_prop, raw_sigma_scale_prop, _ = actor_vmap(params["actor"], w_prop, jnp.arange(n_elec), self.system.coords, exploration_mode)
+        drift_prop = (self.tau * grad_prop) + drift_actor_prop
+
+        if raw_sigma_scale_prop.ndim == 4:
+            # Modo Covariante
+            sigma_prop = self.sigma * raw_sigma_scale_prop
+        else:
+            # Modo Element-wise
+            safe_scale_prop = jnp.exp(jnp.clip(raw_sigma_scale_prop, self.scale_clip_min, self.scale_clip_max))
+            sigma_prop = self.sigma * safe_scale_prop
+            
+        # 6. compute kernel
+        log_q_fwd = self._compute_log_q(w_prop, walkers, drift_curr, sigma_curr)
+        log_q_bwd = self._compute_log_q(walkers, w_prop, drift_prop, sigma_prop)
+        log_q_ratio = log_q_bwd - log_q_fwd
+
+        # we need the stop_gradient for the FEINFORCE metrics
+        w_prop_stopped = jax.lax.stop_gradient(w_prop)
+        log_q_fwd_policy = self._compute_log_q(w_prop_stopped, walkers, drift_curr, sigma_curr)
+
+        # 7. package the aux for rl training
+        proposal_dist = jnp.mean(jnp.linalg.norm(w_prop - walkers, axis=-1), axis=-1)
+        raw_penalty = jnp.mean(jnp.linalg.norm(grad_prop, axis=-1), axis=-1)
+
+        prop_aux = {
+            "rl_data": {
+                "log_q_fwd_policy": log_q_fwd_policy,
+                "proposal_dist": proposal_dist,
+                "raw_penalty": raw_penalty,
+                "gamma": self.gamma,
+                "beta": self.beta,
+                "kappa": self.kappa,
+                "penalty_factor": self.penalty_factor
+            },
+            "stats": {
+                "mean_sigma": jnp.mean(sigma_curr),
+                "mag_actor": jnp.mean(jnp.linalg.norm(drift_actor_curr, axis=-1)),
+                "mag_mala": jnp.mean(jnp.linalg.norm(self.tau * grad_curr, axis=-1))
+            },
+            "actor_stats_curr": actor_stats_curr
         }
 
         return w_prop, log_psi_prop, grad_prop, log_q_ratio, prop_aux

@@ -15,7 +15,7 @@ from src.system import PhysicalSystem
 from src.wavefunctions import DeepQMCAnsatz
 from src.hamiltonians import FullCoulombHamiltonian
 from src.samplers import MALASampler, RLMALASampler
-from src.actors import DirectionalActor, DirectionalActorIsotropic, DirectionalActorCovariant
+from src.actors import DirectionalActor, DirectionalActorIsotropic, DirectionalActorCovariant, DirectionalActorForceAligned
 from src.aux_functions import calculate_iat
 from scripts.run_experiment import SYSTEMS 
 
@@ -188,7 +188,7 @@ def main():
     key, k_init, k_run = jax.random.split(key, 3)
 
     ansatz = DeepQMCAnsatz(molecule)
-    actor = DirectionalActorCovariant(n_elec=molecule.n_elec, n_nuclei=len(molecule.coords))
+    actor = DirectionalActorForceAligned(n_elec=molecule.n_elec, n_nuclei=len(molecule.coords))
     hamiltonian = FullCoulombHamiltonian(molecule)
 
     clip_args = {

@@ -253,7 +253,7 @@ def main():
     print("Ansatz instantiated")
 
     # we execute this methods (samplers)
-    methods = ["RL-MALA"]#, "MALA"]
+    methods = ["RL-MALA", "MALA"]
     #methods = ["RL-MALA", "MALA"]
 
     for method in methods:
@@ -416,12 +416,18 @@ def main():
 
                 if step % args.n_print == 0:
                     if method == "RL-MALA":
+                        # Extraemos las variables (con fallback a 0.0 si no existen)
+                        sig_para = float(stats.get("sig_para", 0.0))
+                        sig_perp = float(stats.get("sig_perp", 0.0))
+                        max_w_nuc = float(stats.get("max_w_nuc", 0.0))
+                        d_act = float(stats.get("d_act", 0.0))
                         print(f"Step: {step:05d} | E: {e_mean:0.4f} Ha | Var: {e_var:6.2f} | "
                               f"Acc: {stats['acceptance']:.2f} | EJD: {stats['ejd']:.4f} | "
                               f"Rew: {mean_reward:5.2f} | |g_psi|: {grad_ansatz_norm:5.2f} | "
                               f"L_act: {actor_loss_val:5.2f} | Best E: {e_best:.4f} | "
                               f"Rew_penalty: {log_data["reward_penalty"]:5.2f} | Rew_dist: {log_data["reward_dist"]:5.2f} | "
-                              f"Pen_for_reject: {log_data["penalty_for_reject"]:5.2f}")
+                              f"Pen_for_reject: {log_data["penalty_for_reject"]:5.2f}"
+                              f" | s_para: {sig_para:.3f} | s_perp: {sig_perp:.3f} | w_nuc: {max_w_nuc:.2f} | D_act: {d_act:.4f}")
                     else:
                         print(f"Step: {step:05d} | E: {e_mean:0.4f} Ha | Var: {e_var:6.2f} | "
                               f"Acc: {stats['acceptance']:.2f} | EJD: {stats['ejd']:.4f} | "

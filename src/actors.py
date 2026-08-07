@@ -232,36 +232,52 @@ class DirectionalActorForceAligned(nn.Module):
         f_elec = jnp.sum(w_elec[..., None] * u_ij, axis=1)
         f_total = f_nuclei + f_elec
         
-        # Normalizamos para obtener f_hat
-        norm_f = jnp.linalg.norm(f_total, axis=-1, keepdims=True) + 1e-8
+        sq_norm = jnp.sum(f_total**2, axis=-1, keepdims=True)
+        norm_f = jnp.sqrt(sq_norm + 1e-8)
         f_hat = f_total / norm_f
         
-        # El Drift sigue siendo direccional alineado con la fuerza
         drift_res = self.actor_amplitude * nn.tanh(f_total) * explore_factor
 
-        # --- 4. Construcción de la Matriz de Covarianza ---
-        # Garantizamos que las varianzas sean positivas y no colapsen a 0 absoluto (1e-4)
-        sigma_para = jax.nn.softplus(self.out_sigma_para(x)) + 1e-4
-        sigma_perp = jax.nn.softplus(self.out_sigma_perp(x)) + 1e-4
+        # --- 4. Construcción Segura de la Matriz de Covarianza ---
+        raw_para = self.out_sigma_para(x)
+        raw_perp = self.out_sigma_perp(x)
         
-        sigma_para_sq = (sigma_para ** 2) * explore_factor
-        sigma_perp_sq = (sigma_perp ** 2) * explore_factor
+        # CLIPPING ESTRICTO: Previene la explosión a infinito del RL
+        safe_para = jnp.clip(raw_para, -5.0, 1.0)
+        safe_perp = jnp.clip(raw_perp, -5.0, 1.0)
+        
+        # ESCALAMIENTO: jnp.exp asegura valores positivos acotados
+        sigma_para = jnp.exp(safe_para)
+        sigma_perp = jnp.exp(safe_perp)
+        
+        # MODO EVALUACIÓN: Si está apagado, forzamos a 1.0 (Matriz Identidad para MALA clásico)
+        sigma_para = jnp.where(exploration_mode, sigma_para, 1.0)
+        sigma_perp = jnp.where(exploration_mode, sigma_perp, 1.0)
+        
+        sigma_para_sq = sigma_para ** 2
+        sigma_perp_sq = sigma_perp ** 2
         
         ident = jnp.eye(3).reshape(1, 3, 3)
-        
-        # Producto exterior: f_hat @ f_hat^T -> Shape (batch, 3, 3)
         f_outer = jnp.einsum('bi,bj->bij', f_hat, f_hat)
         
-        # Sigma = (sigma_perp^2 * I) + (sigma_para^2 - sigma_perp^2) * f_outer
         term1 = sigma_perp_sq[..., None] * ident
         term2 = (sigma_para_sq - sigma_perp_sq)[..., None] * f_outer
         
         Sigma = term1 + term2 
         
-        # Estabilizador numérico para la descomposición
+        # Estabilizador numérico
         Sigma = Sigma + (1e-5 * ident)
         
-        # Obtenemos la matriz de Cholesky (L) con shape (batch, 3, 3) para el Sampler
         sigma_cholesky = jnp.linalg.cholesky(Sigma)
+
+        # --- NUEVO: Construcción del diccionario de diagnóstico ---
+        actor_stats = {
+            "mean_sigma_para": jnp.mean(sigma_para),
+            "mean_sigma_perp": jnp.mean(sigma_perp),
+            "max_w_nuclei": jnp.max(jnp.abs(w_nuclei)),
+            "mean_drift_act": jnp.mean(jnp.linalg.norm(drift_res, axis=-1))
+        }
         
-        return drift_res, sigma_cholesky
+        # Devolvemos tres elementos ahora
+        return drift_res, sigma_cholesky, actor_stats
+        
