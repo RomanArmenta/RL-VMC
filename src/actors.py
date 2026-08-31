@@ -2,6 +2,28 @@ from flax import linen as nn
 import jax.numpy as jnp
 import jax
 from functools import partial
+from __future__ import annotations
+
+"""Actor architectures for the shared single-electron RL proposal policy.
+
+The actor architecture is deliberately separated from the proposal *mode*.
+The proposal mode (scale_only / residual_mala / full_gaussian) determines how
+actor outputs are converted into a Gaussian Metropolis-Hastings proposal.
+This module determines how the state is represented and how the neural actor
+maps that state to bounded action components.
+"""
+
+import math
+from typing import Literal
+
+import jax
+import jax.numpy as jnp
+
+from physics import SystemConfig, spin_labels
+
+Array = jax.Array
+ActorArchitecture = Literal["flat_mlp", "multibranch_deepset"]
+
 
 class DirectionalActor(nn.Module):
     n_elec: int
