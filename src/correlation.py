@@ -6,7 +6,7 @@ import math
 import jax
 import jax.numpy as jnp
 
-from physics import SystemConfig, pair_distances, pair_spin_masks
+from src.physics import SystemConfig, pair_distances, pair_spin_masks
 
 Array = jax.Array
 CorrelationModel = Literal[

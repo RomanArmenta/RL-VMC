@@ -7,9 +7,9 @@ import numpy as np
 import jax
 import jax.numpy as jnp
 
-from physics import SystemConfig
-from optimizer import adam_init, adam_update
-from actors import ActorModel, ActorArchitecture, init_mlp, mlp_apply
+from src.physics import SystemConfig
+from src.optimizer import adam_init, adam_update
+from src.actors import ActorModel, ActorArchitecture, init_mlp, mlp_apply
 
 Array = jax.Array
 RLMode = Literal["scale_only", "residual_mala", "full_gaussian"]

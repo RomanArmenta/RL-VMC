@@ -5,10 +5,10 @@ from typing import Literal, NamedTuple
 import jax
 import jax.numpy as jnp
 
-from physics import SystemConfig
-from wavefunction import WavefunctionConfig, log_probability, grad_log_probability_single
-from orbitals import OrbitalConfig
-from correlation import CorrelationConfig
+from src.physics import SystemConfig
+from src.wavefunction import WavefunctionConfig, log_probability, grad_log_probability_single
+from src.orbitals import OrbitalConfig
+from src.correlation import CorrelationConfig
 
 Array = jax.Array
 SamplerName = Literal["metropolis", "mala"]
