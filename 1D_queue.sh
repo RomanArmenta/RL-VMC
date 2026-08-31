@@ -55,7 +55,7 @@ for omega in "${OMEGAS[@]}"; do
 
                 echo "[$(date +'%H:%M:%S')] -> GPU $FREE_GPU libre. Ejecutando: $experiment_name"
 
-                CUDA_VISIBLE_DEVICES="$FREE_GPU" nohup python3 -u run_experiments_1D.py \
+                CUDA_VISIBLE_DEVICES="$FREE_GPU" nohup python3 -u scripts/run_experiment_1D.py \
                         --rl_method="$method" \
                         --n_elec=$N_ELEC \
                         --n_up=$N_UP \

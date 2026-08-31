@@ -6,7 +6,7 @@ import numpy as np
 import jax
 import jax.numpy as jnp
 
-from physics import SystemConfig, spin_labels
+from src.physics import SystemConfig, spin_labels
 
 Array = jax.Array
 OrbitalModel = Literal["ho_fixed", "ho_variational", "gaussian_basis", "backflow_ho"]

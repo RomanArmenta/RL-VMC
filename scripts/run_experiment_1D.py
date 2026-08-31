@@ -2,6 +2,8 @@ import os
 os.environ["JAX_ENABLE_X64"] = "True"
 
 import sys
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
 import time
 import argparse
 import datetime

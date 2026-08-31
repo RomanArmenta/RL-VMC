@@ -5,13 +5,13 @@ import numpy as np
 import jax
 import jax.numpy as jnp
 
-from physics import SystemConfig
-from wavefunction import WavefunctionConfig
-from orbitals import OrbitalConfig
-from correlation import CorrelationConfig
-from rl import RLConfig, RLHistory, TD3Agent, ReplayBuffer, state_dim, action_dim
-from rl_sampler import rl_update_one_electron_cached, run_rl_chain
-from sampler import batch_log_probability, batch_grad_log_probability
+from src.physics import SystemConfig
+from src.wavefunction import WavefunctionConfig
+from src.orbitals import OrbitalConfig
+from src.correlation import CorrelationConfig
+from src.rl import RLConfig, RLHistory, TD3Agent, ReplayBuffer, state_dim, action_dim
+from src.rl_sampler import rl_update_one_electron_cached, run_rl_chain
+from src.sampler import batch_log_probability, batch_grad_log_probability
 
 
 def _safe_mean(values):

@@ -4,15 +4,15 @@ from typing import Literal
 import jax
 import jax.numpy as jnp
 
-from physics import SystemConfig
-from orbitals import (
+from src.physics import SystemConfig
+from src.orbitals import (
     OrbitalConfig,
     init_orbital_params,
     determinant_logabs_sign,
     orbital_parameter_summary,
     physical_orbital_params,
 )
-from correlation import (
+from src.correlation import (
     CorrelationConfig,
     init_correlation_params,
     log_correlation_factor,
