@@ -4,11 +4,11 @@ from typing import NamedTuple, Any
 import jax
 import jax.numpy as jnp
 
-from physics import SystemConfig
-from wavefunction import WavefunctionConfig, log_abs_psi
-from orbitals import OrbitalConfig
-from correlation import CorrelationConfig
-from local_energy import local_energies
+from src.physics import SystemConfig
+from src.wavefunction import WavefunctionConfig, log_abs_psi
+from src.orbitals import OrbitalConfig
+from src.correlation import CorrelationConfig
+from src.local_energy import local_energies
 
 
 class AdamState(NamedTuple):

@@ -605,7 +605,7 @@ class RLMALASampler_Huziel(BaseSampler):
         grad_curr = cache["grad_curr"]
 
         # 2. pass it through the actor
-        actor_vmap = jax.vmap(self.actor_apply, in_axes=(None, None, 0, None, None), out_axes=(1, 1, 0))
+        actor_vmap = jax.vmap(self.actor_apply, in_axes=(None, None, 0, None, None, None), out_axes=(1, 1, 0))
         
         drift_actor_curr, raw_sigma_scale_curr, actor_stats_curr = actor_vmap(params["actor"], walkers, jnp.arange(n_elec), self.system.coords, exploration_mode, grad_curr)
 

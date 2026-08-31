@@ -37,7 +37,7 @@ def calculate_iat(time_series, max_lag=2000):
 
 def format_metrics(log_data, include_keys=None):
     """Genera un string formateado dinámicamente."""
-    priority = ["Step", "E_mean", "E_Var", "Acceptance", "EJD"] # Nota: Asegúrate de que las mayúsculas coincidan
+    priority = ["Step", "E_mean", "E_Var", "Acceptance", "EJD"] 
     
     parts = []
     # Imprimir prioridades primero
@@ -52,6 +52,10 @@ def format_metrics(log_data, include_keys=None):
     # Imprimir el resto
     for k, v in log_data.items():
         if k not in priority and (include_keys is None or k in include_keys):
-            parts.append(f"{k}: {float(v):.3f}")
+            # NUEVO: Verificamos si el valor es un string
+            if isinstance(v, str):
+                parts.append(f"{k}: {v}")
+            else:
+                parts.append(f"{k}: {float(v):.3f}")
             
     return " | ".join(parts)

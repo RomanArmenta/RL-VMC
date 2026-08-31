@@ -1,7 +1,3 @@
-from flax import linen as nn
-import jax.numpy as jnp
-import jax
-from functools import partial
 from __future__ import annotations
 
 """Actor architectures for the shared single-electron RL proposal policy.
@@ -19,10 +15,15 @@ from typing import Literal
 import jax
 import jax.numpy as jnp
 
-from physics import SystemConfig, spin_labels
+from src.physics import SystemConfig, spin_labels
 
 Array = jax.Array
 ActorArchitecture = Literal["flat_mlp", "multibranch_deepset"]
+
+from flax import linen as nn
+import jax.numpy as jnp
+import jax
+from functools import partial
 
 
 class DirectionalActor(nn.Module):
@@ -522,79 +523,89 @@ class Actor_Huziel(nn.Module):
         self.out_sigma = nn.Dense(1, kernel_init=nn.initializers.zeros)
 
     def __call__(self, walkers, elec_idx, r_nuclei, exploration_mode, grad_log_prob):
-        # reduce to 1D
-        x = walkers[..., 0]      # [N]
-        g = grad_log_prob[..., 0] # [N]
+        # x y g tienen shape: [batch, N]
+        x = walkers[..., 0]      
+        g = grad_log_prob[..., 0] 
         
         N = self.n_elec
         
-        # local branch (single electron characteristics)
-        x_i = x[elec_idx]
-        g_i = g[elec_idx]
+        # 1. Rama Local
+        # Seleccionamos el electrón para TODO EL BATCH simultáneamente -> shape: [batch]
+        x_i = x[:, elec_idx]
+        g_i = g[:, elec_idx]
         
-        # generate spin vector (+1 for ip -1 for down)
         spins = jnp.concatenate([jnp.ones(self.n_up), -jnp.ones(self.n_dn)])
-        spin_i = spins[elec_idx]
+        spin_i = spins[elec_idx] # Escalar
+        # Expandimos el espín para que tenga el tamaño del batch -> shape: [batch]
+        spin_batch = jnp.full_like(x_i, spin_i)
         
+        # Centro de masa por walker -> shape: [batch]
+        com = jnp.mean(x, axis=1)
+        
+        # Apilamos en el último eje -> shape: [batch, 4]
         local_feat = jnp.stack([
-            x_i,                   # position
-            x_i - jnp.mean(x),     # distance to mass center
-            nn.tanh(g_i / 5.0),    # quantum force with clipping
-            spin_i                 # spin
-        ])
+            x_i,                   
+            x_i - com,     
+            nn.tanh(g_i / 5.0),    
+            spin_batch                 
+        ], axis=-1)
         
-        # global branch - whole system characteristic vbector
+        # 2. Rama Global
         global_feat = jnp.stack([
             N / 10.0, 
             self.n_up / max(N, 1),
-            jnp.tanh(1.0), # interactions (hardcoded)
-            jnp.tanh(1.0)  # trap freq
-        ])
+            jnp.tanh(1.0), 
+            jnp.tanh(1.0)  
+        ]) # shape: [4]
+        # Expandimos la información global a todo el batch -> shape: [batch, 4]
+        global_feat = jnp.broadcast_to(global_feat, (x.shape[0], 4))
         
-        # Deep Sets for neighbors
-        dx = x_i - x
-        r = jnp.abs(dx)
-        direction = jnp.sign(dx)
+        # 3. Deep Sets para vecinos
+        dx = x_i[:, None] - x            # shape: [batch, N]
+        r = jnp.abs(dx)                  # shape: [batch, N]
+        direction = jnp.sign(dx)         # shape: [batch, N]
         
-        # Gaussians for basis
         centers = jnp.linspace(0.0, 5.0, 6)
-        basis = jnp.exp(-0.5 * ((r[..., None] - centers) / 0.8)**2)
+        basis = jnp.exp(-0.5 * ((r[..., None] - centers) / 0.8)**2) # shape: [batch, N, 6]
         
-        # inputs for pairs: [dist, direction, base_rbf]
-        pair_input = jnp.concatenate([r[..., None], direction[..., None], basis], axis=-1)
+        pair_input = jnp.concatenate([r[..., None], direction[..., None], basis], axis=-1) # shape: [batch, N, 8]
         
-        # masks
-        not_self = jnp.arange(N) != elec_idx
-        same_mask = (spins == spin_i) & not_self
-        opp_mask = (spins != spin_i) & not_self
+        # Máscaras booleanas -> shape: [N]
+        not_self = jnp.arange(N) != elec_idx 
+        same_mask = (spins == spin_i) & not_self 
+        opp_mask = (spins != spin_i) & not_self 
         
-        # apply encoders and take mean
-        msg_same = self.same_spin_enc(pair_input) * same_mask[..., None]
-        pool_same = jnp.sum(msg_same, axis=0) / jnp.maximum(jnp.sum(same_mask), 1.0)
+        # Expandimos las máscaras al batch -> shape: [batch, N]
+        same_mask = jnp.broadcast_to(same_mask[None, :], (x.shape[0], N))
+        opp_mask = jnp.broadcast_to(opp_mask[None, :], (x.shape[0], N))
+        
+        # Mensajes y Pooling (Aseguramos promediar sobre el eje N: axis=1)
+        msg_same = self.same_spin_enc(pair_input) * same_mask[..., None] # shape: [batch, N, 32]
+        pool_same = jnp.sum(msg_same, axis=1) / jnp.maximum(jnp.sum(same_mask, axis=1, keepdims=True), 1.0) # shape: [batch, 32]
         
         msg_opp = self.opp_spin_enc(pair_input) * opp_mask[..., None]
-        pool_opp = jnp.sum(msg_opp, axis=0) / jnp.maximum(jnp.sum(opp_mask), 1.0)
+        pool_opp = jnp.sum(msg_opp, axis=1) / jnp.maximum(jnp.sum(opp_mask, axis=1, keepdims=True), 1.0)
         
-        # fusion
-        h_local = self.local_enc(local_feat)
-        h_global = self.global_enc(global_feat)
+        # 4. Fusión
+        h_local = self.local_enc(local_feat)     # shape: [batch, 32]
+        h_global = self.global_enc(global_feat)  # shape: [batch, 16]
         
-        fused = jnp.concatenate([h_local, h_global, pool_same, pool_opp], axis=-1)
-        h = self.fusion(fused)
+        fused = jnp.concatenate([h_local, h_global, pool_same, pool_opp], axis=-1) # shape: [batch, 112]
+        h = self.fusion(fused) # shape: [batch, 64]
         
-        # out
+        # 5. Salidas
         explore_factor = jnp.where(exploration_mode, 1.0, 0.0)
         
-        # actor return drift and scale, we make it 1D
+        # Salidas shape: [batch, 1]
         drift_res = self.actor_amplitude * nn.tanh(self.out_drift(h)) * explore_factor
         sigma_scale = nn.tanh(self.out_sigma(h)) * explore_factor
         
+        # Métricas (aplanamos el último eje con [:, 0] para guardar escalares por walker)
         stats = {
-            "d_act": jnp.abs(drift_res[0]),
-            "sig_scale": sigma_scale[0]
+            "d_act": jnp.abs(drift_res[:, 0]),
+            "sig_scale": sigma_scale[:, 0]
         }
         
-        # (batch, N_elec, 1) to match 3D sampler
         return drift_res, sigma_scale, stats
 
 

@@ -371,7 +371,7 @@ class GroundStateTrainer_new(BaseTrainer):
             # penalty_factor = rl_data["penalty_factor"]
             
             # reward
-            safe_log_ratio = stats["mean_log_ratio_vector"] 
+            safe_log_ratio = stats["safe_log_ratio_vector"] 
             alpha_exact = jnp.exp(safe_log_ratio - jax.nn.softplus(safe_log_ratio))
             
             grad_penalty = jnp.clip(raw_penalty, 0.0, 50.0)

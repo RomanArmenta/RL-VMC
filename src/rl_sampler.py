@@ -9,7 +9,7 @@ from src.wavefunction import WavefunctionConfig
 from src.orbitals import OrbitalConfig
 from src.correlation import CorrelationConfig
 from src.sampler import batch_log_probability, batch_grad_log_probability
-from rl import (
+from src.rl import (
     RLConfig,
     actor_apply,
     local_state_features_from_grad,
