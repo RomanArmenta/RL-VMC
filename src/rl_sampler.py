@@ -4,11 +4,11 @@ from typing import NamedTuple
 import jax
 import jax.numpy as jnp
 
-from physics import SystemConfig
-from wavefunction import WavefunctionConfig
-from orbitals import OrbitalConfig
-from correlation import CorrelationConfig
-from sampler import batch_log_probability, batch_grad_log_probability
+from src.physics import SystemConfig
+from src.wavefunction import WavefunctionConfig
+from src.orbitals import OrbitalConfig
+from src.correlation import CorrelationConfig
+from src.sampler import batch_log_probability, batch_grad_log_probability
 from rl import (
     RLConfig,
     actor_apply,
