@@ -22,8 +22,8 @@ from src.wavefunctions import DeepQMCAnsatz
 from src.hamiltonians import FullCoulombHamiltonian
 from src.samplers import MALASampler, RLMALASampler
 from src.trainers import GroundStateTrainer
-from src.actors import DirectionalActor, DirectionalActorCovariant, DirectionalActorIsotropic, DirectionalActorForceAligned
-from src.aux_functions import calculate_iat, compiled_measure_phase
+from src.actors import DirectionalActor, DirectionalActorCovariant, DirectionalActorIsotropic, DirectionalActorForceAligned, DirectionalActorForceAligned_new
+from src.aux_functions import calculate_iat, compiled_measure_phase, format_metrics
 
 # Physical suystems to study
 SYSTEMS = {
@@ -189,6 +189,7 @@ def main():
     parser.add_argument("--actor_warmup_steps", type=int, default=1_000, help="number of initial VMC steps with actor turn off")
     parser.add_argument("--max_phys_jump_std", type=float, default=3.0, help="maximum number of standard deviations (tau) for the distance term in reward function")
     parser.add_argument("--kappa", type=float, default=0.1, help="parameter for the new reward function")
+    parser.add_argument("--actor_name", type=str, default="DirectionalActorForceAligned", help="Name of the actor model")
     args = parser.parse_args()
 
     # system setup
@@ -274,7 +275,16 @@ def main():
 
         # instantiate the sampelr
         if method == "RL-MALA":
-            actor = DirectionalActorForceAligned(n_elec = molecule.n_elec, n_nuclei=len(molecule.coords), actor_amplitude=args.actor_amplitude)
+            if args.actor_name == "DirectionalActorForceAligned_new":
+                actor = DirectionalActorForceAligned_new(n_elec = molecule.n_elec, n_nuclei=len(molecule.coords), actor_amplitude=args.actor_amplitude)
+            elif args.actor_name == "DirectionalActorForceAligned":
+                actor = DirectionalActorForceAligned(n_elec = molecule.n_elec, n_nuclei = len(molecule.coords), actor_amplitude = args.actor_amplitude)
+            elif args.actor_name == "DirectionalActorIsotropic":
+                actor = DirectionalActorIsotropic(n_elec = molecule.n_elec, n_nuclei = len(molecule.coords), actor_amplitude = args.actor_amplitude)
+            elif args.actor_name == "DirectionalActorCovariant":
+                actor = DirectionalActorCovariant(n_elec = molecule.n_elec, n_nuclei = len(molecule.coords), actor_amplitude = args.actor_amplitude)
+            elif args.actor_name == "DirectionalActor":
+                actor = DirectionalActor(n_elec = molecule.n_elec, n_nuclei = len(molecule.coords), actor_amplitude = args.actor_amplitude)
             key, k_act = jax.random.split(key)
             params_actor = actor.init(k_act, walkers, 0, molecule.coords)
 
@@ -399,7 +409,7 @@ def main():
                 # loss
                 actor_loss_val = float(loss_act) if method == "RL-MALA" and 'loss_act' in locals() else 0.0
 
-                log_data = {
+                all_stats = {
                     "Step": step,
                     "E_mean": float(e_mean),
                     "E_Var": float(e_var),
@@ -412,26 +422,24 @@ def main():
                     "reward_dist": float(stats.get("reward_dist", 0.0)),
                     "penalty_for_reject": float(stats.get("penalty_for_reject", 0.0))
                 }
+
+                # 1. Combinamos todos los diccionarios
+                all_stats.update(stats)
+
+                # 2. Extraemos escalares y FILTRAMOS vectores (como safe_log_ratio_vector)
+                log_data = {}
+                for k, v in all_stats.items():
+                    # Si es un array de JAX/NumPy y tiene más de 0 dimensiones (es un vector/matriz), lo ignoramos
+                    if hasattr(v, "ndim") and v.ndim > 0:
+                        continue
+                    
+                    # Extraemos el valor nativo de Python
+                    log_data[k] = v.item() if hasattr(v, "item") else v
+
                 training_history.append(log_data)
 
                 if step % args.n_print == 0:
-                    if method == "RL-MALA":
-                        # Extraemos las variables (con fallback a 0.0 si no existen)
-                        sig_para = float(stats.get("sig_para", 0.0))
-                        sig_perp = float(stats.get("sig_perp", 0.0))
-                        max_w_nuc = float(stats.get("max_w_nuc", 0.0))
-                        d_act = float(stats.get("d_act", 0.0))
-                        print(f"Step: {step:05d} | E: {e_mean:0.4f} Ha | Var: {e_var:6.2f} | "
-                              f"Acc: {stats['acceptance']:.2f} | EJD: {stats['ejd']:.4f} | "
-                              f"Rew: {mean_reward:5.2f} | |g_psi|: {grad_ansatz_norm:5.2f} | "
-                              f"L_act: {actor_loss_val:5.2f} | Best E: {e_best:.4f} | "
-                              f"Rew_penalty: {log_data["reward_penalty"]:5.2f} | Rew_dist: {log_data["reward_dist"]:5.2f} | "
-                              f"Pen_for_reject: {log_data["penalty_for_reject"]:5.2f}"
-                              f" | s_para: {sig_para:.3f} | s_perp: {sig_perp:.3f} | w_nuc: {max_w_nuc:.2f} | D_act: {d_act:.4f}")
-                    else:
-                        print(f"Step: {step:05d} | E: {e_mean:0.4f} Ha | Var: {e_var:6.2f} | "
-                              f"Acc: {stats['acceptance']:.2f} | EJD: {stats['ejd']:.4f} | "
-                              f"|g_psi|: {grad_ansatz_norm:5.2f} | Best E: {e_best:.4f}")
+                    print(format_metrics(log_data))
 
 
         print(f"Training ended in {time.time() - t_start:.1f} seconds.")

@@ -34,3 +34,24 @@ def calculate_iat(time_series, max_lag=2000):
         tau_int += rho_t
         if rho_t < 0.05 or t >= 5 * tau_int: break
     return tau_int
+
+def format_metrics(log_data, include_keys=None):
+    """Genera un string formateado dinámicamente."""
+    priority = ["Step", "E_mean", "E_Var", "Acceptance", "EJD"] # Nota: Asegúrate de que las mayúsculas coincidan
+    
+    parts = []
+    # Imprimir prioridades primero
+    for k in priority:
+        if k in log_data:
+            val = log_data[k]
+            if k == "Step":
+                parts.append(f"{k}: {int(val):05d}")
+            else:
+                parts.append(f"{k}: {float(val):.4f}")
+    
+    # Imprimir el resto
+    for k, v in log_data.items():
+        if k not in priority and (include_keys is None or k in include_keys):
+            parts.append(f"{k}: {float(v):.3f}")
+            
+    return " | ".join(parts)

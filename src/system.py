@@ -13,8 +13,19 @@ class PhysicalSystem:
     coords: jnp.ndarray
     charges: jnp.ndarray
     charge: int = 0
+    dim: int = 3
 
     @property
     def spin(self):
         """Total spin"""
         return self.n_up - self.n_dn
+
+@dataclass
+class Harmonic_1D(PhysicalSystem):
+    """
+    Harmonic potential in one dimension
+    """
+    omega: float = 1.0
+    interaction_strength: float = 1.0
+    softening: float = 0.25
+    dim: int = 1

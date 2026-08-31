@@ -9,6 +9,8 @@ from deepqmc.hamil import MolecularHamiltonian
 from deepqmc.types import PhysicalConfiguration
 from hydra import initialize_config_dir, compose
 from hydra.utils import instantiate
+from src.physics import SystemConfig
+from src.wavefunction import log_abs_psi, init_wavefunction_params
 import jax
 import jax.numpy as jnp
 
@@ -168,3 +170,38 @@ class DeepQMCAnsatz(BaseAnsatz):
 
         out = self._batched_apply(params, phys_conf_batch)
         return out.log
+
+
+class Ansatz1D_Huziel(BaseAnsatz):
+    def __init__(self, system, wf_cfg, orbital_cfg, correlation_cfg):
+        super().__init__(system)
+        self.wf_cfg = wf_cfg
+        self.orbital_cfg = orbital_cfg
+        self.correlation_cfg = correlation_cfg
+
+        # adapt modular system to new dataclass
+        self.sys_cfg = SystemConfig(
+            n_electrons=system.n_elec,
+            n_up = system.n_up,
+            omega = system.omega,
+            interaction_strength=system.interaction_strength,
+            softening=system.softening
+        )
+
+    def init(self, rng_key, batch_walkers):
+        # we need to init the parameters
+        return init_wavefunction_params(
+            rng_key, self.sys_cfg, self.wf_cfg, self.orbital_cfg, self.correlation_cfg
+        )
+
+    def apply(self, params, walkers):
+        # walkers shape: [batch, N_elec, 1]
+        # we want [N] per molecule
+        # get rid of extra spatial dimension -> [batch, N_elec]
+        
+        x_1d = walkers[..., 0]
+
+        def single_apply(x):
+            return log_abs_psi(params, x, self.sys_cfg, self.wf_cfg, self.orbital_cfg, self.correlation_cfg)
+
+        return jax.vmap(single_apply)(x_1d)

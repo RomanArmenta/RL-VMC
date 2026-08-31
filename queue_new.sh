@@ -3,7 +3,7 @@
 # Directorios necesarios
 mkdir -p logs results params
 
-GPUS=(0 1 2)
+GPUS=(2)
 today=$(date +%F)
 
 echo "========================================================"
@@ -41,8 +41,8 @@ for param_file in params/*.conf; do
     experiment_name="$(basename "$param_file" .conf)"
     
     # El out_dir ahora incluye el experiment_name para diferenciar sd_sj, md_sjbf, etc.
-    out_dir="./results/${experiment_name}_${today}_DAFA_small"
-    log_name="${experiment_name}_${today}_new_DAFA_small_log.txt"
+    out_dir="./results/${experiment_name}_${today}_100kTS_newDAFA"
+    log_name="${experiment_name}_${today}_100kTS_newDAFA.txt"
 
     # Esperar hasta obtener una GPU libre
     FREE_GPU=$(get_free_gpu)
@@ -89,6 +89,7 @@ for param_file in params/*.conf; do
             --actor_warmup_steps=$ACTOR_WARMUP_STEPS \
             --max_phys_jump_std=$MAX_PHYS_JUMP_STD \
             --kappa=$KAPPA \
+            --actor_name=$ACTOR_NAME \
             > "./logs/$log_name" 2>&1 &
 
     sleep 10

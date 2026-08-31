@@ -8,6 +8,9 @@ class _BaseHamiltonian(ABC):
     """
     abstract class for Hamiltonians in VMC
     implements the general computation of kinetic energy using JAX
+
+    DEPRICATED FOR BETTER DIM CURSE MANAGEMENT  
+
     """
 
     def __init__(self, system: PhysicalSystem):
@@ -84,9 +87,10 @@ class BaseHamiltonian(ABC):
             grad_sq = jnp.sum(grad_val**2)
 
             n_e = self.system.n_elec
-            dim_total = n_e * 3
+            dim = self.system.dim
+            dim_total = n_e * dim
             
-            basis = jnp.eye(dim_total).reshape(dim_total, n_e, 3)
+            basis = jnp.eye(dim_total).reshape(dim_total, n_e, dim)
 
             def scan_body(carry, v):
                 _, hvp = jax.jvp(grad_f, (r_single,), (v,))
@@ -155,3 +159,25 @@ class FullCoulombHamiltonian(BaseHamiltonian):
         V_ee = jnp.sum((1.0 / dist_ee_safe) * mask_ee[None, :, :], axis=(1, 2))
 
         return V_en + V_ee + self.V_NN
+
+class Harmonic1DHamiltonian(BaseHamiltonian):
+    def potential_energy(self, r_elec):
+        """
+        r_elec shape: [batch, N_elec, 1]
+        """
+
+        # get spatial dimension -> shape: [batch, N_elec]
+        x = r_elec[..., 0]
+
+        # harmonic potential
+        v_harm = 0.5 * (self.system.omega**2) * jnp.sum(x**2, axis = -1)
+
+        # interaction
+        diff_ee = x[:, :, None] - x[:, None, :]
+        dist_sq = diff_ee**2 + self.system.softening**2
+        mask_ee = jnp.triu(jnp.ones((self.system.n_elec, self.system.n_elec)), k=1)
+
+        v_int = self.system.interaction_strength * jnp.sum(
+            (1.0 / jnp.sqrt(dist_sq)) * mask_ee, axis = (1, 2)
+        )
+        return v_harm + v_int
