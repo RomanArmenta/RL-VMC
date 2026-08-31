@@ -574,3 +574,437 @@ class Actor_Huziel(nn.Module):
         
         # (batch, N_elec, 1) to match 3D sampler
         return drift_res, sigma_scale, stats
+
+
+def _default_float_dtype():
+    return jnp.float64 if jax.config.x64_enabled else jnp.float32
+
+
+def _init_dense(key: Array, in_dim: int, out_dim: int, zero: bool = False) -> dict:
+    dtype = _default_float_dtype()
+    if zero:
+        w = jnp.zeros((in_dim, out_dim), dtype=dtype)
+        b = jnp.zeros((out_dim,), dtype=dtype)
+    else:
+        limit = math.sqrt(6.0 / max(in_dim + out_dim, 1))
+        w = jax.random.uniform(
+            key, (in_dim, out_dim), minval=-limit, maxval=limit, dtype=dtype
+        )
+        b = jnp.zeros((out_dim,), dtype=dtype)
+    return {"w": w, "b": b}
+
+
+def init_mlp(
+    key: Array,
+    in_dim: int,
+    hidden_dim: int,
+    hidden_layers: int,
+    out_dim: int,
+    zero_last: bool = False,
+) -> tuple[dict, ...]:
+    """SiLU MLP used by actors and TD3 critics."""
+    keys = jax.random.split(key, hidden_layers + 1)
+    layers = []
+    d = int(in_dim)
+    for k in range(int(hidden_layers)):
+        layers.append(_init_dense(keys[k], d, int(hidden_dim), zero=False))
+        d = int(hidden_dim)
+    layers.append(_init_dense(keys[-1], d, int(out_dim), zero=zero_last))
+    return tuple(layers)
+
+
+def mlp_apply(params: tuple[dict, ...], x: Array, final_tanh: bool = False) -> Array:
+    h = jnp.asarray(x)
+    for layer in params[:-1]:
+        h = jax.nn.silu(h @ layer["w"] + layer["b"])
+    y = h @ params[-1]["w"] + params[-1]["b"]
+    return jnp.tanh(y) if final_tanh else y
+
+
+def _softplus_inverse(x: Array) -> Array:
+    # Stable enough for the strictly-positive widths used here.
+    x = jnp.asarray(x)
+    return jnp.log(jnp.expm1(jnp.maximum(x, 1e-6)))
+
+
+class ActorModel:
+    """Factory/dispatcher containing the available shared-electron actors.
+
+    Available architectures
+    -----------------------
+    flat_mlp
+        Reproduces the original actor: fixed spin-resolved pooled Gaussian-RBF
+        features are concatenated with scalar features and sent through one MLP.
+
+    multibranch_deepset
+        Physics-structured actor discussed in the project:
+
+        * local branch: selected-electron coordinate, COM-relative coordinate,
+          quantum force, and selected spin;
+        * global branch: N, spin fraction, interaction strength, trap frequency,
+          and soft-Coulomb length;
+        * separate same-spin/opposite-spin pair encoders applied to every
+          neighbour and mean-pooled (Deep Sets construction);
+        * fusion network;
+        * separate residual-mean and proposal-scale heads.
+
+        The radial Gaussian embedding used inside each pair encoder can be
+        either fixed or trainable.  When trainable, centers and positive widths
+        are part of the actor parameter tree and therefore are optimized by TD3.
+
+    The class is intentionally stateless apart from immutable configuration;
+    all trainable quantities live in the returned JAX parameter PyTree.
+    """
+
+    FLAT = "flat_mlp"
+    MULTIBRANCH = "multibranch_deepset"
+    AVAILABLE = (FLAT, MULTIBRANCH)
+
+    def __init__(self, cfg, system_cfg: SystemConfig):
+        self.cfg = cfg
+        self.system_cfg = system_cfg
+        if cfg.actor_architecture not in self.AVAILABLE:
+            raise ValueError(
+                f"Unknown actor architecture {cfg.actor_architecture!r}; "
+                f"choose one of {self.AVAILABLE}"
+            )
+
+    @property
+    def action_dim(self) -> int:
+        return 1 if self.cfg.mode == "scale_only" else 2
+
+    @property
+    def max_same_neighbors(self) -> int:
+        return max(max(self.system_cfg.n_up - 1, 0), max(self.system_cfg.n_down - 1, 0))
+
+    @property
+    def max_opposite_neighbors(self) -> int:
+        if self.system_cfg.n_up == 0 or self.system_cfg.n_down == 0:
+            return 0
+        return max(self.system_cfg.n_up, self.system_cfg.n_down)
+
+    @property
+    def state_dim(self) -> int:
+        if self.cfg.actor_architecture == self.FLAT:
+            # Original representation: 6 scalar + four K-dimensional pooled RBF channels.
+            return 6 + 4 * self.cfg.pair_feature_components
+
+        # Structured representation stored in replay:
+        # 4 local + 5 global + [r_norm, direction, mask] for each padded
+        # same-spin and opposite-spin neighbour slot.
+        return 4 + 5 + 3 * (self.max_same_neighbors + self.max_opposite_neighbors)
+
+    def build_state(
+        self,
+        walkers: Array,
+        grad_log_prob: Array,
+        electron_index: int,
+    ) -> Array:
+        if self.cfg.actor_architecture == self.FLAT:
+            return self._build_flat_state(walkers, grad_log_prob, electron_index)
+        return self._build_multibranch_state(walkers, grad_log_prob, electron_index)
+
+    def init(self, key: Array):
+        if self.cfg.actor_architecture == self.FLAT:
+            return init_mlp(
+                key,
+                self.state_dim,
+                self.cfg.hidden_dim,
+                self.cfg.hidden_layers,
+                self.action_dim,
+                zero_last=True,
+            )
+        return self._init_multibranch(key)
+
+    def apply(self, params, state: Array) -> Array:
+        if self.cfg.actor_architecture == self.FLAT:
+            return mlp_apply(params, state, final_tanh=True)
+        return self._apply_multibranch(params, state)
+
+    # ------------------------------------------------------------------
+    # Original flat actor
+    # ------------------------------------------------------------------
+    def _build_flat_state(self, walkers: Array, grad_log_prob: Array, electron_index: int) -> Array:
+        x = jnp.asarray(walkers)
+        g = jnp.asarray(grad_log_prob)
+        N = self.system_cfg.n_electrons
+        i = int(electron_index)
+        spins = spin_labels(self.system_cfg)
+
+        dx = x[:, i, None] - x
+        r = jnp.abs(dx)
+        centers = jnp.linspace(
+            0.0, self.cfg.pair_feature_r_max, self.cfg.pair_feature_components
+        )
+        basis = jnp.exp(-0.5 * ((r[..., None] - centers) / self.cfg.pair_feature_width) ** 2)
+
+        not_self = jnp.arange(N) != i
+        same_mask = (spins == spins[i]) & not_self
+        opp_mask = (spins != spins[i]) & not_self
+        same_f = same_mask.astype(x.dtype)
+        opp_f = opp_mask.astype(x.dtype)
+
+        n_same = jnp.sum(same_f)
+        n_opp = jnp.sum(opp_f)
+        denom_same = jnp.maximum(n_same, 1.0)
+        denom_opp = jnp.maximum(n_opp, 1.0)
+        direction = jnp.sign(dx)
+
+        same_even = jnp.sum(basis * same_f[None, :, None], axis=1) / denom_same
+        same_odd = (
+            jnp.sum(basis * direction[..., None] * same_f[None, :, None], axis=1)
+            / denom_same
+        )
+        opp_even = jnp.sum(basis * opp_f[None, :, None], axis=1) / denom_opp
+        opp_odd = (
+            jnp.sum(basis * direction[..., None] * opp_f[None, :, None], axis=1)
+            / denom_opp
+        )
+
+        denom_n = float(max(N - 1, 1))
+        scalar = jnp.stack(
+            [
+                x[:, i] / self.cfg.coordinate_scale,
+                (x[:, i] - jnp.mean(x, axis=1)) / self.cfg.coordinate_scale,
+                jnp.tanh(g[:, i] / self.cfg.force_scale),
+                jnp.full((x.shape[0],), spins[i], dtype=x.dtype),
+                jnp.full((x.shape[0],), n_same / denom_n, dtype=x.dtype),
+                jnp.full((x.shape[0],), n_opp / denom_n, dtype=x.dtype),
+            ],
+            axis=-1,
+        )
+        return jnp.concatenate(
+            [scalar, same_even, same_odd, opp_even, opp_odd], axis=-1
+        )
+
+    # ------------------------------------------------------------------
+    # Structured Deep-Sets actor
+    # ------------------------------------------------------------------
+    def _pair_slots(self, r: Array, dx: Array, mask: Array, max_slots: int) -> Array:
+        """Return distance-sorted padded pair slots [r_norm, direction, mask].
+
+        Sorting makes the replay representation itself invariant to relabeling
+        neighbours within a spin sector.  The actor additionally applies the
+        same pair encoder to every slot and pools, so its output is permutation
+        invariant even without relying on slot order.
+        """
+        W, N = r.shape
+        if max_slots == 0:
+            return jnp.zeros((W, 0, 3), dtype=r.dtype)
+
+        mask_w = jnp.broadcast_to(mask[None, :], (W, N))
+        large = jnp.asarray(1e12, dtype=r.dtype)
+        keys = jnp.where(mask_w, r, large)
+        order = jnp.argsort(keys, axis=1)[:, :max_slots]
+        rr = jnp.take_along_axis(r, order, axis=1)
+        dd = jnp.take_along_axis(dx, order, axis=1)
+        mm = jnp.take_along_axis(mask_w, order, axis=1)
+
+        rr = jnp.where(mm, rr / self.cfg.pair_feature_r_max, 0.0)
+        direction = jnp.where(mm, jnp.sign(dd), 0.0)
+        return jnp.stack([rr, direction, mm.astype(r.dtype)], axis=-1)
+
+    def _build_multibranch_state(
+        self, walkers: Array, grad_log_prob: Array, electron_index: int
+    ) -> Array:
+        x = jnp.asarray(walkers)
+        g = jnp.asarray(grad_log_prob)
+        i = int(electron_index)
+        N = self.system_cfg.n_electrons
+        spins = spin_labels(self.system_cfg)
+
+        # Dynamic local information.  The quantum force is already computed by
+        # MALA, so exposing it to the actor has negligible extra physics cost.
+        local = jnp.stack(
+            [
+                x[:, i] / self.cfg.coordinate_scale,
+                (x[:, i] - jnp.mean(x, axis=1)) / self.cfg.coordinate_scale,
+                jnp.tanh(g[:, i] / self.cfg.force_scale),
+                jnp.full((x.shape[0],), spins[i], dtype=x.dtype),
+            ],
+            axis=-1,
+        )
+
+        # Static system context.  These values do not help distinguish steps
+        # within one run, but allow one shared policy to condition on different
+        # systems in transfer/generalization experiments.
+        global_vec = jnp.asarray(
+            [
+                N / 10.0,
+                self.system_cfg.n_up / max(N, 1),
+                math.tanh(float(self.system_cfg.interaction_strength)),
+                math.tanh(float(self.system_cfg.omega)),
+                math.tanh(float(self.system_cfg.softening)),
+            ],
+            dtype=x.dtype,
+        )
+        global_context = jnp.broadcast_to(global_vec[None, :], (x.shape[0], 5))
+
+        dx = x[:, i, None] - x
+        r = jnp.abs(dx)
+        not_self = jnp.arange(N) != i
+        same_mask = (spins == spins[i]) & not_self
+        opp_mask = (spins != spins[i]) & not_self
+
+        same_slots = self._pair_slots(r, dx, same_mask, self.max_same_neighbors)
+        opp_slots = self._pair_slots(r, dx, opp_mask, self.max_opposite_neighbors)
+
+        return jnp.concatenate(
+            [
+                local,
+                global_context,
+                same_slots.reshape((x.shape[0], -1)),
+                opp_slots.reshape((x.shape[0], -1)),
+            ],
+            axis=-1,
+        )
+
+    def _init_radial_embedding(self, key: Array) -> dict:
+        K = int(self.cfg.pair_feature_components)
+        width_norm = max(
+            float(self.cfg.pair_feature_width) / float(self.cfg.pair_feature_r_max),
+            1e-3,
+        )
+        if self.cfg.trainable_embedding:
+            # Interior initialization allows sigmoid-parameterized centers to
+            # move in both directions while remaining in [0, 1].
+            centers = jnp.linspace(0.05, 0.95, K, dtype=_default_float_dtype())
+            center_raw = jnp.log(centers) - jnp.log1p(-centers)
+            width_raw = jnp.full(
+                (K,), _softplus_inverse(jnp.asarray(width_norm, dtype=centers.dtype)),
+                dtype=centers.dtype,
+            )
+            return {"center_raw": center_raw, "width_raw": width_raw}
+        return {}
+
+    def _embedding_values(self, r_norm: Array, params: dict) -> Array:
+        K = int(self.cfg.pair_feature_components)
+        if self.cfg.trainable_embedding:
+            centers = jax.nn.sigmoid(params["center_raw"])
+            widths = jax.nn.softplus(params["width_raw"]) + 1e-4
+        else:
+            centers = jnp.linspace(0.0, 1.0, K, dtype=r_norm.dtype)
+            widths = jnp.full(
+                (K,),
+                max(
+                    float(self.cfg.pair_feature_width)
+                    / float(self.cfg.pair_feature_r_max),
+                    1e-4,
+                ),
+                dtype=r_norm.dtype,
+            )
+        return jnp.exp(-0.5 * ((r_norm[..., None] - centers) / widths) ** 2)
+
+    def _init_multibranch(self, key: Array):
+        keys = jax.random.split(key, 8)
+        pair_in = 2 + int(self.cfg.pair_feature_components)  # r_norm, direction, RBFs
+
+        params = {
+            "local_encoder": init_mlp(
+                keys[0], 4, self.cfg.local_embedding_dim,
+                self.cfg.branch_hidden_layers, self.cfg.local_embedding_dim,
+            ),
+            "global_encoder": init_mlp(
+                keys[1], 5, self.cfg.global_embedding_dim,
+                self.cfg.branch_hidden_layers, self.cfg.global_embedding_dim,
+            ),
+            "same_pair_encoder": init_mlp(
+                keys[2], pair_in, self.cfg.pair_embedding_dim,
+                self.cfg.branch_hidden_layers, self.cfg.pair_embedding_dim,
+            ),
+            "opposite_pair_encoder": init_mlp(
+                keys[3], pair_in, self.cfg.pair_embedding_dim,
+                self.cfg.branch_hidden_layers, self.cfg.pair_embedding_dim,
+            ),
+            "radial_embedding": self._init_radial_embedding(keys[4]),
+        }
+        fusion_in = (
+            self.cfg.local_embedding_dim
+            + self.cfg.global_embedding_dim
+            + 2 * self.cfg.pair_embedding_dim
+        )
+        params["fusion"] = init_mlp(
+            keys[5], fusion_in, self.cfg.fusion_dim,
+            self.cfg.fusion_hidden_layers, self.cfg.fusion_dim,
+        )
+        if self.cfg.mode != "scale_only":
+            params["mean_head"] = init_mlp(
+                keys[6], self.cfg.fusion_dim, self.cfg.head_hidden_dim,
+                self.cfg.head_hidden_layers, 1, zero_last=True,
+            )
+        params["scale_head"] = init_mlp(
+            keys[7], self.cfg.fusion_dim, self.cfg.head_hidden_dim,
+            self.cfg.head_hidden_layers, 1, zero_last=True,
+        )
+        return params
+
+    def _decode_multibranch_state(self, state: Array):
+        s = jnp.asarray(state)
+        p = 0
+        local = s[..., p : p + 4]
+        p += 4
+        global_context = s[..., p : p + 5]
+        p += 5
+
+        ns = self.max_same_neighbors
+        no = self.max_opposite_neighbors
+        same = s[..., p : p + 3 * ns].reshape(s.shape[:-1] + (ns, 3))
+        p += 3 * ns
+        opp = s[..., p : p + 3 * no].reshape(s.shape[:-1] + (no, 3))
+        return local, global_context, same, opp
+
+    def _encode_pair_branch(self, slots: Array, encoder_params, radial_params) -> Array:
+        # slots: (..., n_slots, 3) = [r_norm, direction, mask]
+        if slots.shape[-2] == 0:
+            return jnp.zeros(slots.shape[:-2] + (self.cfg.pair_embedding_dim,), dtype=slots.dtype)
+        r_norm = slots[..., 0]
+        direction = slots[..., 1]
+        mask = slots[..., 2]
+        radial = self._embedding_values(r_norm, radial_params)
+        pair_input = jnp.concatenate(
+            [r_norm[..., None], direction[..., None], radial], axis=-1
+        )
+        messages = mlp_apply(encoder_params, pair_input, final_tanh=False)
+        messages = messages * mask[..., None]
+        denom = jnp.maximum(jnp.sum(mask, axis=-1, keepdims=True), 1.0)
+        return jnp.sum(messages, axis=-2) / denom
+
+    def _apply_multibranch(self, params, state: Array) -> Array:
+        local, global_context, same, opp = self._decode_multibranch_state(state)
+        h_local = mlp_apply(params["local_encoder"], local, final_tanh=False)
+        h_global = mlp_apply(params["global_encoder"], global_context, final_tanh=False)
+        h_same = self._encode_pair_branch(
+            same, params["same_pair_encoder"], params["radial_embedding"]
+        )
+        h_opp = self._encode_pair_branch(
+            opp, params["opposite_pair_encoder"], params["radial_embedding"]
+        )
+        fused = jnp.concatenate([h_local, h_same, h_opp, h_global], axis=-1)
+        h = mlp_apply(params["fusion"], fused, final_tanh=False)
+
+        scale = mlp_apply(params["scale_head"], h, final_tanh=True)[..., 0]
+        if self.cfg.mode == "scale_only":
+            return scale[..., None]
+        mean = mlp_apply(params["mean_head"], h, final_tanh=True)[..., 0]
+        return jnp.stack([mean, scale], axis=-1)
+
+    def embedding_parameters_physical(self, params) -> dict:
+        """Return human-readable radial centers/widths for diagnostics."""
+        if self.cfg.actor_architecture != self.MULTIBRANCH:
+            return {}
+        K = int(self.cfg.pair_feature_components)
+        if self.cfg.trainable_embedding:
+            radial = params["radial_embedding"]
+            centers_norm = jax.nn.sigmoid(radial["center_raw"])
+            widths_norm = jax.nn.softplus(radial["width_raw"]) + 1e-4
+        else:
+            centers_norm = jnp.linspace(0.0, 1.0, K, dtype=_default_float_dtype())
+            widths_norm = jnp.full(
+                (K,),
+                float(self.cfg.pair_feature_width) / float(self.cfg.pair_feature_r_max),
+                dtype=_default_float_dtype(),
+            )
+        return {
+            "centers": centers_norm * self.cfg.pair_feature_r_max,
+            "widths": widths_norm * self.cfg.pair_feature_r_max,
+        }
