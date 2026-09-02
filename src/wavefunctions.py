@@ -11,6 +11,7 @@ from hydra import initialize_config_dir, compose
 from hydra.utils import instantiate
 from src.physics import SystemConfig
 from src.wavefunction import log_abs_psi, init_wavefunction_params
+from src.orbitals import OrbitalConfig
 import jax
 import jax.numpy as jnp
 
@@ -199,6 +200,40 @@ class Ansatz1D_Huziel(BaseAnsatz):
         # we want [N] per molecule
         # get rid of extra spatial dimension -> [batch, N_elec]
         
+        x_1d = walkers[..., 0]
+
+        def single_apply(x):
+            return log_abs_psi(params, x, self.sys_cfg, self.wf_cfg, self.orbital_cfg, self.correlation_cfg)
+
+        return jax.vmap(single_apply)(x_1d)
+
+class Ansatz1D_Backflow(BaseAnsatz):
+    """
+    Ansatz modular que incorpora Backflow sobre orbitales de Oscilador Armónico.
+    Las coordenadas se deforman x_eff = x + xi(x) antes de entrar a los determinantes.
+    """
+    def __init__(self, system, wf_cfg, orbital_cfg, correlation_cfg):
+        super().__init__(system)
+        self.wf_cfg = wf_cfg
+        # Forzamos el uso de Backflow sin importar el string del parser
+        self.orbital_cfg = OrbitalConfig(**{**orbital_cfg.__dict__, "model": "backflow_ho"})
+        self.correlation_cfg = correlation_cfg
+
+        self.sys_cfg = SystemConfig(
+            n_electrons=system.n_elec,
+            n_up=system.n_up,
+            omega=system.omega,
+            interaction_strength=system.interaction_strength,
+            softening=system.softening
+        )
+
+    def init(self, rng_key, batch_walkers):
+        return init_wavefunction_params(
+            rng_key, self.sys_cfg, self.wf_cfg, self.orbital_cfg, self.correlation_cfg
+        )
+
+    def apply(self, params, walkers):
+        # Aplanar la dimensión espacial extra [batch, N_elec, 1] -> [batch, N_elec]
         x_1d = walkers[..., 0]
 
         def single_apply(x):

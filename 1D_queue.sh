@@ -2,7 +2,7 @@
 
 OMEGAS=(0.1)
 ACTOR_AMPLITUDES=(0.01 0.05 0.1)
-GS=(0.1 0.5 1.0 2.0 3.0 4.0)
+GS=(0.1 0.5 1.0 2.0 3.0 4.0 5.0)
 METHODS=("TD3" "REINFORCE")
 
 # Otros parámetros fijos

@@ -189,6 +189,7 @@ def main():
                 best_params_actor = params_actor
 
             if step % args.n_log == 0:
+                elapsed_time = time.time() - step_start_time
                 all_stats = {
                     "Step": step, 
                     "Time(s)": float(elapsed_time), # Nuevo campo
