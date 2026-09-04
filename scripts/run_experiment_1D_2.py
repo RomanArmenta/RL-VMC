@@ -11,6 +11,7 @@ import json
 import pickle
 import pandas as pd
 import numpy as np
+from functools import partial
 
 import jax
 import jax.numpy as jnp

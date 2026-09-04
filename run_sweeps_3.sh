@@ -4,7 +4,7 @@
 # 0. PARSEO DE ARGUMENTOS
 # ==============================================================================
 MODE="train" # Por defecto
-BASE_DIR_NAME="1D_N6_sweep_g"
+BASE_DIR_NAME="1D_N4_sweep_g"
 
 while [[ "$#" -gt 0 ]]; do
     case $1 in
@@ -18,15 +18,15 @@ done
 # ==============================================================================
 # 0.5 SISTEMA DE COLA PERFECTA (FILE LOCK)
 # ==============================================================================
-echo "[$(date +'%H:%M:%S')] Solicitando acceso a la cola de ejecución..."
-exec 9> /tmp/run_sweeps.lock
-flock 9
-echo "[$(date +'%H:%M:%S')] ¡Turno adquirido! Iniciando ejecución."
+# echo "[$(date +'%H:%M:%S')] Solicitando acceso a la cola de ejecución..."
+# exec 9> /tmp/run_sweeps.lock
+# flock 9
+# echo "[$(date +'%H:%M:%S')] ¡Turno adquirido! Iniciando ejecución."
 
-echo "==================================================================="
-echo "MODO DE EJECUCIÓN: $MODE"
-echo "CARPETA BASE: $BASE_DIR_NAME"
-echo "==================================================================="
+# echo "==================================================================="
+# echo "MODO DE EJECUCIÓN: $MODE"
+# echo "CARPETA BASE: $BASE_DIR_NAME"
+# echo "==================================================================="
 
 # ==============================================================================
 # 1. PARÁMETROS DEL BARRIDO (PERMUTACIONES)
@@ -39,9 +39,9 @@ METHODS=("MALA" "TD3")
 # ==============================================================================
 # 2. PARÁMETROS ESTÁTICOS
 # ==============================================================================
-N_ELEC=6
-N_UP=3
-N_DN=3
+N_ELEC=4
+N_UP=2
+N_DN=2
 SOFTENING=0.1
 WF_MODEL="slater_jastrow"
 ORBITAL_MODEL="backflow_ho"
@@ -50,7 +50,7 @@ BF_COMPONENTS=8
 BF_RMAX=5.0
 BF_WIDTH=0.7
 BF_ENV_LEN=3.0
-BATCH_SIZE=256
+BATCH_SIZE=1024
 TAU=0.01
 GAMMA=0.1
 BETA=10.0
@@ -60,11 +60,11 @@ MAX_PHYS_JUMP=5.0
 LR_ANSATZ=5e-5
 LR_ACTOR=5e-5
 LR_CRITIC=5e-4
-TRAIN_STEPS=100_000
+TRAIN_STEPS=200_000
 MEASURE_STEPS=10_000
-COUPLED_CYCLES=8
+COUPLED_CYCLES=16
 VMC_ITERS=12_500
-RL_SWEEPS=1_000
+RL_SWEEPS=2_500
 RL_REPLAY_CAP=10_000
 RL_GAMMA_TD3=0.99
 E_CLIP_MIN=-500.0
@@ -88,13 +88,13 @@ N_SAMPLES_EVALUATIONS=(5000 10000 100000)
 N_SUBSAMPLES_EVALUATIONS=(10 100 1000)
 N_TER_EVALUATIONS=(0 1000 5000)
 
-MALA_DIR="./results_1D_new_N10_g5.0_actamp_sweep_5_100k_huziel_reward/2026-09-03_1D__MALA_g5.0_Om0.1_Amp0.1_1"
+# MALA_DIR="./results_1D_new_N10_g5.0_actamp_sweep_5_100k_huziel_reward/2026-09-03_1D__MALA_g5.0_Om0.1_Amp0.1_1"
 # MALA_DIR=None
 
 # ==============================================================================
 # 3. CONFIGURACIÓN DEL ENTORNO
 # ==============================================================================
-GPUS=(0)
+GPUS=(0 1 2)
 today=$(date +%F)
 BASE_RESULTS_DIR="./results_$BASE_DIR_NAME"
 BASE_LOGS_DIR="./logs_$BASE_DIR_NAME"

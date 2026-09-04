@@ -15,14 +15,11 @@ def smooth_curve(series, window=10):
     return series.rolling(window=window, min_periods=1).mean()
 
 def find_folder(base_dir, method, g, omega, amp, run_id):
-    """Busca la carpeta que coincida con el patrón de nomenclatura."""
-    pattern = f"*_1D__{method}_g{g}_Om{omega}_Amp{amp}_{run_id}"
-    search_path = os.path.join(base_dir, pattern)
-    matches = glob.glob(search_path)
-    
-    if not matches:
-        raise FileNotFoundError(f"No se encontró carpeta para: {pattern}")
-    return matches[0] # Retorna la primera coincidencia (usualmente la única)
+    """Busca la subcarpeta del método dentro de la carpeta de la permutación."""
+    folder_path = os.path.join(base_dir, f"Perm_g{g}_Om{omega}_Amp{amp}_Run{run_id}", method)
+    if not os.path.exists(folder_path):
+        raise FileNotFoundError(f"No se encontró la carpeta: {folder_path}")
+    return folder_path
 
 def main():
     parser = argparse.ArgumentParser(description="Barrido y comparación MALA vs TD3")
@@ -39,12 +36,14 @@ def main():
     if getattr(args, 'mala_dir', None) in ["None", "none", "", None]:
         args.mala_dir = None
 
-    # Localizar carpetas automáticamente
     if args.mala_dir is None:
         dir_re = find_folder(args.base_dir, "MALA", args.g, args.omega, args.amp, args.run_id)
     else:
         dir_re = args.mala_dir
     dir_td3 = find_folder(args.base_dir, "TD3", args.g, args.omega, args.amp, args.run_id)
+
+    # Imprimir el nombre de la Permutación maestra
+    # print(f"Evaluando Permutación: {os.path.basename(os.path.dirname(dir_td3))}")
 
     print(f"MALA: {os.path.basename(dir_re)}")
     print(f"TD3:       {os.path.basename(dir_td3)}")

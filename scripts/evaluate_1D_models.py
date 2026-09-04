@@ -28,11 +28,11 @@ from src.physics import SystemConfig
 from src.td3_modules import FlaxTD3Actor, build_td3_state
 
 def find_folder(base_dir, method, g, omega, amp, run_id):
-    pattern = f"*_1D__{method}_g{g}_Om{omega}_Amp{amp}_{run_id}"
-    matches = glob.glob(os.path.join(base_dir, pattern))
-    if not matches:
-        raise FileNotFoundError(f"No se encontró carpeta para: {pattern}")
-    return matches[0]
+    """Busca la subcarpeta del método dentro de la carpeta de la permutación."""
+    folder_path = os.path.join(base_dir, f"Perm_g{g}_Om{omega}_Amp{amp}_Run{run_id}", method)
+    if not os.path.exists(folder_path):
+        raise FileNotFoundError(f"No se encontró la carpeta: {folder_path}")
+    return folder_path
 
 def load_json_params(folder):
     with open(os.path.join(folder, "params.json"), "r") as f:
