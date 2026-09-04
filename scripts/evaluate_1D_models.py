@@ -54,12 +54,10 @@ def load_weights(folder, method):
 
 @partial(jax.jit, static_argnums=(0, 6, 7))
 def collect_samples(sampler_obj, w_start, k_start, p_psi, p_act, init_cache, n_steps, subsample):
-    """Bucle JIT para recolectar las posiciones de los electrones."""
     def step_fn(carry, _):
         w, k, cache = carry
         k, subkey = jax.random.split(k)
         
-        # En MALA, p_act será None, pero MALASampler ignora esa llave de todas formas
         params_dict = {"ansatz": p_psi}
         if p_act is not None:
             params_dict["actor"] = p_act
@@ -68,6 +66,9 @@ def collect_samples(sampler_obj, w_start, k_start, p_psi, p_act, init_cache, n_s
             subkey, w, params_dict, cache, exploration_mode=False
         )
         return (w_new, k, new_cache), w_new
+    
+    final_carry, history = jax.lax.scan(step_fn, (w_start, k_start, init_cache), jnp.arange(n_steps))
+    return final_carry, history[::subsample]
     
     _, history = jax.lax.scan(step_fn, (w_start, k_start, init_cache), jnp.arange(n_steps))
     return history[::subsample]
@@ -96,14 +97,24 @@ def main():
     parser.add_argument("--run_id", type=int, default=1)
     parser.add_argument("--n_samples", type=int, default=5000)
     parser.add_argument("--subsample", type=int, default=10)
+    parser.add_argument("--mala_dir", type=str, default=None)
+    parser.add_argument("--n_ter", type=int, default=1000, help="Pasos de termalización (burn-in)")
     args = parser.parse_args()
 
+    # Traducción de Bash a Python
+    if getattr(args, 'mala_dir', None) in ["None", "none", "", None]:
+        args.mala_dir = None
+
     # 1. Localizar y Cargar
-    dir_mala = find_folder(args.base_dir, "MALA", args.g, args.omega, args.amp, args.run_id)
+
+    if args.mala_dir is None:
+        dir_mala = find_folder(args.base_dir, "MALA", args.g, args.omega, args.amp, args.run_id)
+    else:
+        dir_mala = args.mala_dir
     dir_td3 = find_folder(args.base_dir, "TD3", args.g, args.omega, args.amp, args.run_id)
     cfg = load_json_params(dir_td3) 
     
-    out_dir = os.path.join(dir_mala, "compiled_plots")
+    out_dir = os.path.join(dir_td3, f"compiled_plots_{args.n_samples}_samples_{args.subsample}_subsample")
     os.makedirs(out_dir, exist_ok=True)
     
     p_ansatz_mala, p_actor_mala = load_weights(dir_mala, "MALA")
@@ -157,29 +168,38 @@ def main():
         scale_clip_min=-5., scale_clip_max=1., min_clip_grads_ansatz=-50., max_clip_grads_ansatz=50.
     )
 
+    print(f"Número de samples: {args.n_samples}. Número de subsamples: {args.subsample}")
+
     # 4. Muestreo Cronometrado
-    print("Muestreando MALA Clásico...")
+    print(f"Número de samples: {args.n_samples} | Subsample: {args.subsample} | N_ter: {args.n_ter}")
     key = jax.random.PRNGKey(42)
     w_init = jax.random.normal(key, (cfg["batch_size"], cfg["n_elec"], 1))
-    
+
+    # --- MALA ---
     def sum_log_mala(w): return jnp.sum(ansatz.apply(p_ansatz_mala, w))
     cache_mala = {"log_psi_curr": ansatz.apply(p_ansatz_mala, w_init), "grad_curr": jnp.clip(jax.grad(sum_log_mala)(w_init), -50.0, 50.0)}
     
-    _ = collect_samples(sampler_mala, w_init, key, p_ansatz_mala, None, cache_mala, 2, 1)
+    print(f"Termalizando MALA ({args.n_ter} pasos y compilando JAX)...")
+    final_state_mala, _ = collect_samples(sampler_mala, w_init, key, p_ansatz_mala, None, cache_mala, args.n_ter, 1)
+    w_ter_mala, key_ter_mala, cache_ter_mala = final_state_mala
     
+    print("Muestreando MALA Clásico...")
     start_mala = time.time()
-    hist_mala = collect_samples(sampler_mala, w_init, key, p_ansatz_mala, None, cache_mala, args.n_samples, args.subsample)
+    _, hist_mala = collect_samples(sampler_mala, w_ter_mala, key_ter_mala, p_ansatz_mala, None, cache_ter_mala, args.n_samples, args.subsample)
     hist_mala.block_until_ready() 
     time_mala = time.time() - start_mala
 
-    print("Muestreando TD3...")
+    # --- TD3 ---
     def sum_log_td3(w): return jnp.sum(ansatz.apply(p_ansatz_td3, w))
     cache_td3 = {"log_psi_curr": ansatz.apply(p_ansatz_td3, w_init), "grad_curr": jnp.clip(jax.grad(sum_log_td3)(w_init), -50.0, 50.0)}
     
-    _ = collect_samples(sampler_td3, w_init, key, p_ansatz_td3, p_actor_td3, cache_td3, 2, 1)
+    print(f"Termalizando TD3 ({args.n_ter} pasos y compilando JAX)...")
+    final_state_td3, _ = collect_samples(sampler_td3, w_init, key, p_ansatz_td3, p_actor_td3, cache_td3, args.n_ter, 1)
+    w_ter_td3, key_ter_td3, cache_ter_td3 = final_state_td3
     
+    print("Muestreando TD3...")
     start_td3 = time.time()
-    hist_td3 = collect_samples(sampler_td3, w_init, key, p_ansatz_td3, p_actor_td3, cache_td3, args.n_samples, args.subsample)
+    _, hist_td3 = collect_samples(sampler_td3, w_ter_td3, key_ter_td3, p_ansatz_td3, p_actor_td3, cache_ter_td3, args.n_samples, args.subsample)
     hist_td3.block_until_ready()
     time_td3 = time.time() - start_td3
 
@@ -292,7 +312,7 @@ def main():
     axs[1].set_xlabel("Lag (Puntos guardados)")
     axs[1].legend()
 
-    plt.savefig(os.path.join(out_dir, "autocorrelation_advanced.png"), dpi=300)
+    plt.savefig(os.path.join(out_dir, f"autocorrelation_advanced.png"), dpi=300)
     
     ess_sec_mala = neff_e_mala / time_mala
     ess_sec_td3 = neff_e_td3 / time_td3

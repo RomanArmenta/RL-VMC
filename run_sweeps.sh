@@ -4,9 +4,9 @@
 # 1. PARÁMETROS DEL BARRIDO (PERMUTACIONES)
 # ==============================================================================
 OMEGAS=(0.1)
-ACTOR_AMPLITUDES=(0.001 0.01 0.1)
+ACTOR_AMPLITUDES=(0.001 0.002 0.003 0.004 0.005 0.006 0.007 0.008 0.009 0.01 0.011 0.012 0.013 0.014 0.015 0.016 0.017 0.018 0.019 0.02)
 GS=(5.0)
-METHODS=("MALA" "TD3")
+METHODS=("TD3")
 
 # ==============================================================================
 # 2. PARÁMETROS ESTÁTICOS DE run_experiment_1D.py
@@ -41,17 +41,17 @@ LR_ACTOR=1e-3
 LR_CRITIC=3e-4
 
 # Rutinas de Entrenamiento
-TRAIN_STEPS=50_000
+TRAIN_STEPS=100_000
 MEASURE_STEPS=10_000
-COUPLED_CYCLES=4
+COUPLED_CYCLES=8
 VMC_ITERS=12_500
 RL_SWEEPS=1_000
-RL_REPLAY_CAP=100_000
+RL_REPLAY_CAP=50_000
 RL_GAMMA_TD3=0.99
 
 # Estabilidad y Clipping
-E_CLIP_MIN=-5000.0
-E_CLIP_MAX=5000.0
+E_CLIP_MIN=-1000.0
+E_CLIP_MAX=1000.0
 SIG_E_CLIP=5.0
 MIN_CLIP_GRADS=-500.0
 MAX_CLIP_GRADS=500.0
@@ -66,14 +66,23 @@ N_PRINT=100
 N_LOG=50
 STEPS_FOR_BEST=500
 
+# evaluación
+N_SAMPLES_EVALUATION=10_000
+N_SUBSAMPLES_EVALUATION=1_000
+
+MALA_DIR="./results_1D_new_N10_g5.0_actamp_sweep_5_100k_huziel_reward/2026-09-03_1D__MALA_g5.0_Om0.1_Amp0.1_1"
+#MALA_DIR=None
+
 # ==============================================================================
 # 3. CONFIGURACIÓN DEL ENTORNO
 # ==============================================================================
 GPUS=(0)
 today=$(date +%F)
-BASE_RESULTS_DIR="./results_1D_new_N10"
+BASE_DIR_NAME="1D_new_N10_g5.0_actamp_sweep_5_100k_huziel_reward"
+BASE_RESULTS_DIR="./results_$BASE_DIR_NAME"
+BASE_LOGS_DIR="./logs_$BASE_DIR_NAME"
 
-mkdir -p logs_new_N10 "$BASE_RESULTS_DIR"
+mkdir -p "$BASE_LOGS_DIR" "$BASE_RESULTS_DIR"
 
 get_free_gpu(){
     while true; do
@@ -113,63 +122,64 @@ for omega in "${OMEGAS[@]}"; do
                 experiment_name="1D__${method}_g${int_st}_Om${omega}_Amp${amp}"
                 out_dir="${BASE_RESULTS_DIR}/${today}_${experiment_name}_${RUN_ID}"
                 log_name="${today}_${experiment_name}_${RUN_ID}.txt"
+                log_dir="${BASE_LOGS_DIR}/${log_name}"
 
                 FREE_GPU=$(get_free_gpu)
                 echo "[$(date +'%H:%M:%S')] -> GPU $FREE_GPU libre. Ejecutando $method..."
 
-                CUDA_VISIBLE_DEVICES="$FREE_GPU" nohup python3 -u scripts/run_experiment_1D_2.py \
-                    --method="$method" \
-                    --n_elec=$N_ELEC \
-                    --n_up=$N_UP \
-                    --n_dn=$N_DN \
-                    --omega=$omega \
-                    --interaction_strength=$int_st \
-                    --softening=$SOFTENING \
-                    --wf_model="$WF_MODEL" \
-                    --orbital_model="$ORBITAL_MODEL" \
-                    --correlation_model="$CORR_MODEL" \
-                    --backflow_components=$BF_COMPONENTS \
-                    --backflow_r_max=$BF_RMAX \
-                    --backflow_width=$BF_WIDTH \
-                    --backflow_envelope_length=$BF_ENV_LEN \
-                    --batch_size=$BATCH_SIZE \
-                    --tau=$TAU \
-                    --actor_amplitude=$amp \
-                    --gamma=$GAMMA \
-                    --beta=$BETA \
-                    --kappa=$KAPPA \
-                    --penalty_factor=$PENALTY_FACTOR \
-                    --max_phys_jump_std=$MAX_PHYS_JUMP \
-                    --lr_ansatz=$LR_ANSATZ \
-                    --lr_actor=$LR_ACTOR \
-                    --lr_critic=$LR_CRITIC \
-                    --train_steps=$TRAIN_STEPS \
-                    --measure_steps=$MEASURE_STEPS \
-                    --coupled_training_cycles=$COUPLED_CYCLES \
-                    --vmc_iterations_per_cycle=$VMC_ITERS \
-                    --rl_sweeps_per_cycle=$RL_SWEEPS \
-                    --rl_replay_capacity=$RL_REPLAY_CAP \
-                    --rl_gamma_td3=$RL_GAMMA_TD3 \
-                    --energy_clip_min=$E_CLIP_MIN \
-                    --energy_clip_max=$E_CLIP_MAX \
-                    --sigma_energy_clip=$SIG_E_CLIP \
-                    --min_clip_grads_ansatz=$MIN_CLIP_GRADS \
-                    --max_clip_grads_ansatz=$MAX_CLIP_GRADS \
-                    --min_clip_log_ratio=$MIN_CLIP_LOG \
-                    --max_clip_log_ratio=$MAX_CLIP_LOG \
-                    --nan_clip_log_ratio=$MIN_CLIP_LOG \
-                    --posinf_clip_log_ratio=$MAX_CLIP_LOG \
-                    --neginf_clip_log_ratio=$MIN_CLIP_LOG \
-                    --scale_clip_min=$SCALE_MIN \
-                    --scale_clip_max=$SCALE_MAX \
-                    --seed=$SEED \
-                    --n_print=$N_PRINT \
-                    --n_log=$N_LOG \
-                    --steps_for_best=$STEPS_FOR_BEST \
-                    --results_out_dir="$out_dir" \
-                    > "./logs_new_N10/$log_name" 2>&1 &
+            #     CUDA_VISIBLE_DEVICES="$FREE_GPU" nohup python3 -u scripts/run_experiment_1D_2.py \
+            #         --method="$method" \
+            #         --n_elec=$N_ELEC \
+            #         --n_up=$N_UP \
+            #         --n_dn=$N_DN \
+            #         --omega=$omega \
+            #         --interaction_strength=$int_st \
+            #         --softening=$SOFTENING \
+            #         --wf_model="$WF_MODEL" \
+            #         --orbital_model="$ORBITAL_MODEL" \
+            #         --correlation_model="$CORR_MODEL" \
+            #         --backflow_components=$BF_COMPONENTS \
+            #         --backflow_r_max=$BF_RMAX \
+            #         --backflow_width=$BF_WIDTH \
+            #         --backflow_envelope_length=$BF_ENV_LEN \
+            #         --batch_size=$BATCH_SIZE \
+            #         --tau=$TAU \
+            #         --actor_amplitude=$amp \
+            #         --gamma=$GAMMA \
+            #         --beta=$BETA \
+            #         --kappa=$KAPPA \
+            #         --penalty_factor=$PENALTY_FACTOR \
+            #         --max_phys_jump_std=$MAX_PHYS_JUMP \
+            #         --lr_ansatz=$LR_ANSATZ \
+            #         --lr_actor=$LR_ACTOR \
+            #         --lr_critic=$LR_CRITIC \
+            #         --train_steps=$TRAIN_STEPS \
+            #         --measure_steps=$MEASURE_STEPS \
+            #         --coupled_training_cycles=$COUPLED_CYCLES \
+            #         --vmc_iterations_per_cycle=$VMC_ITERS \
+            #         --rl_sweeps_per_cycle=$RL_SWEEPS \
+            #         --rl_replay_capacity=$RL_REPLAY_CAP \
+            #         --rl_gamma_td3=$RL_GAMMA_TD3 \
+            #         --energy_clip_min=$E_CLIP_MIN \
+            #         --energy_clip_max=$E_CLIP_MAX \
+            #         --sigma_energy_clip=$SIG_E_CLIP \
+            #         --min_clip_grads_ansatz=$MIN_CLIP_GRADS \
+            #         --max_clip_grads_ansatz=$MAX_CLIP_GRADS \
+            #         --min_clip_log_ratio=$MIN_CLIP_LOG \
+            #         --max_clip_log_ratio=$MAX_CLIP_LOG \
+            #         --nan_clip_log_ratio=$MIN_CLIP_LOG \
+            #         --posinf_clip_log_ratio=$MAX_CLIP_LOG \
+            #         --neginf_clip_log_ratio=$MIN_CLIP_LOG \
+            #         --scale_clip_min=$SCALE_MIN \
+            #         --scale_clip_max=$SCALE_MAX \
+            #         --seed=$SEED \
+            #         --n_print=$N_PRINT \
+            #         --n_log=$N_LOG \
+            #         --steps_for_best=$STEPS_FOR_BEST \
+            #         --results_out_dir="$out_dir" \
+            #         > "$log_dir" 2>&1 &
                 
-                # Guardamos el PID del proceso recién lanzado
+            #     # Guardamos el PID del proceso recién lanzado
                 PIDS+=($!)
                 sleep 10
             done 
@@ -177,11 +187,31 @@ for omega in "${OMEGAS[@]}"; do
             # ESPERAR A QUE MALA Y TD3 TERMINEN ANTES DE AVANZAR
             echo "[$(date +'%H:%M:%S')] Entrenamientos lanzados. Esperando a que finalicen MALA y TD3..."
             wait "${PIDS[@]}"
-            echo "[$(date +'%H:%M:%S')] Entrenamientos terminados. Ejecutando scripts de análisis y métricas físicas..."
-
             # Ejecutar análisis
-            python3 scripts/plot_sweep.py --base_dir "$BASE_RESULTS_DIR" --g "$int_st" --omega "$omega" --amp "$amp" --run_id "$RUN_ID"
-            python3 scripts/evaluate_1D_models.py --base_dir "$BASE_RESULTS_DIR" --g "$int_st" --omega "$omega" --amp "$amp" --run_id "$RUN_ID"
+
+            FREE_GPU=$(get_free_gpu)
+            echo "[$(date +'%H:%M:%S')] -> GPU $FREE_GPU libre. Ejecutando gráficas de barrido..."
+            CUDA_VISIBLE_DEVICES="$FREE_GPU" python3 scripts/plot_sweep.py \
+            --mala_dir "$MALA_DIR" \
+            --base_dir "$BASE_RESULTS_DIR" \
+            --g "$int_st" \
+            --omega "$omega" \
+            --amp "$amp" \
+            --run_id "$RUN_ID" \
+            > "${BASE_LOGS_DIR}/out_sweep_${log_name}" 2>&1
+
+            FREE_GPU=$(get_free_gpu)
+            echo "[$(date +'%H:%M:%S')] -> GPU $FREE_GPU libre. Ejecutando evaluación MALA vs TD3..."
+            CUDA_VISIBLE_DEVICES="$FREE_GPU" python3 scripts/evaluate_1D_models.py \
+            --mala_dir "$MALA_DIR" \
+            --base_dir "$BASE_RESULTS_DIR" \
+            --n_samples "$N_SAMPLES_EVALUATION" \
+            --subsample "$N_SUBSAMPLES_EVALUATION" \
+            --g "$int_st" \
+            --omega "$omega" \
+            --amp "$amp" \
+            --run_id "$RUN_ID" \
+            > "${BASE_LOGS_DIR}/out_evaluate_${log_name}" 2>&1
             
             echo "[$(date +'%H:%M:%S')] Análisis finalizado. Pasando a la siguiente permutación."
 

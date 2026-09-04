@@ -147,13 +147,14 @@ class FlaxTD3Critic(nn.Module):
 class TD3Trainer:
     def __init__(self, ansatz_apply, n_elec, n_up, n_dn, tau, actor_amp, 
                  beta=10.0, gamma_reward=0.1, gamma_td3=0.99, tau_polyak=0.005, 
-                 target_noise=0.15, noise_clip=0.35):
+                 target_noise=0.15, noise_clip=0.35, epsilon=0.001):
         self.ansatz_apply = ansatz_apply
         self.n_elec, self.n_up, self.n_dn = n_elec, n_up, n_dn
         self.tau, self.actor_amp = tau, actor_amp
         self.beta, self.gamma_reward = beta, gamma_reward
         self.gamma_td3, self.tau_polyak = gamma_td3, tau_polyak
         self.target_noise, self.noise_clip = target_noise, noise_clip
+        self.epsilon = epsilon
         
         self.actor_model = FlaxTD3Actor(n_up=n_up, n_dn=n_dn, actor_amplitude=actor_amp)
         self.critic_model = FlaxTD3Critic()
@@ -220,7 +221,8 @@ class TD3Trainer:
         
         # 3. Nueva recompensa idéntica a REINFORCE (ignoramos soft_node_penalty por rendimiento)
         kappa = 0.5 # Mismo valor que args.kappa
-        reward = (alpha_exact * clipped_dist) + kappa * (1.0 - alpha_exact) * alpha_exact
+        # reward = (alpha_exact * clipped_dist) + kappa * (1.0 - alpha_exact) * alpha_exact
+        reward = jnp.log(self.epsilon + alpha_exact * clipped_dist ** 2)
         next_state = build_td3_state(next_w, next_grad, (elec_idx + 1) % self.n_elec, self.n_elec, self.n_up, self.n_dn)
         
         return next_w, next_logp, next_grad, state_old, action_old, reward, next_state, accept, disp

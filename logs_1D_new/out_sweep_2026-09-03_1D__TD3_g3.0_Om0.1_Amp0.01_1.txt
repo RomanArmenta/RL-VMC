@@ -1,0 +1,3 @@
+MALA: 2026-09-01_1D__MALA_g3.0_Om0.1_Amp0.01_1
+TD3:       2026-09-01_1D__TD3_g3.0_Om0.1_Amp0.01_1
+Gráfico comparativo guardado en: ./results_1D_new/Compare_g3.0_Om0.1_Amp0.01_1.png

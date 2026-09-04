@@ -9,6 +9,8 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 
+
+
 def smooth_curve(series, window=10):
     return series.rolling(window=window, min_periods=1).mean()
 
@@ -30,10 +32,18 @@ def main():
     parser.add_argument("--amp", type=float, required=True, help="Amplitud del actor")
     parser.add_argument("--run_id", type=int, default=1, help="Sufijo del experimento (1, 2, etc)")
     parser.add_argument("--smooth_window", type=int, default=15)
+    parser.add_argument("--mala_dir", type=str, default=None)
     args = parser.parse_args()
 
+    # Traducción de Bash a Python
+    if getattr(args, 'mala_dir', None) in ["None", "none", "", None]:
+        args.mala_dir = None
+
     # Localizar carpetas automáticamente
-    dir_re = find_folder(args.base_dir, "MALA", args.g, args.omega, args.amp, args.run_id)
+    if args.mala_dir is None:
+        dir_re = find_folder(args.base_dir, "MALA", args.g, args.omega, args.amp, args.run_id)
+    else:
+        dir_re = args.mala_dir
     dir_td3 = find_folder(args.base_dir, "TD3", args.g, args.omega, args.amp, args.run_id)
 
     print(f"MALA: {os.path.basename(dir_re)}")

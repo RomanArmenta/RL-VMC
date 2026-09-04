@@ -28,6 +28,23 @@ from src.orbitals import OrbitalConfig
 from src.correlation import CorrelationConfig
 from src.td3_modules import TD3Trainer, ReplayBuffer
 
+@partial(jax.jit, static_argnums=(0, 6))
+def termalizar_caminantes(sampler, w_start, k_start, cache_start, p_psi, p_act, n_steps):
+    """Evoluciona los caminantes sin acumular gradientes ni historial para alcanzar el estado base."""
+    def step_fn(carry, _):
+        w_curr, k_curr, cache_curr = carry
+        k_curr, subkey = jax.random.split(k_curr)
+        
+        params = {"ansatz": p_psi}
+        if p_act is not None:
+            params["actor"] = p_act
+            
+        w_new, _, cache_new, _ = sampler.step(subkey, w_curr, params, cache_curr, exploration_mode=True)
+        return (w_new, k_curr, cache_new), None
+                  
+    final_carry, _ = jax.lax.scan(step_fn, (w_start, k_start, cache_start), jnp.arange(n_steps))
+    return final_carry
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--method", type=str, default="MALA", choices=["MALA", "TD3"])
@@ -93,6 +110,8 @@ def main():
     parser.add_argument("--n_log", type=int, default=50)
     parser.add_argument("--steps_for_best", type=int, default=500)
     parser.add_argument("--results_out_dir", type=str, required=True)
+    parser.add_argument("--n_ter", type=int, default=1000, help="Pasos de termalización antes de iniciar el entrenamiento")
+    
 
     args, _ = parser.parse_known_args()
     
@@ -150,6 +169,13 @@ def main():
             sigma_energy_clip=args.sigma_energy_clip, energy_clip_min=args.energy_clip_min, energy_clip_max=args.energy_clip_max, 
             min_clip_grads_ansatz=args.min_clip_grads_ansatz, max_clip_grads_ansatz=args.max_clip_grads_ansatz, max_phys_jump_std=args.max_phys_jump_std
         )
+
+        # === NUEVO: TERMALIZACIÓN MALA ===
+        print(f"\nTermalizando caminantes MALA por {args.n_ter} pasos...")
+        final_carry = termalizar_caminantes(sampler, walkers, key, cache, params_psi, None, args.n_ter)
+        walkers, key, cache = final_carry
+        print("Termalización completada. Iniciando entrenamiento...")
+        # =================================
 
         step_start_time = time.time()
         for step in range(args.train_steps):
@@ -216,6 +242,13 @@ def main():
         global_step, td3_updates, last_td3_reward = 0, 0, 0.0
         last_td3_actor_loss, last_td3_critic1_loss, last_td3_critic2_loss = 0.0, 0.0, 0.0
         
+        # === NUEVO: TERMALIZACIÓN TD3 ===
+        print(f"\nTermalizando caminantes TD3 por {args.n_ter} pasos...")
+        final_carry = termalizar_caminantes(sampler, walkers, key, cache, params_psi, p_act, args.n_ter)
+        walkers, key, cache = final_carry
+        print("Termalización completada. Iniciando entrenamiento acoplado...")
+        # =================================
+
         for cycle in range(args.coupled_training_cycles):
             cycle_start_time = time.time()
             print(f"\n--- CICLO TD3 {cycle+1}/{args.coupled_training_cycles} ---")
