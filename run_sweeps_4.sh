@@ -1,32 +1,17 @@
 #!/bin/bash
 
 # ==============================================================================
-# 0. PARSEO DE ARGUMENTOS
-# ==============================================================================
-MODE="train" # Por defecto
-BASE_DIR_NAME="1D_N10_sweep_g"
-
-while [[ "$#" -gt 0 ]]; do
-    case $1 in
-        --mode) MODE="$2"; shift ;;
-        --base_dir_name) BASE_DIR_NAME="$2"; shift ;;
-        *) echo "Parámetro desconocido: $1"; exit 1 ;;
-    esac
-    shift
-done
-
-# ==============================================================================
 # 0.5 SISTEMA DE COLA PERFECTA (FILE LOCK)
 # ==============================================================================
-echo "[$(date +'%H:%M:%S')] Solicitando acceso a la cola de ejecución..."
-exec 9> /tmp/run_sweeps.lock
-flock 9
-echo "[$(date +'%H:%M:%S')] ¡Turno adquirido! Iniciando ejecución."
+# echo "[$(date +'%H:%M:%S')] Solicitando acceso a la cola de ejecución..."
+# exec 9> /tmp/run_sweeps.lock
+# flock 9
+# echo "[$(date +'%H:%M:%S')] ¡Turno adquirido! Iniciando ejecución."
 
-echo "==================================================================="
-echo "MODO DE EJECUCIÓN: $MODE"
-echo "CARPETA BASE: $BASE_DIR_NAME"
-echo "==================================================================="
+# echo "==================================================================="
+# echo "MODO DE EJECUCIÓN: $MODE"
+# echo "CARPETA BASE: $BASE_DIR_NAME"
+# echo "==================================================================="
 
 # ==============================================================================
 # 1. PARÁMETROS DEL BARRIDO
@@ -39,9 +24,9 @@ METHODS=("MALA" "TD3")
 # ==============================================================================
 # 2. PARÁMETROS ESTÁTICOS
 # ==============================================================================
-N_ELEC=10
-N_UP=5
-N_DN=5
+N_ELEC=4
+N_UP=2
+N_DN=2
 SOFTENING=0.1
 WF_MODEL="slater_jastrow"
 ORBITAL_MODEL="backflow_ho"
@@ -60,9 +45,9 @@ MAX_PHYS_JUMP=5.0
 LR_ANSATZ=5e-5
 LR_ACTOR=5e-5
 LR_CRITIC=5e-4
-TRAIN_STEPS=200_000
-MEASURE_STEPS=10_000
-COUPLED_CYCLES=16
+TRAIN_STEPS=50_000
+MEASURE_STEPS=5_000
+COUPLED_CYCLES=4
 VMC_ITERS=12_500
 RL_SWEEPS=2_500
 RL_REPLAY_CAP=10_000
@@ -83,9 +68,24 @@ STEPS_FOR_BEST=500
 
 N_TER_TRAIN=1000
 
+# ==============================================================================
+# 0. PARSEO DE ARGUMENTOS
+# ==============================================================================
+MODE="train" # Por defecto
+BASE_DIR_NAME="1D_N${N_ELEC}_sweep_g_50kTrain"
+
+while [[ "$#" -gt 0 ]]; do
+    case $1 in
+        --mode) MODE="$2"; shift ;;
+        --base_dir_name) BASE_DIR_NAME="$2"; shift ;;
+        *) echo "Parámetro desconocido: $1"; exit 1 ;;
+    esac
+    shift
+done
+
 # Parámetros de evaluación
 N_SAMPLES_EVALUATIONS=(5000 10000 100000)
-N_SUBSAMPLES_EVALUATIONS=(10 100 1000)
+N_SUBSAMPLES_EVALUATIONS=(1)
 N_TER_EVALUATIONS=(0 1000 5000)
 
 MALA_DIR="None" # Forzamos a que Python use la carpeta local de la permutación
@@ -93,7 +93,7 @@ MALA_DIR="None" # Forzamos a que Python use la carpeta local de la permutación
 # ==============================================================================
 # 3. CONFIGURACIÓN DEL ENTORNO
 # ==============================================================================
-GPUS=(0 1 2)
+GPUS=(0)
 today=$(date +%F)
 BASE_RESULTS_DIR="./results_$BASE_DIR_NAME"
 BASE_LOGS_DIR="./logs_$BASE_DIR_NAME"
@@ -228,6 +228,7 @@ for N_SAMPLES_EVALUATION in "${N_SAMPLES_EVALUATIONS[@]}"; do
             CUDA_VISIBLE_DEVICES="" python3 scripts/plot_summary.py \
                 --logs_dir "$CURRENT_LOGS_DIR" \
                 --out_dir "$BASE_RESULTS_DIR" \
+                --n_elec "$N_ELEC" \
                 --n_samples "$N_SAMPLES_EVALUATION" \
                 --subsample "$N_SUBSAMPLES_EVALUATION" \
                 --n_ter "$N_TER_EVALUATION"

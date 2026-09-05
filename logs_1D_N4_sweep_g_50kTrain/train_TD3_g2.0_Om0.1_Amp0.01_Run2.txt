@@ -1,0 +1,1151 @@
+JAX was imported before deepqmc, TensorFloat32 precision might be enabled. You may experience numerical issues.
+rewards = kappa * (1 - ratio) * alpha + alpha * |x - x_prop|^2
+
+Termalizando caminantes TD3 por 1000 pasos...
+Termalización completada. Iniciando entrenamiento acoplado...
+
+--- CICLO TD3 1/4 ---
+Step: 00000 | E_mean: 18.6846 | Time(s): 3.264 | Stage: VMC | acceptance: 0.897 | d_act: 0.000 | ejd: 0.102 | mag_actor: 0.000 | mag_mala: 0.023 | mean_log_ratio: -0.816 | mean_sigma: 0.141 | sig_scale: 0.000 | mean_reward: 0.000 | Actor_Loss: 0.000 | Critic1_Loss: 0.000 | Critic2_Loss: 0.000
+Step: 00100 | E_mean: 18.2349 | Time(s): 4.822 | Stage: VMC | acceptance: 0.889 | d_act: 0.000 | ejd: 0.095 | mag_actor: 0.000 | mag_mala: 0.023 | mean_log_ratio: -0.686 | mean_sigma: 0.141 | sig_scale: 0.000 | mean_reward: 0.000 | Actor_Loss: 0.000 | Critic1_Loss: 0.000 | Critic2_Loss: 0.000
+Step: 00200 | E_mean: 18.0300 | Time(s): 4.961 | Stage: VMC | acceptance: 0.911 | d_act: 0.000 | ejd: 0.102 | mag_actor: 0.000 | mag_mala: 0.023 | mean_log_ratio: -0.667 | mean_sigma: 0.141 | sig_scale: 0.000 | mean_reward: 0.000 | Actor_Loss: 0.000 | Critic1_Loss: 0.000 | Critic2_Loss: 0.000
+Step: 00300 | E_mean: 18.4794 | Time(s): 5.095 | Stage: VMC | acceptance: 0.909 | d_act: 0.000 | ejd: 0.101 | mag_actor: 0.000 | mag_mala: 0.023 | mean_log_ratio: -0.634 | mean_sigma: 0.141 | sig_scale: 0.000 | mean_reward: 0.000 | Actor_Loss: 0.000 | Critic1_Loss: 0.000 | Critic2_Loss: 0.000
+Step: 00400 | E_mean: 18.4006 | Time(s): 5.227 | Stage: VMC | acceptance: 0.899 | d_act: 0.000 | ejd: 0.100 | mag_actor: 0.000 | mag_mala: 0.023 | mean_log_ratio: -0.651 | mean_sigma: 0.141 | sig_scale: 0.000 | mean_reward: 0.000 | Actor_Loss: 0.000 | Critic1_Loss: 0.000 | Critic2_Loss: 0.000
+Step: 00500 | E_mean: 18.1529 | Time(s): 5.355 | Stage: VMC | acceptance: 0.887 | d_act: 0.000 | ejd: 0.097 | mag_actor: 0.000 | mag_mala: 0.023 | mean_log_ratio: -0.756 | mean_sigma: 0.141 | sig_scale: 0.000 | mean_reward: 0.000 | Actor_Loss: 0.000 | Critic1_Loss: 0.000 | Critic2_Loss: 0.000
+Step: 00600 | E_mean: 18.0271 | Time(s): 5.533 | Stage: VMC | acceptance: 0.894 | d_act: 0.000 | ejd: 0.098 | mag_actor: 0.000 | mag_mala: 0.023 | mean_log_ratio: -0.675 | mean_sigma: 0.141 | sig_scale: 0.000 | mean_reward: 0.000 | Actor_Loss: 0.000 | Critic1_Loss: 0.000 | Critic2_Loss: 0.000
+Step: 00700 | E_mean: 18.0836 | Time(s): 5.689 | Stage: VMC | acceptance: 0.907 | d_act: 0.000 | ejd: 0.103 | mag_actor: 0.000 | mag_mala: 0.023 | mean_log_ratio: -0.675 | mean_sigma: 0.141 | sig_scale: 0.000 | mean_reward: 0.000 | Actor_Loss: 0.000 | Critic1_Loss: 0.000 | Critic2_Loss: 0.000
+Step: 00800 | E_mean: 17.7046 | Time(s): 5.847 | Stage: VMC | acceptance: 0.886 | d_act: 0.000 | ejd: 0.100 | mag_actor: 0.000 | mag_mala: 0.023 | mean_log_ratio: -0.727 | mean_sigma: 0.141 | sig_scale: 0.000 | mean_reward: 0.000 | Actor_Loss: 0.000 | Critic1_Loss: 0.000 | Critic2_Loss: 0.000
+Step: 00900 | E_mean: 17.8450 | Time(s): 6.004 | Stage: VMC | acceptance: 0.897 | d_act: 0.000 | ejd: 0.104 | mag_actor: 0.000 | mag_mala: 0.023 | mean_log_ratio: -0.670 | mean_sigma: 0.141 | sig_scale: 0.000 | mean_reward: 0.000 | Actor_Loss: 0.000 | Critic1_Loss: 0.000 | Critic2_Loss: 0.000
+Step: 01000 | E_mean: 17.8755 | Time(s): 6.161 | Stage: VMC | acceptance: 0.904 | d_act: 0.000 | ejd: 0.100 | mag_actor: 0.000 | mag_mala: 0.023 | mean_log_ratio: -0.660 | mean_sigma: 0.141 | sig_scale: 0.000 | mean_reward: 0.000 | Actor_Loss: 0.000 | Critic1_Loss: 0.000 | Critic2_Loss: 0.000
+Step: 01100 | E_mean: 17.7571 | Time(s): 6.324 | Stage: VMC | acceptance: 0.898 | d_act: 0.000 | ejd: 0.099 | mag_actor: 0.000 | mag_mala: 0.023 | mean_log_ratio: -0.656 | mean_sigma: 0.141 | sig_scale: 0.000 | mean_reward: 0.000 | Actor_Loss: 0.000 | Critic1_Loss: 0.000 | Critic2_Loss: 0.000
+Step: 01200 | E_mean: 17.3966 | Time(s): 6.486 | Stage: VMC | acceptance: 0.894 | d_act: 0.000 | ejd: 0.100 | mag_actor: 0.000 | mag_mala: 0.023 | mean_log_ratio: -0.699 | mean_sigma: 0.141 | sig_scale: 0.000 | mean_reward: 0.000 | Actor_Loss: 0.000 | Critic1_Loss: 0.000 | Critic2_Loss: 0.000
+Step: 01300 | E_mean: 18.0808 | Time(s): 6.643 | Stage: VMC | acceptance: 0.900 | d_act: 0.000 | ejd: 0.102 | mag_actor: 0.000 | mag_mala: 0.023 | mean_log_ratio: -0.661 | mean_sigma: 0.141 | sig_scale: 0.000 | mean_reward: 0.000 | Actor_Loss: 0.000 | Critic1_Loss: 0.000 | Critic2_Loss: 0.000
+Step: 01400 | E_mean: 17.9097 | Time(s): 6.800 | Stage: VMC | acceptance: 0.923 | d_act: 0.000 | ejd: 0.102 | mag_actor: 0.000 | mag_mala: 0.023 | mean_log_ratio: -0.668 | mean_sigma: 0.141 | sig_scale: 0.000 | mean_reward: 0.000 | Actor_Loss: 0.000 | Critic1_Loss: 0.000 | Critic2_Loss: 0.000
+Step: 01500 | E_mean: 17.9595 | Time(s): 6.957 | Stage: VMC | acceptance: 0.892 | d_act: 0.000 | ejd: 0.100 | mag_actor: 0.000 | mag_mala: 0.023 | mean_log_ratio: -0.673 | mean_sigma: 0.141 | sig_scale: 0.000 | mean_reward: 0.000 | Actor_Loss: 0.000 | Critic1_Loss: 0.000 | Critic2_Loss: 0.000
+Step: 01600 | E_mean: 17.7892 | Time(s): 7.115 | Stage: VMC | acceptance: 0.892 | d_act: 0.000 | ejd: 0.101 | mag_actor: 0.000 | mag_mala: 0.023 | mean_log_ratio: -0.682 | mean_sigma: 0.141 | sig_scale: 0.000 | mean_reward: 0.000 | Actor_Loss: 0.000 | Critic1_Loss: 0.000 | Critic2_Loss: 0.000
+Step: 01700 | E_mean: 17.5912 | Time(s): 7.272 | Stage: VMC | acceptance: 0.897 | d_act: 0.000 | ejd: 0.100 | mag_actor: 0.000 | mag_mala: 0.022 | mean_log_ratio: -0.713 | mean_sigma: 0.141 | sig_scale: 0.000 | mean_reward: 0.000 | Actor_Loss: 0.000 | Critic1_Loss: 0.000 | Critic2_Loss: 0.000
+Step: 01800 | E_mean: 17.8227 | Time(s): 7.429 | Stage: VMC | acceptance: 0.909 | d_act: 0.000 | ejd: 0.101 | mag_actor: 0.000 | mag_mala: 0.023 | mean_log_ratio: -0.675 | mean_sigma: 0.141 | sig_scale: 0.000 | mean_reward: 0.000 | Actor_Loss: 0.000 | Critic1_Loss: 0.000 | Critic2_Loss: 0.000
+Step: 01900 | E_mean: 17.2001 | Time(s): 7.587 | Stage: VMC | acceptance: 0.895 | d_act: 0.000 | ejd: 0.101 | mag_actor: 0.000 | mag_mala: 0.023 | mean_log_ratio: -0.693 | mean_sigma: 0.141 | sig_scale: 0.000 | mean_reward: 0.000 | Actor_Loss: 0.000 | Critic1_Loss: 0.000 | Critic2_Loss: 0.000
+Step: 02000 | E_mean: 17.6286 | Time(s): 7.744 | Stage: VMC | acceptance: 0.908 | d_act: 0.000 | ejd: 0.104 | mag_actor: 0.000 | mag_mala: 0.023 | mean_log_ratio: -0.654 | mean_sigma: 0.141 | sig_scale: 0.000 | mean_reward: 0.000 | Actor_Loss: 0.000 | Critic1_Loss: 0.000 | Critic2_Loss: 0.000
+Step: 02100 | E_mean: 17.0074 | Time(s): 7.901 | Stage: VMC | acceptance: 0.898 | d_act: 0.000 | ejd: 0.100 | mag_actor: 0.000 | mag_mala: 0.022 | mean_log_ratio: -0.654 | mean_sigma: 0.141 | sig_scale: 0.000 | mean_reward: 0.000 | Actor_Loss: 0.000 | Critic1_Loss: 0.000 | Critic2_Loss: 0.000
+Step: 02200 | E_mean: 17.5380 | Time(s): 8.059 | Stage: VMC | acceptance: 0.900 | d_act: 0.000 | ejd: 0.101 | mag_actor: 0.000 | mag_mala: 0.022 | mean_log_ratio: -0.671 | mean_sigma: 0.141 | sig_scale: 0.000 | mean_reward: 0.000 | Actor_Loss: 0.000 | Critic1_Loss: 0.000 | Critic2_Loss: 0.000
+Step: 02300 | E_mean: 17.2500 | Time(s): 8.216 | Stage: VMC | acceptance: 0.896 | d_act: 0.000 | ejd: 0.099 | mag_actor: 0.000 | mag_mala: 0.023 | mean_log_ratio: -0.712 | mean_sigma: 0.141 | sig_scale: 0.000 | mean_reward: 0.000 | Actor_Loss: 0.000 | Critic1_Loss: 0.000 | Critic2_Loss: 0.000
+Step: 02400 | E_mean: 17.4114 | Time(s): 8.373 | Stage: VMC | acceptance: 0.897 | d_act: 0.000 | ejd: 0.099 | mag_actor: 0.000 | mag_mala: 0.022 | mean_log_ratio: -0.657 | mean_sigma: 0.141 | sig_scale: 0.000 | mean_reward: 0.000 | Actor_Loss: 0.000 | Critic1_Loss: 0.000 | Critic2_Loss: 0.000
+Step: 02500 | E_mean: 17.5796 | Time(s): 8.534 | Stage: VMC | acceptance: 0.889 | d_act: 0.000 | ejd: 0.098 | mag_actor: 0.000 | mag_mala: 0.023 | mean_log_ratio: -0.659 | mean_sigma: 0.141 | sig_scale: 0.000 | mean_reward: 0.000 | Actor_Loss: 0.000 | Critic1_Loss: 0.000 | Critic2_Loss: 0.000
+Step: 02600 | E_mean: 17.1323 | Time(s): 8.697 | Stage: VMC | acceptance: 0.894 | d_act: 0.000 | ejd: 0.099 | mag_actor: 0.000 | mag_mala: 0.023 | mean_log_ratio: -0.701 | mean_sigma: 0.141 | sig_scale: 0.000 | mean_reward: 0.000 | Actor_Loss: 0.000 | Critic1_Loss: 0.000 | Critic2_Loss: 0.000
+Step: 02700 | E_mean: 17.1640 | Time(s): 8.855 | Stage: VMC | acceptance: 0.906 | d_act: 0.000 | ejd: 0.101 | mag_actor: 0.000 | mag_mala: 0.023 | mean_log_ratio: -0.671 | mean_sigma: 0.141 | sig_scale: 0.000 | mean_reward: 0.000 | Actor_Loss: 0.000 | Critic1_Loss: 0.000 | Critic2_Loss: 0.000
+Step: 02800 | E_mean: 17.0912 | Time(s): 9.012 | Stage: VMC | acceptance: 0.895 | d_act: 0.000 | ejd: 0.100 | mag_actor: 0.000 | mag_mala: 0.022 | mean_log_ratio: -0.678 | mean_sigma: 0.141 | sig_scale: 0.000 | mean_reward: 0.000 | Actor_Loss: 0.000 | Critic1_Loss: 0.000 | Critic2_Loss: 0.000
+Step: 02900 | E_mean: 17.2831 | Time(s): 9.169 | Stage: VMC | acceptance: 0.908 | d_act: 0.000 | ejd: 0.100 | mag_actor: 0.000 | mag_mala: 0.022 | mean_log_ratio: -0.660 | mean_sigma: 0.141 | sig_scale: 0.000 | mean_reward: 0.000 | Actor_Loss: 0.000 | Critic1_Loss: 0.000 | Critic2_Loss: 0.000
+Step: 03000 | E_mean: 17.1291 | Time(s): 9.326 | Stage: VMC | acceptance: 0.896 | d_act: 0.000 | ejd: 0.100 | mag_actor: 0.000 | mag_mala: 0.022 | mean_log_ratio: -0.665 | mean_sigma: 0.141 | sig_scale: 0.000 | mean_reward: 0.000 | Actor_Loss: 0.000 | Critic1_Loss: 0.000 | Critic2_Loss: 0.000
+Step: 03100 | E_mean: 16.8421 | Time(s): 9.483 | Stage: VMC | acceptance: 0.906 | d_act: 0.000 | ejd: 0.102 | mag_actor: 0.000 | mag_mala: 0.022 | mean_log_ratio: -0.661 | mean_sigma: 0.141 | sig_scale: 0.000 | mean_reward: 0.000 | Actor_Loss: 0.000 | Critic1_Loss: 0.000 | Critic2_Loss: 0.000
+Step: 03200 | E_mean: 16.9969 | Time(s): 9.641 | Stage: VMC | acceptance: 0.900 | d_act: 0.000 | ejd: 0.100 | mag_actor: 0.000 | mag_mala: 0.022 | mean_log_ratio: -0.655 | mean_sigma: 0.141 | sig_scale: 0.000 | mean_reward: 0.000 | Actor_Loss: 0.000 | Critic1_Loss: 0.000 | Critic2_Loss: 0.000
+Step: 03300 | E_mean: 16.8691 | Time(s): 9.798 | Stage: VMC | acceptance: 0.911 | d_act: 0.000 | ejd: 0.104 | mag_actor: 0.000 | mag_mala: 0.022 | mean_log_ratio: -0.656 | mean_sigma: 0.141 | sig_scale: 0.000 | mean_reward: 0.000 | Actor_Loss: 0.000 | Critic1_Loss: 0.000 | Critic2_Loss: 0.000
+Step: 03400 | E_mean: 16.8652 | Time(s): 9.955 | Stage: VMC | acceptance: 0.902 | d_act: 0.000 | ejd: 0.099 | mag_actor: 0.000 | mag_mala: 0.022 | mean_log_ratio: -0.679 | mean_sigma: 0.141 | sig_scale: 0.000 | mean_reward: 0.000 | Actor_Loss: 0.000 | Critic1_Loss: 0.000 | Critic2_Loss: 0.000
+Step: 03500 | E_mean: 16.9094 | Time(s): 10.113 | Stage: VMC | acceptance: 0.913 | d_act: 0.000 | ejd: 0.101 | mag_actor: 0.000 | mag_mala: 0.022 | mean_log_ratio: -0.650 | mean_sigma: 0.141 | sig_scale: 0.000 | mean_reward: 0.000 | Actor_Loss: 0.000 | Critic1_Loss: 0.000 | Critic2_Loss: 0.000
+Step: 03600 | E_mean: 16.6910 | Time(s): 10.270 | Stage: VMC | acceptance: 0.904 | d_act: 0.000 | ejd: 0.102 | mag_actor: 0.000 | mag_mala: 0.022 | mean_log_ratio: -0.655 | mean_sigma: 0.141 | sig_scale: 0.000 | mean_reward: 0.000 | Actor_Loss: 0.000 | Critic1_Loss: 0.000 | Critic2_Loss: 0.000
+Step: 03700 | E_mean: 17.0051 | Time(s): 10.428 | Stage: VMC | acceptance: 0.917 | d_act: 0.000 | ejd: 0.104 | mag_actor: 0.000 | mag_mala: 0.022 | mean_log_ratio: -0.668 | mean_sigma: 0.141 | sig_scale: 0.000 | mean_reward: 0.000 | Actor_Loss: 0.000 | Critic1_Loss: 0.000 | Critic2_Loss: 0.000
+Step: 03800 | E_mean: 16.4540 | Time(s): 10.585 | Stage: VMC | acceptance: 0.903 | d_act: 0.000 | ejd: 0.100 | mag_actor: 0.000 | mag_mala: 0.022 | mean_log_ratio: -0.722 | mean_sigma: 0.141 | sig_scale: 0.000 | mean_reward: 0.000 | Actor_Loss: 0.000 | Critic1_Loss: 0.000 | Critic2_Loss: 0.000
+Step: 03900 | E_mean: 16.8618 | Time(s): 10.743 | Stage: VMC | acceptance: 0.898 | d_act: 0.000 | ejd: 0.102 | mag_actor: 0.000 | mag_mala: 0.022 | mean_log_ratio: -0.655 | mean_sigma: 0.141 | sig_scale: 0.000 | mean_reward: 0.000 | Actor_Loss: 0.000 | Critic1_Loss: 0.000 | Critic2_Loss: 0.000
+Step: 04000 | E_mean: 16.3459 | Time(s): 10.900 | Stage: VMC | acceptance: 0.890 | d_act: 0.000 | ejd: 0.100 | mag_actor: 0.000 | mag_mala: 0.022 | mean_log_ratio: -0.707 | mean_sigma: 0.141 | sig_scale: 0.000 | mean_reward: 0.000 | Actor_Loss: 0.000 | Critic1_Loss: 0.000 | Critic2_Loss: 0.000
+Step: 04100 | E_mean: 16.5192 | Time(s): 11.057 | Stage: VMC | acceptance: 0.917 | d_act: 0.000 | ejd: 0.102 | mag_actor: 0.000 | mag_mala: 0.022 | mean_log_ratio: -0.696 | mean_sigma: 0.141 | sig_scale: 0.000 | mean_reward: 0.000 | Actor_Loss: 0.000 | Critic1_Loss: 0.000 | Critic2_Loss: 0.000
+Step: 04200 | E_mean: 16.6939 | Time(s): 11.216 | Stage: VMC | acceptance: 0.914 | d_act: 0.000 | ejd: 0.102 | mag_actor: 0.000 | mag_mala: 0.022 | mean_log_ratio: -0.671 | mean_sigma: 0.141 | sig_scale: 0.000 | mean_reward: 0.000 | Actor_Loss: 0.000 | Critic1_Loss: 0.000 | Critic2_Loss: 0.000
+Step: 04300 | E_mean: 16.5656 | Time(s): 11.375 | Stage: VMC | acceptance: 0.908 | d_act: 0.000 | ejd: 0.104 | mag_actor: 0.000 | mag_mala: 0.022 | mean_log_ratio: -0.673 | mean_sigma: 0.141 | sig_scale: 0.000 | mean_reward: 0.000 | Actor_Loss: 0.000 | Critic1_Loss: 0.000 | Critic2_Loss: 0.000
+Step: 04400 | E_mean: 16.7063 | Time(s): 11.534 | Stage: VMC | acceptance: 0.909 | d_act: 0.000 | ejd: 0.102 | mag_actor: 0.000 | mag_mala: 0.022 | mean_log_ratio: -0.715 | mean_sigma: 0.141 | sig_scale: 0.000 | mean_reward: 0.000 | Actor_Loss: 0.000 | Critic1_Loss: 0.000 | Critic2_Loss: 0.000
+Step: 04500 | E_mean: 16.5409 | Time(s): 11.692 | Stage: VMC | acceptance: 0.905 | d_act: 0.000 | ejd: 0.102 | mag_actor: 0.000 | mag_mala: 0.022 | mean_log_ratio: -0.701 | mean_sigma: 0.141 | sig_scale: 0.000 | mean_reward: 0.000 | Actor_Loss: 0.000 | Critic1_Loss: 0.000 | Critic2_Loss: 0.000
+Step: 04600 | E_mean: 16.4693 | Time(s): 11.849 | Stage: VMC | acceptance: 0.909 | d_act: 0.000 | ejd: 0.102 | mag_actor: 0.000 | mag_mala: 0.022 | mean_log_ratio: -0.669 | mean_sigma: 0.141 | sig_scale: 0.000 | mean_reward: 0.000 | Actor_Loss: 0.000 | Critic1_Loss: 0.000 | Critic2_Loss: 0.000
+Step: 04700 | E_mean: 16.7445 | Time(s): 12.010 | Stage: VMC | acceptance: 0.896 | d_act: 0.000 | ejd: 0.100 | mag_actor: 0.000 | mag_mala: 0.022 | mean_log_ratio: -0.656 | mean_sigma: 0.141 | sig_scale: 0.000 | mean_reward: 0.000 | Actor_Loss: 0.000 | Critic1_Loss: 0.000 | Critic2_Loss: 0.000
+Step: 04800 | E_mean: 16.0937 | Time(s): 12.169 | Stage: VMC | acceptance: 0.897 | d_act: 0.000 | ejd: 0.101 | mag_actor: 0.000 | mag_mala: 0.022 | mean_log_ratio: -0.675 | mean_sigma: 0.141 | sig_scale: 0.000 | mean_reward: 0.000 | Actor_Loss: 0.000 | Critic1_Loss: 0.000 | Critic2_Loss: 0.000
+Step: 04900 | E_mean: 16.4270 | Time(s): 12.328 | Stage: VMC | acceptance: 0.887 | d_act: 0.000 | ejd: 0.101 | mag_actor: 0.000 | mag_mala: 0.022 | mean_log_ratio: -0.677 | mean_sigma: 0.141 | sig_scale: 0.000 | mean_reward: 0.000 | Actor_Loss: 0.000 | Critic1_Loss: 0.000 | Critic2_Loss: 0.000
+Step: 05000 | E_mean: 16.1663 | Time(s): 12.490 | Stage: VMC | acceptance: 0.896 | d_act: 0.000 | ejd: 0.099 | mag_actor: 0.000 | mag_mala: 0.022 | mean_log_ratio: -0.684 | mean_sigma: 0.141 | sig_scale: 0.000 | mean_reward: 0.000 | Actor_Loss: 0.000 | Critic1_Loss: 0.000 | Critic2_Loss: 0.000
+Step: 05100 | E_mean: 15.9747 | Time(s): 12.651 | Stage: VMC | acceptance: 0.907 | d_act: 0.000 | ejd: 0.102 | mag_actor: 0.000 | mag_mala: 0.022 | mean_log_ratio: -0.661 | mean_sigma: 0.141 | sig_scale: 0.000 | mean_reward: 0.000 | Actor_Loss: 0.000 | Critic1_Loss: 0.000 | Critic2_Loss: 0.000
+Step: 05200 | E_mean: 15.9552 | Time(s): 12.810 | Stage: VMC | acceptance: 0.908 | d_act: 0.000 | ejd: 0.101 | mag_actor: 0.000 | mag_mala: 0.022 | mean_log_ratio: -0.666 | mean_sigma: 0.141 | sig_scale: 0.000 | mean_reward: 0.000 | Actor_Loss: 0.000 | Critic1_Loss: 0.000 | Critic2_Loss: 0.000
+Step: 05300 | E_mean: 16.2888 | Time(s): 12.968 | Stage: VMC | acceptance: 0.916 | d_act: 0.000 | ejd: 0.102 | mag_actor: 0.000 | mag_mala: 0.022 | mean_log_ratio: -0.655 | mean_sigma: 0.141 | sig_scale: 0.000 | mean_reward: 0.000 | Actor_Loss: 0.000 | Critic1_Loss: 0.000 | Critic2_Loss: 0.000
+Step: 05400 | E_mean: 16.0367 | Time(s): 13.127 | Stage: VMC | acceptance: 0.900 | d_act: 0.000 | ejd: 0.101 | mag_actor: 0.000 | mag_mala: 0.022 | mean_log_ratio: -0.674 | mean_sigma: 0.141 | sig_scale: 0.000 | mean_reward: 0.000 | Actor_Loss: 0.000 | Critic1_Loss: 0.000 | Critic2_Loss: 0.000
+Step: 05500 | E_mean: 15.6844 | Time(s): 13.288 | Stage: VMC | acceptance: 0.887 | d_act: 0.000 | ejd: 0.099 | mag_actor: 0.000 | mag_mala: 0.022 | mean_log_ratio: -0.670 | mean_sigma: 0.141 | sig_scale: 0.000 | mean_reward: 0.000 | Actor_Loss: 0.000 | Critic1_Loss: 0.000 | Critic2_Loss: 0.000
+Step: 05600 | E_mean: 16.2830 | Time(s): 13.447 | Stage: VMC | acceptance: 0.916 | d_act: 0.000 | ejd: 0.103 | mag_actor: 0.000 | mag_mala: 0.022 | mean_log_ratio: -0.661 | mean_sigma: 0.141 | sig_scale: 0.000 | mean_reward: 0.000 | Actor_Loss: 0.000 | Critic1_Loss: 0.000 | Critic2_Loss: 0.000
+Step: 05700 | E_mean: 16.0420 | Time(s): 13.607 | Stage: VMC | acceptance: 0.898 | d_act: 0.000 | ejd: 0.101 | mag_actor: 0.000 | mag_mala: 0.022 | mean_log_ratio: -0.659 | mean_sigma: 0.141 | sig_scale: 0.000 | mean_reward: 0.000 | Actor_Loss: 0.000 | Critic1_Loss: 0.000 | Critic2_Loss: 0.000
+Step: 05800 | E_mean: 15.7233 | Time(s): 13.767 | Stage: VMC | acceptance: 0.901 | d_act: 0.000 | ejd: 0.100 | mag_actor: 0.000 | mag_mala: 0.022 | mean_log_ratio: -0.644 | mean_sigma: 0.141 | sig_scale: 0.000 | mean_reward: 0.000 | Actor_Loss: 0.000 | Critic1_Loss: 0.000 | Critic2_Loss: 0.000
+Step: 05900 | E_mean: 15.9257 | Time(s): 13.926 | Stage: VMC | acceptance: 0.906 | d_act: 0.000 | ejd: 0.102 | mag_actor: 0.000 | mag_mala: 0.022 | mean_log_ratio: -0.641 | mean_sigma: 0.141 | sig_scale: 0.000 | mean_reward: 0.000 | Actor_Loss: 0.000 | Critic1_Loss: 0.000 | Critic2_Loss: 0.000
+Step: 06000 | E_mean: 15.7923 | Time(s): 14.085 | Stage: VMC | acceptance: 0.907 | d_act: 0.000 | ejd: 0.100 | mag_actor: 0.000 | mag_mala: 0.022 | mean_log_ratio: -0.653 | mean_sigma: 0.141 | sig_scale: 0.000 | mean_reward: 0.000 | Actor_Loss: 0.000 | Critic1_Loss: 0.000 | Critic2_Loss: 0.000
+Step: 06100 | E_mean: 15.7448 | Time(s): 14.244 | Stage: VMC | acceptance: 0.915 | d_act: 0.000 | ejd: 0.101 | mag_actor: 0.000 | mag_mala: 0.022 | mean_log_ratio: -0.710 | mean_sigma: 0.141 | sig_scale: 0.000 | mean_reward: 0.000 | Actor_Loss: 0.000 | Critic1_Loss: 0.000 | Critic2_Loss: 0.000
+Step: 06200 | E_mean: 16.1189 | Time(s): 14.402 | Stage: VMC | acceptance: 0.899 | d_act: 0.000 | ejd: 0.099 | mag_actor: 0.000 | mag_mala: 0.022 | mean_log_ratio: -0.660 | mean_sigma: 0.141 | sig_scale: 0.000 | mean_reward: 0.000 | Actor_Loss: 0.000 | Critic1_Loss: 0.000 | Critic2_Loss: 0.000
+Step: 06300 | E_mean: 15.6153 | Time(s): 14.566 | Stage: VMC | acceptance: 0.906 | d_act: 0.000 | ejd: 0.102 | mag_actor: 0.000 | mag_mala: 0.022 | mean_log_ratio: -0.659 | mean_sigma: 0.141 | sig_scale: 0.000 | mean_reward: 0.000 | Actor_Loss: 0.000 | Critic1_Loss: 0.000 | Critic2_Loss: 0.000
+Step: 06400 | E_mean: 15.2452 | Time(s): 14.729 | Stage: VMC | acceptance: 0.899 | d_act: 0.000 | ejd: 0.101 | mag_actor: 0.000 | mag_mala: 0.022 | mean_log_ratio: -0.660 | mean_sigma: 0.141 | sig_scale: 0.000 | mean_reward: 0.000 | Actor_Loss: 0.000 | Critic1_Loss: 0.000 | Critic2_Loss: 0.000
+Step: 06500 | E_mean: 15.5690 | Time(s): 14.890 | Stage: VMC | acceptance: 0.886 | d_act: 0.000 | ejd: 0.100 | mag_actor: 0.000 | mag_mala: 0.022 | mean_log_ratio: -0.663 | mean_sigma: 0.141 | sig_scale: 0.000 | mean_reward: 0.000 | Actor_Loss: 0.000 | Critic1_Loss: 0.000 | Critic2_Loss: 0.000
+Step: 06600 | E_mean: 15.7363 | Time(s): 15.050 | Stage: VMC | acceptance: 0.902 | d_act: 0.000 | ejd: 0.103 | mag_actor: 0.000 | mag_mala: 0.022 | mean_log_ratio: -0.668 | mean_sigma: 0.141 | sig_scale: 0.000 | mean_reward: 0.000 | Actor_Loss: 0.000 | Critic1_Loss: 0.000 | Critic2_Loss: 0.000
+Step: 06700 | E_mean: 16.1371 | Time(s): 15.211 | Stage: VMC | acceptance: 0.925 | d_act: 0.000 | ejd: 0.106 | mag_actor: 0.000 | mag_mala: 0.022 | mean_log_ratio: -0.681 | mean_sigma: 0.141 | sig_scale: 0.000 | mean_reward: 0.000 | Actor_Loss: 0.000 | Critic1_Loss: 0.000 | Critic2_Loss: 0.000
+Step: 06800 | E_mean: 15.2283 | Time(s): 15.372 | Stage: VMC | acceptance: 0.896 | d_act: 0.000 | ejd: 0.098 | mag_actor: 0.000 | mag_mala: 0.022 | mean_log_ratio: -0.668 | mean_sigma: 0.141 | sig_scale: 0.000 | mean_reward: 0.000 | Actor_Loss: 0.000 | Critic1_Loss: 0.000 | Critic2_Loss: 0.000
+Step: 06900 | E_mean: 15.5030 | Time(s): 15.541 | Stage: VMC | acceptance: 0.909 | d_act: 0.000 | ejd: 0.102 | mag_actor: 0.000 | mag_mala: 0.022 | mean_log_ratio: -0.681 | mean_sigma: 0.141 | sig_scale: 0.000 | mean_reward: 0.000 | Actor_Loss: 0.000 | Critic1_Loss: 0.000 | Critic2_Loss: 0.000
+Step: 07000 | E_mean: 15.8618 | Time(s): 15.698 | Stage: VMC | acceptance: 0.915 | d_act: 0.000 | ejd: 0.104 | mag_actor: 0.000 | mag_mala: 0.022 | mean_log_ratio: -0.660 | mean_sigma: 0.141 | sig_scale: 0.000 | mean_reward: 0.000 | Actor_Loss: 0.000 | Critic1_Loss: 0.000 | Critic2_Loss: 0.000
+Step: 07100 | E_mean: 15.7318 | Time(s): 15.856 | Stage: VMC | acceptance: 0.900 | d_act: 0.000 | ejd: 0.099 | mag_actor: 0.000 | mag_mala: 0.022 | mean_log_ratio: -0.676 | mean_sigma: 0.141 | sig_scale: 0.000 | mean_reward: 0.000 | Actor_Loss: 0.000 | Critic1_Loss: 0.000 | Critic2_Loss: 0.000
+Step: 07200 | E_mean: 15.3282 | Time(s): 16.013 | Stage: VMC | acceptance: 0.895 | d_act: 0.000 | ejd: 0.098 | mag_actor: 0.000 | mag_mala: 0.022 | mean_log_ratio: -0.689 | mean_sigma: 0.141 | sig_scale: 0.000 | mean_reward: 0.000 | Actor_Loss: 0.000 | Critic1_Loss: 0.000 | Critic2_Loss: 0.000
+Step: 07300 | E_mean: 15.5168 | Time(s): 16.171 | Stage: VMC | acceptance: 0.922 | d_act: 0.000 | ejd: 0.102 | mag_actor: 0.000 | mag_mala: 0.022 | mean_log_ratio: -0.637 | mean_sigma: 0.141 | sig_scale: 0.000 | mean_reward: 0.000 | Actor_Loss: 0.000 | Critic1_Loss: 0.000 | Critic2_Loss: 0.000
+Step: 07400 | E_mean: 15.2556 | Time(s): 16.328 | Stage: VMC | acceptance: 0.906 | d_act: 0.000 | ejd: 0.101 | mag_actor: 0.000 | mag_mala: 0.022 | mean_log_ratio: -0.675 | mean_sigma: 0.141 | sig_scale: 0.000 | mean_reward: 0.000 | Actor_Loss: 0.000 | Critic1_Loss: 0.000 | Critic2_Loss: 0.000
+Step: 07500 | E_mean: 15.0914 | Time(s): 16.485 | Stage: VMC | acceptance: 0.913 | d_act: 0.000 | ejd: 0.102 | mag_actor: 0.000 | mag_mala: 0.022 | mean_log_ratio: -0.647 | mean_sigma: 0.141 | sig_scale: 0.000 | mean_reward: 0.000 | Actor_Loss: 0.000 | Critic1_Loss: 0.000 | Critic2_Loss: 0.000
+Step: 07600 | E_mean: 15.2820 | Time(s): 16.643 | Stage: VMC | acceptance: 0.904 | d_act: 0.000 | ejd: 0.103 | mag_actor: 0.000 | mag_mala: 0.022 | mean_log_ratio: -0.653 | mean_sigma: 0.141 | sig_scale: 0.000 | mean_reward: 0.000 | Actor_Loss: 0.000 | Critic1_Loss: 0.000 | Critic2_Loss: 0.000
+Step: 07700 | E_mean: 15.0904 | Time(s): 16.800 | Stage: VMC | acceptance: 0.919 | d_act: 0.000 | ejd: 0.103 | mag_actor: 0.000 | mag_mala: 0.022 | mean_log_ratio: -0.673 | mean_sigma: 0.141 | sig_scale: 0.000 | mean_reward: 0.000 | Actor_Loss: 0.000 | Critic1_Loss: 0.000 | Critic2_Loss: 0.000
+Step: 07800 | E_mean: 15.0878 | Time(s): 16.958 | Stage: VMC | acceptance: 0.910 | d_act: 0.000 | ejd: 0.099 | mag_actor: 0.000 | mag_mala: 0.022 | mean_log_ratio: -0.655 | mean_sigma: 0.141 | sig_scale: 0.000 | mean_reward: 0.000 | Actor_Loss: 0.000 | Critic1_Loss: 0.000 | Critic2_Loss: 0.000
+Step: 07900 | E_mean: 14.7963 | Time(s): 17.115 | Stage: VMC | acceptance: 0.909 | d_act: 0.000 | ejd: 0.102 | mag_actor: 0.000 | mag_mala: 0.022 | mean_log_ratio: -0.667 | mean_sigma: 0.141 | sig_scale: 0.000 | mean_reward: 0.000 | Actor_Loss: 0.000 | Critic1_Loss: 0.000 | Critic2_Loss: 0.000
+Step: 08000 | E_mean: 15.0432 | Time(s): 17.272 | Stage: VMC | acceptance: 0.910 | d_act: 0.000 | ejd: 0.101 | mag_actor: 0.000 | mag_mala: 0.022 | mean_log_ratio: -0.642 | mean_sigma: 0.141 | sig_scale: 0.000 | mean_reward: 0.000 | Actor_Loss: 0.000 | Critic1_Loss: 0.000 | Critic2_Loss: 0.000
+Step: 08100 | E_mean: 14.8161 | Time(s): 17.430 | Stage: VMC | acceptance: 0.922 | d_act: 0.000 | ejd: 0.102 | mag_actor: 0.000 | mag_mala: 0.022 | mean_log_ratio: -0.661 | mean_sigma: 0.141 | sig_scale: 0.000 | mean_reward: 0.000 | Actor_Loss: 0.000 | Critic1_Loss: 0.000 | Critic2_Loss: 0.000
+Step: 08200 | E_mean: 14.6190 | Time(s): 17.587 | Stage: VMC | acceptance: 0.905 | d_act: 0.000 | ejd: 0.104 | mag_actor: 0.000 | mag_mala: 0.022 | mean_log_ratio: -0.635 | mean_sigma: 0.141 | sig_scale: 0.000 | mean_reward: 0.000 | Actor_Loss: 0.000 | Critic1_Loss: 0.000 | Critic2_Loss: 0.000
+Step: 08300 | E_mean: 14.5976 | Time(s): 17.745 | Stage: VMC | acceptance: 0.896 | d_act: 0.000 | ejd: 0.101 | mag_actor: 0.000 | mag_mala: 0.022 | mean_log_ratio: -0.679 | mean_sigma: 0.141 | sig_scale: 0.000 | mean_reward: 0.000 | Actor_Loss: 0.000 | Critic1_Loss: 0.000 | Critic2_Loss: 0.000
+Step: 08400 | E_mean: 15.0299 | Time(s): 17.902 | Stage: VMC | acceptance: 0.905 | d_act: 0.000 | ejd: 0.097 | mag_actor: 0.000 | mag_mala: 0.022 | mean_log_ratio: -0.669 | mean_sigma: 0.141 | sig_scale: 0.000 | mean_reward: 0.000 | Actor_Loss: 0.000 | Critic1_Loss: 0.000 | Critic2_Loss: 0.000
+Step: 08500 | E_mean: 14.5459 | Time(s): 18.060 | Stage: VMC | acceptance: 0.918 | d_act: 0.000 | ejd: 0.103 | mag_actor: 0.000 | mag_mala: 0.022 | mean_log_ratio: -0.658 | mean_sigma: 0.141 | sig_scale: 0.000 | mean_reward: 0.000 | Actor_Loss: 0.000 | Critic1_Loss: 0.000 | Critic2_Loss: 0.000
+Step: 08600 | E_mean: 14.4385 | Time(s): 18.217 | Stage: VMC | acceptance: 0.910 | d_act: 0.000 | ejd: 0.100 | mag_actor: 0.000 | mag_mala: 0.022 | mean_log_ratio: -0.718 | mean_sigma: 0.141 | sig_scale: 0.000 | mean_reward: 0.000 | Actor_Loss: 0.000 | Critic1_Loss: 0.000 | Critic2_Loss: 0.000
+Step: 08700 | E_mean: 14.3809 | Time(s): 18.374 | Stage: VMC | acceptance: 0.912 | d_act: 0.000 | ejd: 0.103 | mag_actor: 0.000 | mag_mala: 0.022 | mean_log_ratio: -0.650 | mean_sigma: 0.141 | sig_scale: 0.000 | mean_reward: 0.000 | Actor_Loss: 0.000 | Critic1_Loss: 0.000 | Critic2_Loss: 0.000
+Step: 08800 | E_mean: 14.2816 | Time(s): 18.537 | Stage: VMC | acceptance: 0.919 | d_act: 0.000 | ejd: 0.104 | mag_actor: 0.000 | mag_mala: 0.022 | mean_log_ratio: -0.670 | mean_sigma: 0.141 | sig_scale: 0.000 | mean_reward: 0.000 | Actor_Loss: 0.000 | Critic1_Loss: 0.000 | Critic2_Loss: 0.000
+Step: 08900 | E_mean: 14.8189 | Time(s): 18.697 | Stage: VMC | acceptance: 0.898 | d_act: 0.000 | ejd: 0.098 | mag_actor: 0.000 | mag_mala: 0.022 | mean_log_ratio: -0.642 | mean_sigma: 0.141 | sig_scale: 0.000 | mean_reward: 0.000 | Actor_Loss: 0.000 | Critic1_Loss: 0.000 | Critic2_Loss: 0.000
+Step: 09000 | E_mean: 14.1843 | Time(s): 18.858 | Stage: VMC | acceptance: 0.908 | d_act: 0.000 | ejd: 0.102 | mag_actor: 0.000 | mag_mala: 0.022 | mean_log_ratio: -0.659 | mean_sigma: 0.141 | sig_scale: 0.000 | mean_reward: 0.000 | Actor_Loss: 0.000 | Critic1_Loss: 0.000 | Critic2_Loss: 0.000
+Step: 09100 | E_mean: 14.5611 | Time(s): 19.018 | Stage: VMC | acceptance: 0.909 | d_act: 0.000 | ejd: 0.100 | mag_actor: 0.000 | mag_mala: 0.022 | mean_log_ratio: -0.660 | mean_sigma: 0.141 | sig_scale: 0.000 | mean_reward: 0.000 | Actor_Loss: 0.000 | Critic1_Loss: 0.000 | Critic2_Loss: 0.000
+Step: 09200 | E_mean: 14.3048 | Time(s): 19.179 | Stage: VMC | acceptance: 0.913 | d_act: 0.000 | ejd: 0.105 | mag_actor: 0.000 | mag_mala: 0.022 | mean_log_ratio: -0.641 | mean_sigma: 0.141 | sig_scale: 0.000 | mean_reward: 0.000 | Actor_Loss: 0.000 | Critic1_Loss: 0.000 | Critic2_Loss: 0.000
+Step: 09300 | E_mean: 14.4451 | Time(s): 19.339 | Stage: VMC | acceptance: 0.915 | d_act: 0.000 | ejd: 0.102 | mag_actor: 0.000 | mag_mala: 0.022 | mean_log_ratio: -0.682 | mean_sigma: 0.141 | sig_scale: 0.000 | mean_reward: 0.000 | Actor_Loss: 0.000 | Critic1_Loss: 0.000 | Critic2_Loss: 0.000
+Step: 09400 | E_mean: 14.2792 | Time(s): 19.500 | Stage: VMC | acceptance: 0.911 | d_act: 0.000 | ejd: 0.101 | mag_actor: 0.000 | mag_mala: 0.022 | mean_log_ratio: -0.652 | mean_sigma: 0.141 | sig_scale: 0.000 | mean_reward: 0.000 | Actor_Loss: 0.000 | Critic1_Loss: 0.000 | Critic2_Loss: 0.000
+Step: 09500 | E_mean: 14.1765 | Time(s): 19.660 | Stage: VMC | acceptance: 0.916 | d_act: 0.000 | ejd: 0.102 | mag_actor: 0.000 | mag_mala: 0.022 | mean_log_ratio: -0.644 | mean_sigma: 0.141 | sig_scale: 0.000 | mean_reward: 0.000 | Actor_Loss: 0.000 | Critic1_Loss: 0.000 | Critic2_Loss: 0.000
+Step: 09600 | E_mean: 14.4966 | Time(s): 19.821 | Stage: VMC | acceptance: 0.915 | d_act: 0.000 | ejd: 0.102 | mag_actor: 0.000 | mag_mala: 0.022 | mean_log_ratio: -0.638 | mean_sigma: 0.141 | sig_scale: 0.000 | mean_reward: 0.000 | Actor_Loss: 0.000 | Critic1_Loss: 0.000 | Critic2_Loss: 0.000
+Step: 09700 | E_mean: 14.0599 | Time(s): 19.982 | Stage: VMC | acceptance: 0.909 | d_act: 0.000 | ejd: 0.102 | mag_actor: 0.000 | mag_mala: 0.022 | mean_log_ratio: -0.703 | mean_sigma: 0.141 | sig_scale: 0.000 | mean_reward: 0.000 | Actor_Loss: 0.000 | Critic1_Loss: 0.000 | Critic2_Loss: 0.000
+Step: 09800 | E_mean: 14.0828 | Time(s): 20.142 | Stage: VMC | acceptance: 0.905 | d_act: 0.000 | ejd: 0.100 | mag_actor: 0.000 | mag_mala: 0.022 | mean_log_ratio: -0.665 | mean_sigma: 0.141 | sig_scale: 0.000 | mean_reward: 0.000 | Actor_Loss: 0.000 | Critic1_Loss: 0.000 | Critic2_Loss: 0.000
+Step: 09900 | E_mean: 14.1828 | Time(s): 20.303 | Stage: VMC | acceptance: 0.909 | d_act: 0.000 | ejd: 0.100 | mag_actor: 0.000 | mag_mala: 0.022 | mean_log_ratio: -0.649 | mean_sigma: 0.141 | sig_scale: 0.000 | mean_reward: 0.000 | Actor_Loss: 0.000 | Critic1_Loss: 0.000 | Critic2_Loss: 0.000
+Step: 10000 | E_mean: 14.3235 | Time(s): 20.463 | Stage: VMC | acceptance: 0.911 | d_act: 0.000 | ejd: 0.102 | mag_actor: 0.000 | mag_mala: 0.022 | mean_log_ratio: -0.705 | mean_sigma: 0.141 | sig_scale: 0.000 | mean_reward: 0.000 | Actor_Loss: 0.000 | Critic1_Loss: 0.000 | Critic2_Loss: 0.000
+Step: 10100 | E_mean: 13.9327 | Time(s): 20.624 | Stage: VMC | acceptance: 0.906 | d_act: 0.000 | ejd: 0.101 | mag_actor: 0.000 | mag_mala: 0.022 | mean_log_ratio: -0.660 | mean_sigma: 0.141 | sig_scale: 0.000 | mean_reward: 0.000 | Actor_Loss: 0.000 | Critic1_Loss: 0.000 | Critic2_Loss: 0.000
+Step: 10200 | E_mean: 13.8880 | Time(s): 20.784 | Stage: VMC | acceptance: 0.933 | d_act: 0.000 | ejd: 0.103 | mag_actor: 0.000 | mag_mala: 0.022 | mean_log_ratio: -0.652 | mean_sigma: 0.141 | sig_scale: 0.000 | mean_reward: 0.000 | Actor_Loss: 0.000 | Critic1_Loss: 0.000 | Critic2_Loss: 0.000
+Step: 10300 | E_mean: 14.0465 | Time(s): 20.945 | Stage: VMC | acceptance: 0.906 | d_act: 0.000 | ejd: 0.101 | mag_actor: 0.000 | mag_mala: 0.022 | mean_log_ratio: -0.640 | mean_sigma: 0.141 | sig_scale: 0.000 | mean_reward: 0.000 | Actor_Loss: 0.000 | Critic1_Loss: 0.000 | Critic2_Loss: 0.000
+Step: 10400 | E_mean: 13.8284 | Time(s): 21.114 | Stage: VMC | acceptance: 0.917 | d_act: 0.000 | ejd: 0.102 | mag_actor: 0.000 | mag_mala: 0.022 | mean_log_ratio: -0.666 | mean_sigma: 0.141 | sig_scale: 0.000 | mean_reward: 0.000 | Actor_Loss: 0.000 | Critic1_Loss: 0.000 | Critic2_Loss: 0.000
+Step: 10500 | E_mean: 13.5213 | Time(s): 21.279 | Stage: VMC | acceptance: 0.908 | d_act: 0.000 | ejd: 0.101 | mag_actor: 0.000 | mag_mala: 0.022 | mean_log_ratio: -0.644 | mean_sigma: 0.141 | sig_scale: 0.000 | mean_reward: 0.000 | Actor_Loss: 0.000 | Critic1_Loss: 0.000 | Critic2_Loss: 0.000
+Step: 10600 | E_mean: 13.6255 | Time(s): 21.440 | Stage: VMC | acceptance: 0.904 | d_act: 0.000 | ejd: 0.100 | mag_actor: 0.000 | mag_mala: 0.022 | mean_log_ratio: -0.686 | mean_sigma: 0.141 | sig_scale: 0.000 | mean_reward: 0.000 | Actor_Loss: 0.000 | Critic1_Loss: 0.000 | Critic2_Loss: 0.000
+Step: 10700 | E_mean: 13.7054 | Time(s): 21.601 | Stage: VMC | acceptance: 0.897 | d_act: 0.000 | ejd: 0.100 | mag_actor: 0.000 | mag_mala: 0.022 | mean_log_ratio: -0.658 | mean_sigma: 0.141 | sig_scale: 0.000 | mean_reward: 0.000 | Actor_Loss: 0.000 | Critic1_Loss: 0.000 | Critic2_Loss: 0.000
+Step: 10800 | E_mean: 13.7493 | Time(s): 21.761 | Stage: VMC | acceptance: 0.906 | d_act: 0.000 | ejd: 0.102 | mag_actor: 0.000 | mag_mala: 0.022 | mean_log_ratio: -0.697 | mean_sigma: 0.141 | sig_scale: 0.000 | mean_reward: 0.000 | Actor_Loss: 0.000 | Critic1_Loss: 0.000 | Critic2_Loss: 0.000
+Step: 10900 | E_mean: 13.6888 | Time(s): 21.922 | Stage: VMC | acceptance: 0.907 | d_act: 0.000 | ejd: 0.100 | mag_actor: 0.000 | mag_mala: 0.022 | mean_log_ratio: -0.693 | mean_sigma: 0.141 | sig_scale: 0.000 | mean_reward: 0.000 | Actor_Loss: 0.000 | Critic1_Loss: 0.000 | Critic2_Loss: 0.000
+Step: 11000 | E_mean: 13.7264 | Time(s): 22.088 | Stage: VMC | acceptance: 0.936 | d_act: 0.000 | ejd: 0.106 | mag_actor: 0.000 | mag_mala: 0.021 | mean_log_ratio: -0.630 | mean_sigma: 0.141 | sig_scale: 0.000 | mean_reward: 0.000 | Actor_Loss: 0.000 | Critic1_Loss: 0.000 | Critic2_Loss: 0.000
+Step: 11100 | E_mean: 13.1504 | Time(s): 22.245 | Stage: VMC | acceptance: 0.909 | d_act: 0.000 | ejd: 0.103 | mag_actor: 0.000 | mag_mala: 0.021 | mean_log_ratio: -0.663 | mean_sigma: 0.141 | sig_scale: 0.000 | mean_reward: 0.000 | Actor_Loss: 0.000 | Critic1_Loss: 0.000 | Critic2_Loss: 0.000
+Step: 11200 | E_mean: 13.3792 | Time(s): 22.406 | Stage: VMC | acceptance: 0.922 | d_act: 0.000 | ejd: 0.103 | mag_actor: 0.000 | mag_mala: 0.021 | mean_log_ratio: -0.629 | mean_sigma: 0.141 | sig_scale: 0.000 | mean_reward: 0.000 | Actor_Loss: 0.000 | Critic1_Loss: 0.000 | Critic2_Loss: 0.000
+Step: 11300 | E_mean: 13.3323 | Time(s): 22.568 | Stage: VMC | acceptance: 0.909 | d_act: 0.000 | ejd: 0.101 | mag_actor: 0.000 | mag_mala: 0.022 | mean_log_ratio: -0.666 | mean_sigma: 0.141 | sig_scale: 0.000 | mean_reward: 0.000 | Actor_Loss: 0.000 | Critic1_Loss: 0.000 | Critic2_Loss: 0.000
+Step: 11400 | E_mean: 13.4363 | Time(s): 22.733 | Stage: VMC | acceptance: 0.906 | d_act: 0.000 | ejd: 0.104 | mag_actor: 0.000 | mag_mala: 0.021 | mean_log_ratio: -0.633 | mean_sigma: 0.141 | sig_scale: 0.000 | mean_reward: 0.000 | Actor_Loss: 0.000 | Critic1_Loss: 0.000 | Critic2_Loss: 0.000
+Step: 11500 | E_mean: 13.3350 | Time(s): 22.893 | Stage: VMC | acceptance: 0.913 | d_act: 0.000 | ejd: 0.103 | mag_actor: 0.000 | mag_mala: 0.022 | mean_log_ratio: -0.652 | mean_sigma: 0.141 | sig_scale: 0.000 | mean_reward: 0.000 | Actor_Loss: 0.000 | Critic1_Loss: 0.000 | Critic2_Loss: 0.000
+Step: 11600 | E_mean: 13.4070 | Time(s): 23.059 | Stage: VMC | acceptance: 0.918 | d_act: 0.000 | ejd: 0.103 | mag_actor: 0.000 | mag_mala: 0.022 | mean_log_ratio: -0.646 | mean_sigma: 0.141 | sig_scale: 0.000 | mean_reward: 0.000 | Actor_Loss: 0.000 | Critic1_Loss: 0.000 | Critic2_Loss: 0.000
+Step: 11700 | E_mean: 12.9007 | Time(s): 23.221 | Stage: VMC | acceptance: 0.913 | d_act: 0.000 | ejd: 0.102 | mag_actor: 0.000 | mag_mala: 0.021 | mean_log_ratio: -0.647 | mean_sigma: 0.141 | sig_scale: 0.000 | mean_reward: 0.000 | Actor_Loss: 0.000 | Critic1_Loss: 0.000 | Critic2_Loss: 0.000
+Step: 11800 | E_mean: 13.2541 | Time(s): 23.382 | Stage: VMC | acceptance: 0.913 | d_act: 0.000 | ejd: 0.100 | mag_actor: 0.000 | mag_mala: 0.022 | mean_log_ratio: -0.646 | mean_sigma: 0.141 | sig_scale: 0.000 | mean_reward: 0.000 | Actor_Loss: 0.000 | Critic1_Loss: 0.000 | Critic2_Loss: 0.000
+Step: 11900 | E_mean: 12.8938 | Time(s): 23.543 | Stage: VMC | acceptance: 0.924 | d_act: 0.000 | ejd: 0.101 | mag_actor: 0.000 | mag_mala: 0.021 | mean_log_ratio: -0.641 | mean_sigma: 0.141 | sig_scale: 0.000 | mean_reward: 0.000 | Actor_Loss: 0.000 | Critic1_Loss: 0.000 | Critic2_Loss: 0.000
+Step: 12000 | E_mean: 13.0367 | Time(s): 23.703 | Stage: VMC | acceptance: 0.926 | d_act: 0.000 | ejd: 0.105 | mag_actor: 0.000 | mag_mala: 0.021 | mean_log_ratio: -0.648 | mean_sigma: 0.141 | sig_scale: 0.000 | mean_reward: 0.000 | Actor_Loss: 0.000 | Critic1_Loss: 0.000 | Critic2_Loss: 0.000
+Step: 12100 | E_mean: 13.1779 | Time(s): 23.864 | Stage: VMC | acceptance: 0.917 | d_act: 0.000 | ejd: 0.104 | mag_actor: 0.000 | mag_mala: 0.021 | mean_log_ratio: -0.653 | mean_sigma: 0.141 | sig_scale: 0.000 | mean_reward: 0.000 | Actor_Loss: 0.000 | Critic1_Loss: 0.000 | Critic2_Loss: 0.000
+Step: 12200 | E_mean: 13.0915 | Time(s): 24.024 | Stage: VMC | acceptance: 0.910 | d_act: 0.000 | ejd: 0.101 | mag_actor: 0.000 | mag_mala: 0.021 | mean_log_ratio: -0.680 | mean_sigma: 0.141 | sig_scale: 0.000 | mean_reward: 0.000 | Actor_Loss: 0.000 | Critic1_Loss: 0.000 | Critic2_Loss: 0.000
+Step: 12300 | E_mean: 13.0636 | Time(s): 24.185 | Stage: VMC | acceptance: 0.914 | d_act: 0.000 | ejd: 0.103 | mag_actor: 0.000 | mag_mala: 0.022 | mean_log_ratio: -0.657 | mean_sigma: 0.141 | sig_scale: 0.000 | mean_reward: 0.000 | Actor_Loss: 0.000 | Critic1_Loss: 0.000 | Critic2_Loss: 0.000
+Step: 12400 | E_mean: 12.4525 | Time(s): 24.345 | Stage: VMC | acceptance: 0.920 | d_act: 0.000 | ejd: 0.104 | mag_actor: 0.000 | mag_mala: 0.021 | mean_log_ratio: -0.655 | mean_sigma: 0.141 | sig_scale: 0.000 | mean_reward: 0.000 | Actor_Loss: 0.000 | Critic1_Loss: 0.000 | Critic2_Loss: 0.000
+TD3 Sweep 0000 | Recompensa = -4.7342 | Aceptacion = 0.988
+TD3 Sweep 0010 | Recompensa = -4.7264 | Aceptacion = 0.982
+TD3 Sweep 0020 | Recompensa = -4.6640 | Aceptacion = 0.991
+TD3 Sweep 0030 | Recompensa = -4.6681 | Aceptacion = 0.991
+TD3 Sweep 0040 | Recompensa = -4.5903 | Aceptacion = 0.989
+TD3 Sweep 0050 | Recompensa = -4.5078 | Aceptacion = 0.989
+TD3 Sweep 0060 | Recompensa = -4.5006 | Aceptacion = 0.979
+TD3 Sweep 0070 | Recompensa = -4.3880 | Aceptacion = 0.989
+TD3 Sweep 0080 | Recompensa = -4.3626 | Aceptacion = 0.979
+TD3 Sweep 0090 | Recompensa = -4.3378 | Aceptacion = 0.981
+TD3 Sweep 0100 | Recompensa = -4.2125 | Aceptacion = 0.973
+TD3 Sweep 0110 | Recompensa = -4.0914 | Aceptacion = 0.978
+TD3 Sweep 0120 | Recompensa = -3.9643 | Aceptacion = 0.968
+TD3 Sweep 0130 | Recompensa = -3.9708 | Aceptacion = 0.951
+TD3 Sweep 0140 | Recompensa = -3.8335 | Aceptacion = 0.956
+TD3 Sweep 0150 | Recompensa = -3.8101 | Aceptacion = 0.949
+TD3 Sweep 0160 | Recompensa = -3.5722 | Aceptacion = 0.938
+TD3 Sweep 0170 | Recompensa = -3.5811 | Aceptacion = 0.935
+TD3 Sweep 0180 | Recompensa = -3.4883 | Aceptacion = 0.939
+TD3 Sweep 0190 | Recompensa = -3.4376 | Aceptacion = 0.930
+TD3 Sweep 0200 | Recompensa = -3.4914 | Aceptacion = 0.922
+TD3 Sweep 0210 | Recompensa = -3.4710 | Aceptacion = 0.933
+TD3 Sweep 0220 | Recompensa = -3.3884 | Aceptacion = 0.909
+TD3 Sweep 0230 | Recompensa = -3.3540 | Aceptacion = 0.912
+TD3 Sweep 0240 | Recompensa = -3.3632 | Aceptacion = 0.931
+TD3 Sweep 0250 | Recompensa = -3.3801 | Aceptacion = 0.927
+TD3 Sweep 0260 | Recompensa = -3.2999 | Aceptacion = 0.923
+TD3 Sweep 0270 | Recompensa = -3.2763 | Aceptacion = 0.917
+TD3 Sweep 0280 | Recompensa = -3.3357 | Aceptacion = 0.920
+TD3 Sweep 0290 | Recompensa = -3.2855 | Aceptacion = 0.929
+TD3 Sweep 0300 | Recompensa = -3.3030 | Aceptacion = 0.909
+TD3 Sweep 0310 | Recompensa = -3.3747 | Aceptacion = 0.915
+TD3 Sweep 0320 | Recompensa = -3.2861 | Aceptacion = 0.922
+TD3 Sweep 0330 | Recompensa = -3.4276 | Aceptacion = 0.924
+TD3 Sweep 0340 | Recompensa = -3.3863 | Aceptacion = 0.922
+TD3 Sweep 0350 | Recompensa = -3.2114 | Aceptacion = 0.904
+TD3 Sweep 0360 | Recompensa = -3.2636 | Aceptacion = 0.902
+TD3 Sweep 0370 | Recompensa = -3.2246 | Aceptacion = 0.898
+TD3 Sweep 0380 | Recompensa = -3.2969 | Aceptacion = 0.911
+TD3 Sweep 0390 | Recompensa = -3.2305 | Aceptacion = 0.912
+TD3 Sweep 0400 | Recompensa = -3.2137 | Aceptacion = 0.919
+TD3 Sweep 0410 | Recompensa = -3.2777 | Aceptacion = 0.931
+TD3 Sweep 0420 | Recompensa = -3.2941 | Aceptacion = 0.904
+TD3 Sweep 0430 | Recompensa = -3.3073 | Aceptacion = 0.916
+TD3 Sweep 0440 | Recompensa = -3.2848 | Aceptacion = 0.922
+TD3 Sweep 0450 | Recompensa = -3.3377 | Aceptacion = 0.917
+TD3 Sweep 0460 | Recompensa = -3.1890 | Aceptacion = 0.917
+TD3 Sweep 0470 | Recompensa = -3.1691 | Aceptacion = 0.922
+TD3 Sweep 0480 | Recompensa = -3.2589 | Aceptacion = 0.920
+TD3 Sweep 0490 | Recompensa = -3.2964 | Aceptacion = 0.909
+TD3 Sweep 0500 | Recompensa = -3.2657 | Aceptacion = 0.911
+TD3 Sweep 0510 | Recompensa = -3.2884 | Aceptacion = 0.919
+TD3 Sweep 0520 | Recompensa = -3.2373 | Aceptacion = 0.904
+TD3 Sweep 0530 | Recompensa = -3.2084 | Aceptacion = 0.923
+TD3 Sweep 0540 | Recompensa = -3.2758 | Aceptacion = 0.901
+TD3 Sweep 0550 | Recompensa = -3.2860 | Aceptacion = 0.919
+TD3 Sweep 0560 | Recompensa = -3.2476 | Aceptacion = 0.898
+TD3 Sweep 0570 | Recompensa = -3.2706 | Aceptacion = 0.922
+TD3 Sweep 0580 | Recompensa = -3.3008 | Aceptacion = 0.925
+TD3 Sweep 0590 | Recompensa = -3.2331 | Aceptacion = 0.916
+TD3 Sweep 0600 | Recompensa = -3.2114 | Aceptacion = 0.920
+TD3 Sweep 0610 | Recompensa = -3.1912 | Aceptacion = 0.911
+TD3 Sweep 0620 | Recompensa = -3.3196 | Aceptacion = 0.910
+TD3 Sweep 0630 | Recompensa = -3.2416 | Aceptacion = 0.917
+TD3 Sweep 0640 | Recompensa = -3.2187 | Aceptacion = 0.918
+TD3 Sweep 0650 | Recompensa = -3.2197 | Aceptacion = 0.906
+TD3 Sweep 0660 | Recompensa = -3.2483 | Aceptacion = 0.908
+TD3 Sweep 0670 | Recompensa = -3.2310 | Aceptacion = 0.917
+TD3 Sweep 0680 | Recompensa = -3.3426 | Aceptacion = 0.923
+TD3 Sweep 0690 | Recompensa = -3.3142 | Aceptacion = 0.920
+TD3 Sweep 0700 | Recompensa = -3.3282 | Aceptacion = 0.923
+TD3 Sweep 0710 | Recompensa = -3.2941 | Aceptacion = 0.923
+TD3 Sweep 0720 | Recompensa = -3.3799 | Aceptacion = 0.924
+TD3 Sweep 0730 | Recompensa = -3.1979 | Aceptacion = 0.909
+TD3 Sweep 0740 | Recompensa = -3.2667 | Aceptacion = 0.925
+TD3 Sweep 0750 | Recompensa = -3.3347 | Aceptacion = 0.915
+TD3 Sweep 0760 | Recompensa = -3.2632 | Aceptacion = 0.924
+TD3 Sweep 0770 | Recompensa = -3.2766 | Aceptacion = 0.902
+TD3 Sweep 0780 | Recompensa = -3.2057 | Aceptacion = 0.910
+TD3 Sweep 0790 | Recompensa = -3.2088 | Aceptacion = 0.904
+TD3 Sweep 0800 | Recompensa = -3.2256 | Aceptacion = 0.914
+TD3 Sweep 0810 | Recompensa = -3.3337 | Aceptacion = 0.922
+TD3 Sweep 0820 | Recompensa = -3.2111 | Aceptacion = 0.918
+TD3 Sweep 0830 | Recompensa = -3.2979 | Aceptacion = 0.914
+TD3 Sweep 0840 | Recompensa = -3.2589 | Aceptacion = 0.904
+TD3 Sweep 0850 | Recompensa = -3.2478 | Aceptacion = 0.907
+TD3 Sweep 0860 | Recompensa = -3.2337 | Aceptacion = 0.910
+TD3 Sweep 0870 | Recompensa = -3.2709 | Aceptacion = 0.909
+TD3 Sweep 0880 | Recompensa = -3.2293 | Aceptacion = 0.924
+TD3 Sweep 0890 | Recompensa = -3.2496 | Aceptacion = 0.918
+TD3 Sweep 0900 | Recompensa = -3.2478 | Aceptacion = 0.902
+TD3 Sweep 0910 | Recompensa = -3.2028 | Aceptacion = 0.910
+TD3 Sweep 0920 | Recompensa = -3.2261 | Aceptacion = 0.881
+TD3 Sweep 0930 | Recompensa = -3.3488 | Aceptacion = 0.920
+TD3 Sweep 0940 | Recompensa = -3.2575 | Aceptacion = 0.918
+TD3 Sweep 0950 | Recompensa = -3.2092 | Aceptacion = 0.909
+TD3 Sweep 0960 | Recompensa = -3.3409 | Aceptacion = 0.919
+TD3 Sweep 0970 | Recompensa = -3.2472 | Aceptacion = 0.927
+TD3 Sweep 0980 | Recompensa = -3.1545 | Aceptacion = 0.913
+TD3 Sweep 0990 | Recompensa = -3.2579 | Aceptacion = 0.917
+TD3 Sweep 1000 | Recompensa = -3.2739 | Aceptacion = 0.917
+TD3 Sweep 1010 | Recompensa = -3.2695 | Aceptacion = 0.908
+TD3 Sweep 1020 | Recompensa = -3.2956 | Aceptacion = 0.912
+TD3 Sweep 1030 | Recompensa = -3.1809 | Aceptacion = 0.910
+TD3 Sweep 1040 | Recompensa = -3.3047 | Aceptacion = 0.905
+TD3 Sweep 1050 | Recompensa = -3.1809 | Aceptacion = 0.914
+TD3 Sweep 1060 | Recompensa = -3.3166 | Aceptacion = 0.913
+TD3 Sweep 1070 | Recompensa = -3.2308 | Aceptacion = 0.922
+TD3 Sweep 1080 | Recompensa = -3.2658 | Aceptacion = 0.914
+TD3 Sweep 1090 | Recompensa = -3.2431 | Aceptacion = 0.913
+TD3 Sweep 1100 | Recompensa = -3.1403 | Aceptacion = 0.915
+TD3 Sweep 1110 | Recompensa = -3.2919 | Aceptacion = 0.918
+TD3 Sweep 1120 | Recompensa = -3.2078 | Aceptacion = 0.904
+TD3 Sweep 1130 | Recompensa = -3.2432 | Aceptacion = 0.927
+TD3 Sweep 1140 | Recompensa = -3.3004 | Aceptacion = 0.916
+TD3 Sweep 1150 | Recompensa = -3.2725 | Aceptacion = 0.910
+TD3 Sweep 1160 | Recompensa = -3.2732 | Aceptacion = 0.911
+TD3 Sweep 1170 | Recompensa = -3.2740 | Aceptacion = 0.915
+TD3 Sweep 1180 | Recompensa = -3.2694 | Aceptacion = 0.908
+TD3 Sweep 1190 | Recompensa = -3.3490 | Aceptacion = 0.908
+TD3 Sweep 1200 | Recompensa = -3.3039 | Aceptacion = 0.911
+TD3 Sweep 1210 | Recompensa = -3.2160 | Aceptacion = 0.934
+TD3 Sweep 1220 | Recompensa = -3.2389 | Aceptacion = 0.911
+TD3 Sweep 1230 | Recompensa = -3.1415 | Aceptacion = 0.897
+TD3 Sweep 1240 | Recompensa = -3.2408 | Aceptacion = 0.924
+TD3 Sweep 1250 | Recompensa = -3.2709 | Aceptacion = 0.923
+TD3 Sweep 1260 | Recompensa = -3.2006 | Aceptacion = 0.902
+TD3 Sweep 1270 | Recompensa = -3.2566 | Aceptacion = 0.911
+TD3 Sweep 1280 | Recompensa = -3.1590 | Aceptacion = 0.920
+TD3 Sweep 1290 | Recompensa = -3.1980 | Aceptacion = 0.916
+TD3 Sweep 1300 | Recompensa = -3.2791 | Aceptacion = 0.902
+TD3 Sweep 1310 | Recompensa = -3.1945 | Aceptacion = 0.919
+TD3 Sweep 1320 | Recompensa = -3.3514 | Aceptacion = 0.911
+TD3 Sweep 1330 | Recompensa = -3.2140 | Aceptacion = 0.915
+TD3 Sweep 1340 | Recompensa = -3.2555 | Aceptacion = 0.914
+TD3 Sweep 1350 | Recompensa = -3.2390 | Aceptacion = 0.916
+TD3 Sweep 1360 | Recompensa = -3.2115 | Aceptacion = 0.906
+TD3 Sweep 1370 | Recompensa = -3.2217 | Aceptacion = 0.906
+TD3 Sweep 1380 | Recompensa = -3.3000 | Aceptacion = 0.921
+TD3 Sweep 1390 | Recompensa = -3.2716 | Aceptacion = 0.916
+TD3 Sweep 1400 | Recompensa = -3.2334 | Aceptacion = 0.902
+TD3 Sweep 1410 | Recompensa = -3.1932 | Aceptacion = 0.921
+TD3 Sweep 1420 | Recompensa = -3.2235 | Aceptacion = 0.898
+TD3 Sweep 1430 | Recompensa = -3.2173 | Aceptacion = 0.889
+TD3 Sweep 1440 | Recompensa = -3.1805 | Aceptacion = 0.916
+TD3 Sweep 1450 | Recompensa = -3.2792 | Aceptacion = 0.911
+TD3 Sweep 1460 | Recompensa = -3.2679 | Aceptacion = 0.923
+TD3 Sweep 1470 | Recompensa = -3.2132 | Aceptacion = 0.916
+TD3 Sweep 1480 | Recompensa = -3.1666 | Aceptacion = 0.923
+TD3 Sweep 1490 | Recompensa = -3.2336 | Aceptacion = 0.928
+TD3 Sweep 1500 | Recompensa = -3.2020 | Aceptacion = 0.913
+TD3 Sweep 1510 | Recompensa = -3.2194 | Aceptacion = 0.915
+TD3 Sweep 1520 | Recompensa = -3.1760 | Aceptacion = 0.897
+TD3 Sweep 1530 | Recompensa = -3.2033 | Aceptacion = 0.897
+TD3 Sweep 1540 | Recompensa = -3.2313 | Aceptacion = 0.916
+TD3 Sweep 1550 | Recompensa = -3.2182 | Aceptacion = 0.916
+TD3 Sweep 1560 | Recompensa = -3.3533 | Aceptacion = 0.919
+TD3 Sweep 1570 | Recompensa = -3.2676 | Aceptacion = 0.905
+TD3 Sweep 1580 | Recompensa = -3.1973 | Aceptacion = 0.901
+TD3 Sweep 1590 | Recompensa = -3.3378 | Aceptacion = 0.919
+TD3 Sweep 1600 | Recompensa = -3.2299 | Aceptacion = 0.898
+TD3 Sweep 1610 | Recompensa = -3.1970 | Aceptacion = 0.921
+TD3 Sweep 1620 | Recompensa = -3.2231 | Aceptacion = 0.896
+TD3 Sweep 1630 | Recompensa = -3.1792 | Aceptacion = 0.902
+TD3 Sweep 1640 | Recompensa = -3.2638 | Aceptacion = 0.907
+TD3 Sweep 1650 | Recompensa = -3.1728 | Aceptacion = 0.903
+TD3 Sweep 1660 | Recompensa = -3.2455 | Aceptacion = 0.903
+TD3 Sweep 1670 | Recompensa = -3.2337 | Aceptacion = 0.899
+TD3 Sweep 1680 | Recompensa = -3.3081 | Aceptacion = 0.922
+TD3 Sweep 1690 | Recompensa = -3.2386 | Aceptacion = 0.907
+TD3 Sweep 1700 | Recompensa = -3.2677 | Aceptacion = 0.904
+TD3 Sweep 1710 | Recompensa = -3.1955 | Aceptacion = 0.909
+TD3 Sweep 1720 | Recompensa = -3.1838 | Aceptacion = 0.915
+TD3 Sweep 1730 | Recompensa = -3.2020 | Aceptacion = 0.910
+TD3 Sweep 1740 | Recompensa = -3.2127 | Aceptacion = 0.903
+TD3 Sweep 1750 | Recompensa = -3.2430 | Aceptacion = 0.908
+TD3 Sweep 1760 | Recompensa = -3.1071 | Aceptacion = 0.896
+TD3 Sweep 1770 | Recompensa = -3.2724 | Aceptacion = 0.923
+TD3 Sweep 1780 | Recompensa = -3.1271 | Aceptacion = 0.896
+TD3 Sweep 1790 | Recompensa = -3.1885 | Aceptacion = 0.910
+TD3 Sweep 1800 | Recompensa = -3.1437 | Aceptacion = 0.912
+TD3 Sweep 1810 | Recompensa = -3.2263 | Aceptacion = 0.898
+TD3 Sweep 1820 | Recompensa = -3.1899 | Aceptacion = 0.919
+TD3 Sweep 1830 | Recompensa = -3.2173 | Aceptacion = 0.914
+TD3 Sweep 1840 | Recompensa = -3.2552 | Aceptacion = 0.922
+TD3 Sweep 1850 | Recompensa = -3.1063 | Aceptacion = 0.914
+TD3 Sweep 1860 | Recompensa = -3.1593 | Aceptacion = 0.892
+TD3 Sweep 1870 | Recompensa = -3.2734 | Aceptacion = 0.915
+TD3 Sweep 1880 | Recompensa = -3.3668 | Aceptacion = 0.919
+TD3 Sweep 1890 | Recompensa = -3.2343 | Aceptacion = 0.925
+TD3 Sweep 1900 | Recompensa = -3.1364 | Aceptacion = 0.900
+TD3 Sweep 1910 | Recompensa = -3.2444 | Aceptacion = 0.908
+TD3 Sweep 1920 | Recompensa = -3.1650 | Aceptacion = 0.911
+TD3 Sweep 1930 | Recompensa = -3.2296 | Aceptacion = 0.920
+TD3 Sweep 1940 | Recompensa = -3.2730 | Aceptacion = 0.915
+TD3 Sweep 1950 | Recompensa = -3.2439 | Aceptacion = 0.910
+TD3 Sweep 1960 | Recompensa = -3.1620 | Aceptacion = 0.911
+TD3 Sweep 1970 | Recompensa = -3.2002 | Aceptacion = 0.906
+TD3 Sweep 1980 | Recompensa = -3.2511 | Aceptacion = 0.896
+TD3 Sweep 1990 | Recompensa = -3.1836 | Aceptacion = 0.893
+TD3 Sweep 2000 | Recompensa = -3.1815 | Aceptacion = 0.917
+TD3 Sweep 2010 | Recompensa = -3.2045 | Aceptacion = 0.891
+TD3 Sweep 2020 | Recompensa = -3.1749 | Aceptacion = 0.917
+TD3 Sweep 2030 | Recompensa = -3.2418 | Aceptacion = 0.897
+TD3 Sweep 2040 | Recompensa = -3.1930 | Aceptacion = 0.905
+TD3 Sweep 2050 | Recompensa = -3.2531 | Aceptacion = 0.920
+TD3 Sweep 2060 | Recompensa = -3.2498 | Aceptacion = 0.910
+TD3 Sweep 2070 | Recompensa = -3.1558 | Aceptacion = 0.896
+TD3 Sweep 2080 | Recompensa = -3.1648 | Aceptacion = 0.895
+TD3 Sweep 2090 | Recompensa = -3.2593 | Aceptacion = 0.920
+TD3 Sweep 2100 | Recompensa = -3.1545 | Aceptacion = 0.907
+TD3 Sweep 2110 | Recompensa = -3.1684 | Aceptacion = 0.898
+TD3 Sweep 2120 | Recompensa = -3.2558 | Aceptacion = 0.903
+TD3 Sweep 2130 | Recompensa = -3.2267 | Aceptacion = 0.922
+TD3 Sweep 2140 | Recompensa = -3.0790 | Aceptacion = 0.903
+TD3 Sweep 2150 | Recompensa = -3.1868 | Aceptacion = 0.911
+TD3 Sweep 2160 | Recompensa = -3.1951 | Aceptacion = 0.908
+TD3 Sweep 2170 | Recompensa = -3.1925 | Aceptacion = 0.903
+TD3 Sweep 2180 | Recompensa = -3.1025 | Aceptacion = 0.908
+TD3 Sweep 2190 | Recompensa = -3.2442 | Aceptacion = 0.912
+TD3 Sweep 2200 | Recompensa = -3.1717 | Aceptacion = 0.923
+TD3 Sweep 2210 | Recompensa = -3.1861 | Aceptacion = 0.902
+TD3 Sweep 2220 | Recompensa = -3.1899 | Aceptacion = 0.925
+TD3 Sweep 2230 | Recompensa = -3.1854 | Aceptacion = 0.909
+TD3 Sweep 2240 | Recompensa = -3.1484 | Aceptacion = 0.896
+TD3 Sweep 2250 | Recompensa = -3.1582 | Aceptacion = 0.918
+TD3 Sweep 2260 | Recompensa = -3.2104 | Aceptacion = 0.907
+TD3 Sweep 2270 | Recompensa = -3.1708 | Aceptacion = 0.908
+TD3 Sweep 2280 | Recompensa = -3.1388 | Aceptacion = 0.912
+TD3 Sweep 2290 | Recompensa = -3.1592 | Aceptacion = 0.918
+TD3 Sweep 2300 | Recompensa = -3.1974 | Aceptacion = 0.929
+TD3 Sweep 2310 | Recompensa = -3.2230 | Aceptacion = 0.921
+TD3 Sweep 2320 | Recompensa = -3.1857 | Aceptacion = 0.913
+TD3 Sweep 2330 | Recompensa = -3.2466 | Aceptacion = 0.903
+TD3 Sweep 2340 | Recompensa = -3.1496 | Aceptacion = 0.908
+TD3 Sweep 2350 | Recompensa = -3.2531 | Aceptacion = 0.916
+TD3 Sweep 2360 | Recompensa = -3.2056 | Aceptacion = 0.917
+TD3 Sweep 2370 | Recompensa = -3.1718 | Aceptacion = 0.923
+TD3 Sweep 2380 | Recompensa = -3.1445 | Aceptacion = 0.911
+TD3 Sweep 2390 | Recompensa = -3.1820 | Aceptacion = 0.909
+TD3 Sweep 2400 | Recompensa = -3.1882 | Aceptacion = 0.934
+TD3 Sweep 2410 | Recompensa = -3.2835 | Aceptacion = 0.919
+TD3 Sweep 2420 | Recompensa = -3.0651 | Aceptacion = 0.896
+TD3 Sweep 2430 | Recompensa = -3.1863 | Aceptacion = 0.923
+TD3 Sweep 2440 | Recompensa = -3.2561 | Aceptacion = 0.898
+TD3 Sweep 2450 | Recompensa = -3.2247 | Aceptacion = 0.921
+TD3 Sweep 2460 | Recompensa = -3.2260 | Aceptacion = 0.912
+TD3 Sweep 2470 | Recompensa = -3.1696 | Aceptacion = 0.917
+TD3 Sweep 2480 | Recompensa = -3.1055 | Aceptacion = 0.898
+TD3 Sweep 2490 | Recompensa = -3.1654 | Aceptacion = 0.903
+
+--- CICLO TD3 2/4 ---
+Step: 12500 | E_mean: 10.0780 | Time(s): 0.003 | Stage: VMC | acceptance: 0.629 | d_act: 0.007 | ejd: 0.178 | mag_actor: 0.007 | mag_mala: 0.015 | mean_log_ratio: -0.690 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.327 | Actor_Loss: 39.469 | Critic1_Loss: 3.048 | Critic2_Loss: 3.015
+Step: 12600 | E_mean: 13.0392 | Time(s): 0.163 | Stage: VMC | acceptance: 0.687 | d_act: 0.008 | ejd: 0.198 | mag_actor: 0.008 | mag_mala: 0.014 | mean_log_ratio: -0.695 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.327 | Actor_Loss: 39.469 | Critic1_Loss: 3.048 | Critic2_Loss: 3.015
+Step: 12700 | E_mean: 13.0069 | Time(s): 0.322 | Stage: VMC | acceptance: 0.647 | d_act: 0.008 | ejd: 0.188 | mag_actor: 0.008 | mag_mala: 0.014 | mean_log_ratio: -0.770 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.327 | Actor_Loss: 39.469 | Critic1_Loss: 3.048 | Critic2_Loss: 3.015
+Step: 12800 | E_mean: 13.1344 | Time(s): 0.479 | Stage: VMC | acceptance: 0.667 | d_act: 0.008 | ejd: 0.189 | mag_actor: 0.008 | mag_mala: 0.014 | mean_log_ratio: -0.701 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.327 | Actor_Loss: 39.469 | Critic1_Loss: 3.048 | Critic2_Loss: 3.015
+Step: 12900 | E_mean: 12.8284 | Time(s): 0.639 | Stage: VMC | acceptance: 0.649 | d_act: 0.008 | ejd: 0.188 | mag_actor: 0.008 | mag_mala: 0.014 | mean_log_ratio: -0.743 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.327 | Actor_Loss: 39.469 | Critic1_Loss: 3.048 | Critic2_Loss: 3.015
+Step: 13000 | E_mean: 12.5645 | Time(s): 0.809 | Stage: VMC | acceptance: 0.643 | d_act: 0.008 | ejd: 0.188 | mag_actor: 0.008 | mag_mala: 0.014 | mean_log_ratio: -0.687 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.327 | Actor_Loss: 39.469 | Critic1_Loss: 3.048 | Critic2_Loss: 3.015
+Step: 13100 | E_mean: 12.7761 | Time(s): 0.980 | Stage: VMC | acceptance: 0.664 | d_act: 0.008 | ejd: 0.189 | mag_actor: 0.008 | mag_mala: 0.014 | mean_log_ratio: -0.633 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.327 | Actor_Loss: 39.469 | Critic1_Loss: 3.048 | Critic2_Loss: 3.015
+Step: 13200 | E_mean: 12.6886 | Time(s): 1.156 | Stage: VMC | acceptance: 0.677 | d_act: 0.008 | ejd: 0.196 | mag_actor: 0.008 | mag_mala: 0.014 | mean_log_ratio: -0.702 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.327 | Actor_Loss: 39.469 | Critic1_Loss: 3.048 | Critic2_Loss: 3.015
+Step: 13300 | E_mean: 12.6355 | Time(s): 1.314 | Stage: VMC | acceptance: 0.665 | d_act: 0.008 | ejd: 0.192 | mag_actor: 0.008 | mag_mala: 0.014 | mean_log_ratio: -0.721 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.327 | Actor_Loss: 39.469 | Critic1_Loss: 3.048 | Critic2_Loss: 3.015
+Step: 13400 | E_mean: 12.9640 | Time(s): 1.472 | Stage: VMC | acceptance: 0.646 | d_act: 0.008 | ejd: 0.186 | mag_actor: 0.008 | mag_mala: 0.014 | mean_log_ratio: -0.833 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.327 | Actor_Loss: 39.469 | Critic1_Loss: 3.048 | Critic2_Loss: 3.015
+Step: 13500 | E_mean: 12.5468 | Time(s): 1.630 | Stage: VMC | acceptance: 0.652 | d_act: 0.008 | ejd: 0.190 | mag_actor: 0.008 | mag_mala: 0.014 | mean_log_ratio: -0.705 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.327 | Actor_Loss: 39.469 | Critic1_Loss: 3.048 | Critic2_Loss: 3.015
+Step: 13600 | E_mean: 12.3634 | Time(s): 1.788 | Stage: VMC | acceptance: 0.685 | d_act: 0.008 | ejd: 0.202 | mag_actor: 0.008 | mag_mala: 0.014 | mean_log_ratio: -0.759 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.327 | Actor_Loss: 39.469 | Critic1_Loss: 3.048 | Critic2_Loss: 3.015
+Step: 13700 | E_mean: 12.4088 | Time(s): 1.946 | Stage: VMC | acceptance: 0.662 | d_act: 0.008 | ejd: 0.186 | mag_actor: 0.008 | mag_mala: 0.014 | mean_log_ratio: -0.635 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.327 | Actor_Loss: 39.469 | Critic1_Loss: 3.048 | Critic2_Loss: 3.015
+Step: 13800 | E_mean: 12.1606 | Time(s): 2.104 | Stage: VMC | acceptance: 0.674 | d_act: 0.008 | ejd: 0.194 | mag_actor: 0.008 | mag_mala: 0.014 | mean_log_ratio: -0.693 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.327 | Actor_Loss: 39.469 | Critic1_Loss: 3.048 | Critic2_Loss: 3.015
+Step: 13900 | E_mean: 12.3260 | Time(s): 2.272 | Stage: VMC | acceptance: 0.693 | d_act: 0.008 | ejd: 0.205 | mag_actor: 0.008 | mag_mala: 0.014 | mean_log_ratio: -0.651 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.327 | Actor_Loss: 39.469 | Critic1_Loss: 3.048 | Critic2_Loss: 3.015
+Step: 14000 | E_mean: 12.4438 | Time(s): 2.432 | Stage: VMC | acceptance: 0.678 | d_act: 0.008 | ejd: 0.195 | mag_actor: 0.008 | mag_mala: 0.014 | mean_log_ratio: -0.640 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.327 | Actor_Loss: 39.469 | Critic1_Loss: 3.048 | Critic2_Loss: 3.015
+Step: 14100 | E_mean: 12.5399 | Time(s): 2.600 | Stage: VMC | acceptance: 0.670 | d_act: 0.008 | ejd: 0.193 | mag_actor: 0.008 | mag_mala: 0.014 | mean_log_ratio: -0.707 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.327 | Actor_Loss: 39.469 | Critic1_Loss: 3.048 | Critic2_Loss: 3.015
+Step: 14200 | E_mean: 12.3006 | Time(s): 2.775 | Stage: VMC | acceptance: 0.662 | d_act: 0.008 | ejd: 0.190 | mag_actor: 0.008 | mag_mala: 0.014 | mean_log_ratio: -0.672 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.327 | Actor_Loss: 39.469 | Critic1_Loss: 3.048 | Critic2_Loss: 3.015
+Step: 14300 | E_mean: 12.2539 | Time(s): 2.934 | Stage: VMC | acceptance: 0.700 | d_act: 0.008 | ejd: 0.200 | mag_actor: 0.008 | mag_mala: 0.014 | mean_log_ratio: -0.583 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.327 | Actor_Loss: 39.469 | Critic1_Loss: 3.048 | Critic2_Loss: 3.015
+Step: 14400 | E_mean: 12.1068 | Time(s): 3.093 | Stage: VMC | acceptance: 0.688 | d_act: 0.008 | ejd: 0.201 | mag_actor: 0.008 | mag_mala: 0.014 | mean_log_ratio: -0.703 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.327 | Actor_Loss: 39.469 | Critic1_Loss: 3.048 | Critic2_Loss: 3.015
+Step: 14500 | E_mean: 11.9131 | Time(s): 3.253 | Stage: VMC | acceptance: 0.661 | d_act: 0.008 | ejd: 0.192 | mag_actor: 0.008 | mag_mala: 0.014 | mean_log_ratio: -0.682 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.327 | Actor_Loss: 39.469 | Critic1_Loss: 3.048 | Critic2_Loss: 3.015
+Step: 14600 | E_mean: 11.9966 | Time(s): 3.412 | Stage: VMC | acceptance: 0.688 | d_act: 0.008 | ejd: 0.198 | mag_actor: 0.008 | mag_mala: 0.014 | mean_log_ratio: -0.650 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.327 | Actor_Loss: 39.469 | Critic1_Loss: 3.048 | Critic2_Loss: 3.015
+Step: 14700 | E_mean: 12.2087 | Time(s): 3.569 | Stage: VMC | acceptance: 0.706 | d_act: 0.008 | ejd: 0.203 | mag_actor: 0.008 | mag_mala: 0.014 | mean_log_ratio: -0.642 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.327 | Actor_Loss: 39.469 | Critic1_Loss: 3.048 | Critic2_Loss: 3.015
+Step: 14800 | E_mean: 11.9421 | Time(s): 3.728 | Stage: VMC | acceptance: 0.677 | d_act: 0.008 | ejd: 0.199 | mag_actor: 0.008 | mag_mala: 0.014 | mean_log_ratio: -0.747 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.327 | Actor_Loss: 39.469 | Critic1_Loss: 3.048 | Critic2_Loss: 3.015
+Step: 14900 | E_mean: 11.9533 | Time(s): 3.886 | Stage: VMC | acceptance: 0.660 | d_act: 0.008 | ejd: 0.195 | mag_actor: 0.008 | mag_mala: 0.014 | mean_log_ratio: -0.719 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.327 | Actor_Loss: 39.469 | Critic1_Loss: 3.048 | Critic2_Loss: 3.015
+Step: 15000 | E_mean: 11.9404 | Time(s): 4.043 | Stage: VMC | acceptance: 0.703 | d_act: 0.008 | ejd: 0.208 | mag_actor: 0.008 | mag_mala: 0.014 | mean_log_ratio: -0.673 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.327 | Actor_Loss: 39.469 | Critic1_Loss: 3.048 | Critic2_Loss: 3.015
+Step: 15100 | E_mean: 11.7394 | Time(s): 4.201 | Stage: VMC | acceptance: 0.655 | d_act: 0.008 | ejd: 0.191 | mag_actor: 0.008 | mag_mala: 0.014 | mean_log_ratio: -0.739 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.327 | Actor_Loss: 39.469 | Critic1_Loss: 3.048 | Critic2_Loss: 3.015
+Step: 15200 | E_mean: 11.9393 | Time(s): 4.358 | Stage: VMC | acceptance: 0.681 | d_act: 0.008 | ejd: 0.197 | mag_actor: 0.008 | mag_mala: 0.014 | mean_log_ratio: -0.695 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.327 | Actor_Loss: 39.469 | Critic1_Loss: 3.048 | Critic2_Loss: 3.015
+Step: 15300 | E_mean: 11.8155 | Time(s): 4.517 | Stage: VMC | acceptance: 0.689 | d_act: 0.008 | ejd: 0.201 | mag_actor: 0.008 | mag_mala: 0.014 | mean_log_ratio: -0.692 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.327 | Actor_Loss: 39.469 | Critic1_Loss: 3.048 | Critic2_Loss: 3.015
+Step: 15400 | E_mean: 11.8160 | Time(s): 4.675 | Stage: VMC | acceptance: 0.646 | d_act: 0.008 | ejd: 0.189 | mag_actor: 0.008 | mag_mala: 0.014 | mean_log_ratio: -0.728 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.327 | Actor_Loss: 39.469 | Critic1_Loss: 3.048 | Critic2_Loss: 3.015
+Step: 15500 | E_mean: 11.8549 | Time(s): 4.838 | Stage: VMC | acceptance: 0.704 | d_act: 0.008 | ejd: 0.206 | mag_actor: 0.008 | mag_mala: 0.014 | mean_log_ratio: -0.615 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.327 | Actor_Loss: 39.469 | Critic1_Loss: 3.048 | Critic2_Loss: 3.015
+Step: 15600 | E_mean: 11.8315 | Time(s): 4.997 | Stage: VMC | acceptance: 0.681 | d_act: 0.008 | ejd: 0.204 | mag_actor: 0.008 | mag_mala: 0.014 | mean_log_ratio: -0.660 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.327 | Actor_Loss: 39.469 | Critic1_Loss: 3.048 | Critic2_Loss: 3.015
+Step: 15700 | E_mean: 11.7953 | Time(s): 5.157 | Stage: VMC | acceptance: 0.674 | d_act: 0.008 | ejd: 0.202 | mag_actor: 0.008 | mag_mala: 0.014 | mean_log_ratio: -0.626 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.327 | Actor_Loss: 39.469 | Critic1_Loss: 3.048 | Critic2_Loss: 3.015
+Step: 15800 | E_mean: 11.4381 | Time(s): 5.317 | Stage: VMC | acceptance: 0.684 | d_act: 0.008 | ejd: 0.197 | mag_actor: 0.008 | mag_mala: 0.014 | mean_log_ratio: -0.619 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.327 | Actor_Loss: 39.469 | Critic1_Loss: 3.048 | Critic2_Loss: 3.015
+Step: 15900 | E_mean: 11.1323 | Time(s): 5.477 | Stage: VMC | acceptance: 0.689 | d_act: 0.008 | ejd: 0.201 | mag_actor: 0.008 | mag_mala: 0.014 | mean_log_ratio: -0.641 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.327 | Actor_Loss: 39.469 | Critic1_Loss: 3.048 | Critic2_Loss: 3.015
+Step: 16000 | E_mean: 11.4233 | Time(s): 5.636 | Stage: VMC | acceptance: 0.660 | d_act: 0.008 | ejd: 0.193 | mag_actor: 0.008 | mag_mala: 0.014 | mean_log_ratio: -0.647 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.327 | Actor_Loss: 39.469 | Critic1_Loss: 3.048 | Critic2_Loss: 3.015
+Step: 16100 | E_mean: 11.7426 | Time(s): 5.795 | Stage: VMC | acceptance: 0.671 | d_act: 0.008 | ejd: 0.194 | mag_actor: 0.008 | mag_mala: 0.014 | mean_log_ratio: -0.664 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.327 | Actor_Loss: 39.469 | Critic1_Loss: 3.048 | Critic2_Loss: 3.015
+Step: 16200 | E_mean: 11.2622 | Time(s): 5.965 | Stage: VMC | acceptance: 0.667 | d_act: 0.008 | ejd: 0.193 | mag_actor: 0.008 | mag_mala: 0.014 | mean_log_ratio: -0.655 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.327 | Actor_Loss: 39.469 | Critic1_Loss: 3.048 | Critic2_Loss: 3.015
+Step: 16300 | E_mean: 11.2611 | Time(s): 6.133 | Stage: VMC | acceptance: 0.688 | d_act: 0.008 | ejd: 0.202 | mag_actor: 0.008 | mag_mala: 0.014 | mean_log_ratio: -0.661 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.327 | Actor_Loss: 39.469 | Critic1_Loss: 3.048 | Critic2_Loss: 3.015
+Step: 16400 | E_mean: 11.6059 | Time(s): 6.293 | Stage: VMC | acceptance: 0.690 | d_act: 0.008 | ejd: 0.205 | mag_actor: 0.008 | mag_mala: 0.014 | mean_log_ratio: -0.615 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.327 | Actor_Loss: 39.469 | Critic1_Loss: 3.048 | Critic2_Loss: 3.015
+Step: 16500 | E_mean: 11.2477 | Time(s): 6.453 | Stage: VMC | acceptance: 0.696 | d_act: 0.008 | ejd: 0.206 | mag_actor: 0.008 | mag_mala: 0.014 | mean_log_ratio: -0.631 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.327 | Actor_Loss: 39.469 | Critic1_Loss: 3.048 | Critic2_Loss: 3.015
+Step: 16600 | E_mean: 11.0426 | Time(s): 6.613 | Stage: VMC | acceptance: 0.686 | d_act: 0.008 | ejd: 0.203 | mag_actor: 0.008 | mag_mala: 0.014 | mean_log_ratio: -0.598 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.327 | Actor_Loss: 39.469 | Critic1_Loss: 3.048 | Critic2_Loss: 3.015
+Step: 16700 | E_mean: 11.1038 | Time(s): 6.781 | Stage: VMC | acceptance: 0.688 | d_act: 0.008 | ejd: 0.199 | mag_actor: 0.008 | mag_mala: 0.014 | mean_log_ratio: -0.632 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.327 | Actor_Loss: 39.469 | Critic1_Loss: 3.048 | Critic2_Loss: 3.015
+Step: 16800 | E_mean: 10.9886 | Time(s): 6.939 | Stage: VMC | acceptance: 0.674 | d_act: 0.008 | ejd: 0.192 | mag_actor: 0.008 | mag_mala: 0.014 | mean_log_ratio: -0.619 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.327 | Actor_Loss: 39.469 | Critic1_Loss: 3.048 | Critic2_Loss: 3.015
+Step: 16900 | E_mean: 11.2047 | Time(s): 7.096 | Stage: VMC | acceptance: 0.682 | d_act: 0.008 | ejd: 0.196 | mag_actor: 0.008 | mag_mala: 0.014 | mean_log_ratio: -0.690 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.327 | Actor_Loss: 39.469 | Critic1_Loss: 3.048 | Critic2_Loss: 3.015
+Step: 17000 | E_mean: 10.9908 | Time(s): 7.253 | Stage: VMC | acceptance: 0.680 | d_act: 0.008 | ejd: 0.192 | mag_actor: 0.008 | mag_mala: 0.014 | mean_log_ratio: -0.733 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.327 | Actor_Loss: 39.469 | Critic1_Loss: 3.048 | Critic2_Loss: 3.015
+Step: 17100 | E_mean: 10.9203 | Time(s): 7.413 | Stage: VMC | acceptance: 0.696 | d_act: 0.008 | ejd: 0.206 | mag_actor: 0.008 | mag_mala: 0.014 | mean_log_ratio: -0.578 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.327 | Actor_Loss: 39.469 | Critic1_Loss: 3.048 | Critic2_Loss: 3.015
+Step: 17200 | E_mean: 10.9307 | Time(s): 7.572 | Stage: VMC | acceptance: 0.671 | d_act: 0.008 | ejd: 0.200 | mag_actor: 0.008 | mag_mala: 0.014 | mean_log_ratio: -0.668 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.327 | Actor_Loss: 39.469 | Critic1_Loss: 3.048 | Critic2_Loss: 3.015
+Step: 17300 | E_mean: 11.0245 | Time(s): 7.732 | Stage: VMC | acceptance: 0.680 | d_act: 0.008 | ejd: 0.201 | mag_actor: 0.008 | mag_mala: 0.014 | mean_log_ratio: -0.681 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.327 | Actor_Loss: 39.469 | Critic1_Loss: 3.048 | Critic2_Loss: 3.015
+Step: 17400 | E_mean: 10.8229 | Time(s): 7.889 | Stage: VMC | acceptance: 0.677 | d_act: 0.008 | ejd: 0.192 | mag_actor: 0.008 | mag_mala: 0.014 | mean_log_ratio: -0.648 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.327 | Actor_Loss: 39.469 | Critic1_Loss: 3.048 | Critic2_Loss: 3.015
+Step: 17500 | E_mean: 10.8080 | Time(s): 8.047 | Stage: VMC | acceptance: 0.679 | d_act: 0.008 | ejd: 0.195 | mag_actor: 0.008 | mag_mala: 0.014 | mean_log_ratio: -0.618 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.327 | Actor_Loss: 39.469 | Critic1_Loss: 3.048 | Critic2_Loss: 3.015
+Step: 17600 | E_mean: 10.7694 | Time(s): 8.210 | Stage: VMC | acceptance: 0.721 | d_act: 0.008 | ejd: 0.208 | mag_actor: 0.008 | mag_mala: 0.014 | mean_log_ratio: -0.525 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.327 | Actor_Loss: 39.469 | Critic1_Loss: 3.048 | Critic2_Loss: 3.015
+Step: 17700 | E_mean: 10.7773 | Time(s): 8.383 | Stage: VMC | acceptance: 0.682 | d_act: 0.008 | ejd: 0.203 | mag_actor: 0.008 | mag_mala: 0.014 | mean_log_ratio: -0.629 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.327 | Actor_Loss: 39.469 | Critic1_Loss: 3.048 | Critic2_Loss: 3.015
+Step: 17800 | E_mean: 10.5971 | Time(s): 8.541 | Stage: VMC | acceptance: 0.668 | d_act: 0.008 | ejd: 0.194 | mag_actor: 0.008 | mag_mala: 0.014 | mean_log_ratio: -0.654 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.327 | Actor_Loss: 39.469 | Critic1_Loss: 3.048 | Critic2_Loss: 3.015
+Step: 17900 | E_mean: 10.5006 | Time(s): 8.698 | Stage: VMC | acceptance: 0.700 | d_act: 0.008 | ejd: 0.206 | mag_actor: 0.008 | mag_mala: 0.014 | mean_log_ratio: -0.578 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.327 | Actor_Loss: 39.469 | Critic1_Loss: 3.048 | Critic2_Loss: 3.015
+Step: 18000 | E_mean: 10.1835 | Time(s): 8.856 | Stage: VMC | acceptance: 0.703 | d_act: 0.008 | ejd: 0.202 | mag_actor: 0.008 | mag_mala: 0.014 | mean_log_ratio: -0.574 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.327 | Actor_Loss: 39.469 | Critic1_Loss: 3.048 | Critic2_Loss: 3.015
+Step: 18100 | E_mean: 10.6031 | Time(s): 9.014 | Stage: VMC | acceptance: 0.691 | d_act: 0.008 | ejd: 0.199 | mag_actor: 0.008 | mag_mala: 0.014 | mean_log_ratio: -0.613 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.327 | Actor_Loss: 39.469 | Critic1_Loss: 3.048 | Critic2_Loss: 3.015
+Step: 18200 | E_mean: 10.5381 | Time(s): 9.171 | Stage: VMC | acceptance: 0.689 | d_act: 0.008 | ejd: 0.201 | mag_actor: 0.008 | mag_mala: 0.014 | mean_log_ratio: -0.582 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.327 | Actor_Loss: 39.469 | Critic1_Loss: 3.048 | Critic2_Loss: 3.015
+Step: 18300 | E_mean: 10.3273 | Time(s): 9.328 | Stage: VMC | acceptance: 0.702 | d_act: 0.008 | ejd: 0.202 | mag_actor: 0.008 | mag_mala: 0.014 | mean_log_ratio: -0.633 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.327 | Actor_Loss: 39.469 | Critic1_Loss: 3.048 | Critic2_Loss: 3.015
+Step: 18400 | E_mean: 10.2376 | Time(s): 9.488 | Stage: VMC | acceptance: 0.689 | d_act: 0.008 | ejd: 0.199 | mag_actor: 0.008 | mag_mala: 0.014 | mean_log_ratio: -0.670 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.327 | Actor_Loss: 39.469 | Critic1_Loss: 3.048 | Critic2_Loss: 3.015
+Step: 18500 | E_mean: 10.1926 | Time(s): 9.647 | Stage: VMC | acceptance: 0.688 | d_act: 0.008 | ejd: 0.200 | mag_actor: 0.008 | mag_mala: 0.014 | mean_log_ratio: -0.594 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.327 | Actor_Loss: 39.469 | Critic1_Loss: 3.048 | Critic2_Loss: 3.015
+Step: 18600 | E_mean: 10.3933 | Time(s): 9.804 | Stage: VMC | acceptance: 0.687 | d_act: 0.008 | ejd: 0.206 | mag_actor: 0.008 | mag_mala: 0.014 | mean_log_ratio: -0.734 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.327 | Actor_Loss: 39.469 | Critic1_Loss: 3.048 | Critic2_Loss: 3.015
+Step: 18700 | E_mean: 10.2378 | Time(s): 9.962 | Stage: VMC | acceptance: 0.699 | d_act: 0.008 | ejd: 0.203 | mag_actor: 0.008 | mag_mala: 0.014 | mean_log_ratio: -0.605 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.327 | Actor_Loss: 39.469 | Critic1_Loss: 3.048 | Critic2_Loss: 3.015
+Step: 18800 | E_mean: 10.4104 | Time(s): 10.125 | Stage: VMC | acceptance: 0.688 | d_act: 0.008 | ejd: 0.199 | mag_actor: 0.008 | mag_mala: 0.014 | mean_log_ratio: -0.606 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.327 | Actor_Loss: 39.469 | Critic1_Loss: 3.048 | Critic2_Loss: 3.015
+Step: 18900 | E_mean: 10.3690 | Time(s): 10.288 | Stage: VMC | acceptance: 0.705 | d_act: 0.008 | ejd: 0.206 | mag_actor: 0.008 | mag_mala: 0.014 | mean_log_ratio: -0.672 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.327 | Actor_Loss: 39.469 | Critic1_Loss: 3.048 | Critic2_Loss: 3.015
+Step: 19000 | E_mean: 10.1583 | Time(s): 10.446 | Stage: VMC | acceptance: 0.725 | d_act: 0.008 | ejd: 0.207 | mag_actor: 0.008 | mag_mala: 0.014 | mean_log_ratio: -0.585 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.327 | Actor_Loss: 39.469 | Critic1_Loss: 3.048 | Critic2_Loss: 3.015
+Step: 19100 | E_mean: 9.7910 | Time(s): 10.604 | Stage: VMC | acceptance: 0.726 | d_act: 0.008 | ejd: 0.206 | mag_actor: 0.008 | mag_mala: 0.014 | mean_log_ratio: -0.575 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.327 | Actor_Loss: 39.469 | Critic1_Loss: 3.048 | Critic2_Loss: 3.015
+Step: 19200 | E_mean: 10.0323 | Time(s): 10.761 | Stage: VMC | acceptance: 0.716 | d_act: 0.008 | ejd: 0.203 | mag_actor: 0.008 | mag_mala: 0.014 | mean_log_ratio: -0.573 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.327 | Actor_Loss: 39.469 | Critic1_Loss: 3.048 | Critic2_Loss: 3.015
+Step: 19300 | E_mean: 10.0333 | Time(s): 10.918 | Stage: VMC | acceptance: 0.680 | d_act: 0.008 | ejd: 0.195 | mag_actor: 0.008 | mag_mala: 0.014 | mean_log_ratio: -0.587 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.327 | Actor_Loss: 39.469 | Critic1_Loss: 3.048 | Critic2_Loss: 3.015
+Step: 19400 | E_mean: 9.9733 | Time(s): 11.077 | Stage: VMC | acceptance: 0.697 | d_act: 0.008 | ejd: 0.202 | mag_actor: 0.008 | mag_mala: 0.014 | mean_log_ratio: -0.546 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.327 | Actor_Loss: 39.469 | Critic1_Loss: 3.048 | Critic2_Loss: 3.015
+Step: 19500 | E_mean: 9.5789 | Time(s): 11.236 | Stage: VMC | acceptance: 0.677 | d_act: 0.008 | ejd: 0.195 | mag_actor: 0.008 | mag_mala: 0.014 | mean_log_ratio: -0.613 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.327 | Actor_Loss: 39.469 | Critic1_Loss: 3.048 | Critic2_Loss: 3.015
+Step: 19600 | E_mean: 9.6289 | Time(s): 11.395 | Stage: VMC | acceptance: 0.691 | d_act: 0.008 | ejd: 0.203 | mag_actor: 0.008 | mag_mala: 0.014 | mean_log_ratio: -0.562 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.327 | Actor_Loss: 39.469 | Critic1_Loss: 3.048 | Critic2_Loss: 3.015
+Step: 19700 | E_mean: 10.0544 | Time(s): 11.553 | Stage: VMC | acceptance: 0.703 | d_act: 0.008 | ejd: 0.206 | mag_actor: 0.008 | mag_mala: 0.014 | mean_log_ratio: -0.585 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.327 | Actor_Loss: 39.469 | Critic1_Loss: 3.048 | Critic2_Loss: 3.015
+Step: 19800 | E_mean: 9.6451 | Time(s): 11.710 | Stage: VMC | acceptance: 0.679 | d_act: 0.008 | ejd: 0.195 | mag_actor: 0.008 | mag_mala: 0.014 | mean_log_ratio: -0.645 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.327 | Actor_Loss: 39.469 | Critic1_Loss: 3.048 | Critic2_Loss: 3.015
+Step: 19900 | E_mean: 9.8227 | Time(s): 11.867 | Stage: VMC | acceptance: 0.722 | d_act: 0.008 | ejd: 0.211 | mag_actor: 0.008 | mag_mala: 0.014 | mean_log_ratio: -0.528 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.327 | Actor_Loss: 39.469 | Critic1_Loss: 3.048 | Critic2_Loss: 3.015
+Step: 20000 | E_mean: 9.6235 | Time(s): 12.027 | Stage: VMC | acceptance: 0.707 | d_act: 0.008 | ejd: 0.205 | mag_actor: 0.008 | mag_mala: 0.014 | mean_log_ratio: -0.545 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.327 | Actor_Loss: 39.469 | Critic1_Loss: 3.048 | Critic2_Loss: 3.015
+Step: 20100 | E_mean: 9.5195 | Time(s): 12.185 | Stage: VMC | acceptance: 0.718 | d_act: 0.008 | ejd: 0.210 | mag_actor: 0.008 | mag_mala: 0.014 | mean_log_ratio: -0.621 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.327 | Actor_Loss: 39.469 | Critic1_Loss: 3.048 | Critic2_Loss: 3.015
+Step: 20200 | E_mean: 9.4998 | Time(s): 12.343 | Stage: VMC | acceptance: 0.698 | d_act: 0.008 | ejd: 0.205 | mag_actor: 0.008 | mag_mala: 0.014 | mean_log_ratio: -0.603 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.327 | Actor_Loss: 39.469 | Critic1_Loss: 3.048 | Critic2_Loss: 3.015
+Step: 20300 | E_mean: 9.5089 | Time(s): 12.500 | Stage: VMC | acceptance: 0.718 | d_act: 0.008 | ejd: 0.212 | mag_actor: 0.008 | mag_mala: 0.014 | mean_log_ratio: -0.554 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.327 | Actor_Loss: 39.469 | Critic1_Loss: 3.048 | Critic2_Loss: 3.015
+Step: 20400 | E_mean: 9.4615 | Time(s): 12.657 | Stage: VMC | acceptance: 0.697 | d_act: 0.008 | ejd: 0.204 | mag_actor: 0.008 | mag_mala: 0.014 | mean_log_ratio: -0.656 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.327 | Actor_Loss: 39.469 | Critic1_Loss: 3.048 | Critic2_Loss: 3.015
+Step: 20500 | E_mean: 9.5274 | Time(s): 12.814 | Stage: VMC | acceptance: 0.674 | d_act: 0.008 | ejd: 0.197 | mag_actor: 0.008 | mag_mala: 0.014 | mean_log_ratio: -0.612 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.327 | Actor_Loss: 39.469 | Critic1_Loss: 3.048 | Critic2_Loss: 3.015
+Step: 20600 | E_mean: 9.3943 | Time(s): 12.971 | Stage: VMC | acceptance: 0.697 | d_act: 0.008 | ejd: 0.202 | mag_actor: 0.008 | mag_mala: 0.013 | mean_log_ratio: -0.555 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.327 | Actor_Loss: 39.469 | Critic1_Loss: 3.048 | Critic2_Loss: 3.015
+Step: 20700 | E_mean: 9.3866 | Time(s): 13.129 | Stage: VMC | acceptance: 0.688 | d_act: 0.008 | ejd: 0.205 | mag_actor: 0.008 | mag_mala: 0.014 | mean_log_ratio: -0.615 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.327 | Actor_Loss: 39.469 | Critic1_Loss: 3.048 | Critic2_Loss: 3.015
+Step: 20800 | E_mean: 8.9987 | Time(s): 13.288 | Stage: VMC | acceptance: 0.703 | d_act: 0.008 | ejd: 0.202 | mag_actor: 0.008 | mag_mala: 0.014 | mean_log_ratio: -0.619 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.327 | Actor_Loss: 39.469 | Critic1_Loss: 3.048 | Critic2_Loss: 3.015
+Step: 20900 | E_mean: 9.1166 | Time(s): 13.448 | Stage: VMC | acceptance: 0.674 | d_act: 0.008 | ejd: 0.192 | mag_actor: 0.008 | mag_mala: 0.013 | mean_log_ratio: -0.595 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.327 | Actor_Loss: 39.469 | Critic1_Loss: 3.048 | Critic2_Loss: 3.015
+Step: 21000 | E_mean: 9.2187 | Time(s): 13.607 | Stage: VMC | acceptance: 0.692 | d_act: 0.008 | ejd: 0.204 | mag_actor: 0.008 | mag_mala: 0.014 | mean_log_ratio: -0.718 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.327 | Actor_Loss: 39.469 | Critic1_Loss: 3.048 | Critic2_Loss: 3.015
+Step: 21100 | E_mean: 9.2020 | Time(s): 13.764 | Stage: VMC | acceptance: 0.689 | d_act: 0.008 | ejd: 0.207 | mag_actor: 0.008 | mag_mala: 0.013 | mean_log_ratio: -0.582 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.327 | Actor_Loss: 39.469 | Critic1_Loss: 3.048 | Critic2_Loss: 3.015
+Step: 21200 | E_mean: 9.0477 | Time(s): 13.928 | Stage: VMC | acceptance: 0.706 | d_act: 0.008 | ejd: 0.206 | mag_actor: 0.008 | mag_mala: 0.014 | mean_log_ratio: -0.610 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.327 | Actor_Loss: 39.469 | Critic1_Loss: 3.048 | Critic2_Loss: 3.015
+Step: 21300 | E_mean: 8.9456 | Time(s): 14.088 | Stage: VMC | acceptance: 0.696 | d_act: 0.008 | ejd: 0.202 | mag_actor: 0.008 | mag_mala: 0.014 | mean_log_ratio: -0.584 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.327 | Actor_Loss: 39.469 | Critic1_Loss: 3.048 | Critic2_Loss: 3.015
+Step: 21400 | E_mean: 9.0474 | Time(s): 14.248 | Stage: VMC | acceptance: 0.689 | d_act: 0.008 | ejd: 0.203 | mag_actor: 0.008 | mag_mala: 0.014 | mean_log_ratio: -0.575 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.327 | Actor_Loss: 39.469 | Critic1_Loss: 3.048 | Critic2_Loss: 3.015
+Step: 21500 | E_mean: 8.8864 | Time(s): 14.409 | Stage: VMC | acceptance: 0.688 | d_act: 0.008 | ejd: 0.200 | mag_actor: 0.008 | mag_mala: 0.013 | mean_log_ratio: -0.543 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.327 | Actor_Loss: 39.469 | Critic1_Loss: 3.048 | Critic2_Loss: 3.015
+Step: 21600 | E_mean: 8.9210 | Time(s): 14.569 | Stage: VMC | acceptance: 0.699 | d_act: 0.008 | ejd: 0.201 | mag_actor: 0.008 | mag_mala: 0.014 | mean_log_ratio: -0.528 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.327 | Actor_Loss: 39.469 | Critic1_Loss: 3.048 | Critic2_Loss: 3.015
+Step: 21700 | E_mean: 8.7870 | Time(s): 14.729 | Stage: VMC | acceptance: 0.703 | d_act: 0.008 | ejd: 0.211 | mag_actor: 0.008 | mag_mala: 0.014 | mean_log_ratio: -0.583 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.327 | Actor_Loss: 39.469 | Critic1_Loss: 3.048 | Critic2_Loss: 3.015
+Step: 21800 | E_mean: 8.6901 | Time(s): 14.889 | Stage: VMC | acceptance: 0.713 | d_act: 0.008 | ejd: 0.204 | mag_actor: 0.008 | mag_mala: 0.014 | mean_log_ratio: -0.565 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.327 | Actor_Loss: 39.469 | Critic1_Loss: 3.048 | Critic2_Loss: 3.015
+Step: 21900 | E_mean: 8.8753 | Time(s): 15.050 | Stage: VMC | acceptance: 0.696 | d_act: 0.008 | ejd: 0.197 | mag_actor: 0.008 | mag_mala: 0.014 | mean_log_ratio: -0.556 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.327 | Actor_Loss: 39.469 | Critic1_Loss: 3.048 | Critic2_Loss: 3.015
+Step: 22000 | E_mean: 8.7643 | Time(s): 15.210 | Stage: VMC | acceptance: 0.702 | d_act: 0.008 | ejd: 0.201 | mag_actor: 0.008 | mag_mala: 0.014 | mean_log_ratio: -0.535 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.327 | Actor_Loss: 39.469 | Critic1_Loss: 3.048 | Critic2_Loss: 3.015
+Step: 22100 | E_mean: 8.7600 | Time(s): 15.371 | Stage: VMC | acceptance: 0.726 | d_act: 0.008 | ejd: 0.211 | mag_actor: 0.008 | mag_mala: 0.014 | mean_log_ratio: -0.537 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.327 | Actor_Loss: 39.469 | Critic1_Loss: 3.048 | Critic2_Loss: 3.015
+Step: 22200 | E_mean: 8.5343 | Time(s): 15.531 | Stage: VMC | acceptance: 0.694 | d_act: 0.008 | ejd: 0.201 | mag_actor: 0.008 | mag_mala: 0.013 | mean_log_ratio: -0.636 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.327 | Actor_Loss: 39.469 | Critic1_Loss: 3.048 | Critic2_Loss: 3.015
+Step: 22300 | E_mean: 8.4276 | Time(s): 15.691 | Stage: VMC | acceptance: 0.718 | d_act: 0.008 | ejd: 0.208 | mag_actor: 0.008 | mag_mala: 0.013 | mean_log_ratio: -0.555 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.327 | Actor_Loss: 39.469 | Critic1_Loss: 3.048 | Critic2_Loss: 3.015
+Step: 22400 | E_mean: 8.5351 | Time(s): 15.855 | Stage: VMC | acceptance: 0.688 | d_act: 0.008 | ejd: 0.201 | mag_actor: 0.008 | mag_mala: 0.013 | mean_log_ratio: -0.537 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.327 | Actor_Loss: 39.469 | Critic1_Loss: 3.048 | Critic2_Loss: 3.015
+Step: 22500 | E_mean: 8.5736 | Time(s): 16.013 | Stage: VMC | acceptance: 0.678 | d_act: 0.008 | ejd: 0.198 | mag_actor: 0.008 | mag_mala: 0.013 | mean_log_ratio: -0.587 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.327 | Actor_Loss: 39.469 | Critic1_Loss: 3.048 | Critic2_Loss: 3.015
+Step: 22600 | E_mean: 8.5147 | Time(s): 16.170 | Stage: VMC | acceptance: 0.721 | d_act: 0.008 | ejd: 0.209 | mag_actor: 0.008 | mag_mala: 0.013 | mean_log_ratio: -0.560 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.327 | Actor_Loss: 39.469 | Critic1_Loss: 3.048 | Critic2_Loss: 3.015
+Step: 22700 | E_mean: 8.4232 | Time(s): 16.327 | Stage: VMC | acceptance: 0.705 | d_act: 0.008 | ejd: 0.205 | mag_actor: 0.008 | mag_mala: 0.014 | mean_log_ratio: -0.588 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.327 | Actor_Loss: 39.469 | Critic1_Loss: 3.048 | Critic2_Loss: 3.015
+Step: 22800 | E_mean: 8.3273 | Time(s): 16.485 | Stage: VMC | acceptance: 0.704 | d_act: 0.008 | ejd: 0.209 | mag_actor: 0.008 | mag_mala: 0.013 | mean_log_ratio: -0.592 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.327 | Actor_Loss: 39.469 | Critic1_Loss: 3.048 | Critic2_Loss: 3.015
+Step: 22900 | E_mean: 8.3785 | Time(s): 16.642 | Stage: VMC | acceptance: 0.697 | d_act: 0.008 | ejd: 0.205 | mag_actor: 0.008 | mag_mala: 0.014 | mean_log_ratio: -0.523 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.327 | Actor_Loss: 39.469 | Critic1_Loss: 3.048 | Critic2_Loss: 3.015
+Step: 23000 | E_mean: 8.4340 | Time(s): 16.799 | Stage: VMC | acceptance: 0.726 | d_act: 0.008 | ejd: 0.213 | mag_actor: 0.008 | mag_mala: 0.013 | mean_log_ratio: -0.552 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.327 | Actor_Loss: 39.469 | Critic1_Loss: 3.048 | Critic2_Loss: 3.015
+Step: 23100 | E_mean: 8.1448 | Time(s): 16.963 | Stage: VMC | acceptance: 0.720 | d_act: 0.008 | ejd: 0.206 | mag_actor: 0.008 | mag_mala: 0.014 | mean_log_ratio: -0.517 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.327 | Actor_Loss: 39.469 | Critic1_Loss: 3.048 | Critic2_Loss: 3.015
+Step: 23200 | E_mean: 8.0861 | Time(s): 17.123 | Stage: VMC | acceptance: 0.719 | d_act: 0.008 | ejd: 0.210 | mag_actor: 0.008 | mag_mala: 0.013 | mean_log_ratio: -0.550 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.327 | Actor_Loss: 39.469 | Critic1_Loss: 3.048 | Critic2_Loss: 3.015
+Step: 23300 | E_mean: 8.2848 | Time(s): 17.284 | Stage: VMC | acceptance: 0.720 | d_act: 0.008 | ejd: 0.207 | mag_actor: 0.008 | mag_mala: 0.013 | mean_log_ratio: -0.562 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.327 | Actor_Loss: 39.469 | Critic1_Loss: 3.048 | Critic2_Loss: 3.015
+Step: 23400 | E_mean: 8.1491 | Time(s): 17.444 | Stage: VMC | acceptance: 0.729 | d_act: 0.008 | ejd: 0.212 | mag_actor: 0.008 | mag_mala: 0.013 | mean_log_ratio: -0.499 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.327 | Actor_Loss: 39.469 | Critic1_Loss: 3.048 | Critic2_Loss: 3.015
+Step: 23500 | E_mean: 8.1529 | Time(s): 17.604 | Stage: VMC | acceptance: 0.702 | d_act: 0.008 | ejd: 0.207 | mag_actor: 0.008 | mag_mala: 0.014 | mean_log_ratio: -0.601 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.327 | Actor_Loss: 39.469 | Critic1_Loss: 3.048 | Critic2_Loss: 3.015
+Step: 23600 | E_mean: 8.0160 | Time(s): 17.767 | Stage: VMC | acceptance: 0.700 | d_act: 0.008 | ejd: 0.204 | mag_actor: 0.008 | mag_mala: 0.013 | mean_log_ratio: -0.534 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.327 | Actor_Loss: 39.469 | Critic1_Loss: 3.048 | Critic2_Loss: 3.015
+Step: 23700 | E_mean: 7.8471 | Time(s): 17.931 | Stage: VMC | acceptance: 0.710 | d_act: 0.008 | ejd: 0.202 | mag_actor: 0.008 | mag_mala: 0.013 | mean_log_ratio: -0.557 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.327 | Actor_Loss: 39.469 | Critic1_Loss: 3.048 | Critic2_Loss: 3.015
+Step: 23800 | E_mean: 7.8932 | Time(s): 18.091 | Stage: VMC | acceptance: 0.698 | d_act: 0.008 | ejd: 0.204 | mag_actor: 0.008 | mag_mala: 0.013 | mean_log_ratio: -0.572 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.327 | Actor_Loss: 39.469 | Critic1_Loss: 3.048 | Critic2_Loss: 3.015
+Step: 23900 | E_mean: 7.8519 | Time(s): 18.252 | Stage: VMC | acceptance: 0.695 | d_act: 0.008 | ejd: 0.202 | mag_actor: 0.008 | mag_mala: 0.013 | mean_log_ratio: -0.556 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.327 | Actor_Loss: 39.469 | Critic1_Loss: 3.048 | Critic2_Loss: 3.015
+Step: 24000 | E_mean: 7.7535 | Time(s): 18.412 | Stage: VMC | acceptance: 0.729 | d_act: 0.008 | ejd: 0.218 | mag_actor: 0.008 | mag_mala: 0.013 | mean_log_ratio: -0.512 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.327 | Actor_Loss: 39.469 | Critic1_Loss: 3.048 | Critic2_Loss: 3.015
+Step: 24100 | E_mean: 7.7761 | Time(s): 18.572 | Stage: VMC | acceptance: 0.719 | d_act: 0.008 | ejd: 0.209 | mag_actor: 0.008 | mag_mala: 0.013 | mean_log_ratio: -0.518 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.327 | Actor_Loss: 39.469 | Critic1_Loss: 3.048 | Critic2_Loss: 3.015
+Step: 24200 | E_mean: 7.6954 | Time(s): 18.733 | Stage: VMC | acceptance: 0.682 | d_act: 0.008 | ejd: 0.201 | mag_actor: 0.008 | mag_mala: 0.013 | mean_log_ratio: -0.570 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.327 | Actor_Loss: 39.469 | Critic1_Loss: 3.048 | Critic2_Loss: 3.015
+Step: 24300 | E_mean: 7.7842 | Time(s): 18.893 | Stage: VMC | acceptance: 0.727 | d_act: 0.008 | ejd: 0.212 | mag_actor: 0.008 | mag_mala: 0.013 | mean_log_ratio: -0.487 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.327 | Actor_Loss: 39.469 | Critic1_Loss: 3.048 | Critic2_Loss: 3.015
+Step: 24400 | E_mean: 7.6178 | Time(s): 19.053 | Stage: VMC | acceptance: 0.732 | d_act: 0.008 | ejd: 0.213 | mag_actor: 0.008 | mag_mala: 0.013 | mean_log_ratio: -0.495 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.327 | Actor_Loss: 39.469 | Critic1_Loss: 3.048 | Critic2_Loss: 3.015
+Step: 24500 | E_mean: 7.6184 | Time(s): 19.214 | Stage: VMC | acceptance: 0.707 | d_act: 0.008 | ejd: 0.208 | mag_actor: 0.008 | mag_mala: 0.013 | mean_log_ratio: -0.505 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.327 | Actor_Loss: 39.469 | Critic1_Loss: 3.048 | Critic2_Loss: 3.015
+Step: 24600 | E_mean: 7.6277 | Time(s): 19.374 | Stage: VMC | acceptance: 0.733 | d_act: 0.008 | ejd: 0.216 | mag_actor: 0.008 | mag_mala: 0.013 | mean_log_ratio: -0.499 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.327 | Actor_Loss: 39.469 | Critic1_Loss: 3.048 | Critic2_Loss: 3.015
+Step: 24700 | E_mean: 7.5230 | Time(s): 19.544 | Stage: VMC | acceptance: 0.703 | d_act: 0.008 | ejd: 0.204 | mag_actor: 0.008 | mag_mala: 0.013 | mean_log_ratio: -0.528 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.327 | Actor_Loss: 39.469 | Critic1_Loss: 3.048 | Critic2_Loss: 3.015
+Step: 24800 | E_mean: 7.4945 | Time(s): 19.705 | Stage: VMC | acceptance: 0.722 | d_act: 0.008 | ejd: 0.212 | mag_actor: 0.008 | mag_mala: 0.013 | mean_log_ratio: -0.507 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.327 | Actor_Loss: 39.469 | Critic1_Loss: 3.048 | Critic2_Loss: 3.015
+Step: 24900 | E_mean: 7.2619 | Time(s): 19.865 | Stage: VMC | acceptance: 0.709 | d_act: 0.008 | ejd: 0.205 | mag_actor: 0.008 | mag_mala: 0.013 | mean_log_ratio: -0.528 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.327 | Actor_Loss: 39.469 | Critic1_Loss: 3.048 | Critic2_Loss: 3.015
+TD3 Sweep 0000 | Recompensa = -3.2476 | Aceptacion = 0.951
+TD3 Sweep 0010 | Recompensa = -3.2533 | Aceptacion = 0.940
+TD3 Sweep 0020 | Recompensa = -3.3565 | Aceptacion = 0.947
+TD3 Sweep 0030 | Recompensa = -3.2715 | Aceptacion = 0.937
+TD3 Sweep 0040 | Recompensa = -3.2249 | Aceptacion = 0.936
+TD3 Sweep 0050 | Recompensa = -3.3413 | Aceptacion = 0.931
+TD3 Sweep 0060 | Recompensa = -3.2131 | Aceptacion = 0.934
+TD3 Sweep 0070 | Recompensa = -3.2472 | Aceptacion = 0.932
+TD3 Sweep 0080 | Recompensa = -3.3639 | Aceptacion = 0.930
+TD3 Sweep 0090 | Recompensa = -3.2695 | Aceptacion = 0.947
+TD3 Sweep 0100 | Recompensa = -3.3769 | Aceptacion = 0.944
+TD3 Sweep 0110 | Recompensa = -3.2608 | Aceptacion = 0.947
+TD3 Sweep 0120 | Recompensa = -3.3520 | Aceptacion = 0.933
+TD3 Sweep 0130 | Recompensa = -3.2888 | Aceptacion = 0.938
+TD3 Sweep 0140 | Recompensa = -3.3230 | Aceptacion = 0.935
+TD3 Sweep 0150 | Recompensa = -3.3103 | Aceptacion = 0.930
+TD3 Sweep 0160 | Recompensa = -3.2856 | Aceptacion = 0.948
+TD3 Sweep 0170 | Recompensa = -3.2753 | Aceptacion = 0.930
+TD3 Sweep 0180 | Recompensa = -3.2353 | Aceptacion = 0.946
+TD3 Sweep 0190 | Recompensa = -3.2156 | Aceptacion = 0.934
+TD3 Sweep 0200 | Recompensa = -3.2248 | Aceptacion = 0.939
+TD3 Sweep 0210 | Recompensa = -3.2427 | Aceptacion = 0.929
+TD3 Sweep 0220 | Recompensa = -3.3072 | Aceptacion = 0.932
+TD3 Sweep 0230 | Recompensa = -3.1920 | Aceptacion = 0.927
+TD3 Sweep 0240 | Recompensa = -3.2513 | Aceptacion = 0.936
+TD3 Sweep 0250 | Recompensa = -3.2668 | Aceptacion = 0.922
+TD3 Sweep 0260 | Recompensa = -3.3193 | Aceptacion = 0.929
+TD3 Sweep 0270 | Recompensa = -3.3394 | Aceptacion = 0.930
+TD3 Sweep 0280 | Recompensa = -3.2151 | Aceptacion = 0.938
+TD3 Sweep 0290 | Recompensa = -3.2503 | Aceptacion = 0.933
+TD3 Sweep 0300 | Recompensa = -3.2724 | Aceptacion = 0.934
+TD3 Sweep 0310 | Recompensa = -3.2645 | Aceptacion = 0.935
+TD3 Sweep 0320 | Recompensa = -3.1614 | Aceptacion = 0.950
+TD3 Sweep 0330 | Recompensa = -3.2784 | Aceptacion = 0.931
+TD3 Sweep 0340 | Recompensa = -3.2163 | Aceptacion = 0.935
+TD3 Sweep 0350 | Recompensa = -3.1786 | Aceptacion = 0.935
+TD3 Sweep 0360 | Recompensa = -3.3378 | Aceptacion = 0.938
+TD3 Sweep 0370 | Recompensa = -3.2494 | Aceptacion = 0.951
+TD3 Sweep 0380 | Recompensa = -3.2015 | Aceptacion = 0.934
+TD3 Sweep 0390 | Recompensa = -3.3552 | Aceptacion = 0.935
+TD3 Sweep 0400 | Recompensa = -3.2467 | Aceptacion = 0.927
+TD3 Sweep 0410 | Recompensa = -3.2245 | Aceptacion = 0.926
+TD3 Sweep 0420 | Recompensa = -3.2174 | Aceptacion = 0.937
+TD3 Sweep 0430 | Recompensa = -3.3155 | Aceptacion = 0.944
+TD3 Sweep 0440 | Recompensa = -3.2135 | Aceptacion = 0.926
+TD3 Sweep 0450 | Recompensa = -3.2522 | Aceptacion = 0.934
+TD3 Sweep 0460 | Recompensa = -3.2956 | Aceptacion = 0.946
+TD3 Sweep 0470 | Recompensa = -3.2038 | Aceptacion = 0.950
+TD3 Sweep 0480 | Recompensa = -3.1992 | Aceptacion = 0.937
+TD3 Sweep 0490 | Recompensa = -3.3053 | Aceptacion = 0.943
+TD3 Sweep 0500 | Recompensa = -3.3139 | Aceptacion = 0.937
+TD3 Sweep 0510 | Recompensa = -3.2223 | Aceptacion = 0.937
+TD3 Sweep 0520 | Recompensa = -3.2310 | Aceptacion = 0.938
+TD3 Sweep 0530 | Recompensa = -3.3210 | Aceptacion = 0.936
+TD3 Sweep 0540 | Recompensa = -3.2350 | Aceptacion = 0.928
+TD3 Sweep 0550 | Recompensa = -3.2516 | Aceptacion = 0.918
+TD3 Sweep 0560 | Recompensa = -3.2040 | Aceptacion = 0.931
+TD3 Sweep 0570 | Recompensa = -3.2271 | Aceptacion = 0.931
+TD3 Sweep 0580 | Recompensa = -3.2153 | Aceptacion = 0.931
+TD3 Sweep 0590 | Recompensa = -3.2874 | Aceptacion = 0.926
+TD3 Sweep 0600 | Recompensa = -3.2313 | Aceptacion = 0.931
+TD3 Sweep 0610 | Recompensa = -3.2985 | Aceptacion = 0.920
+TD3 Sweep 0620 | Recompensa = -3.2852 | Aceptacion = 0.937
+TD3 Sweep 0630 | Recompensa = -3.3104 | Aceptacion = 0.929
+TD3 Sweep 0640 | Recompensa = -3.2455 | Aceptacion = 0.942
+TD3 Sweep 0650 | Recompensa = -3.2494 | Aceptacion = 0.925
+TD3 Sweep 0660 | Recompensa = -3.2171 | Aceptacion = 0.948
+TD3 Sweep 0670 | Recompensa = -3.2130 | Aceptacion = 0.938
+TD3 Sweep 0680 | Recompensa = -3.3578 | Aceptacion = 0.946
+TD3 Sweep 0690 | Recompensa = -3.1574 | Aceptacion = 0.948
+TD3 Sweep 0700 | Recompensa = -3.2881 | Aceptacion = 0.939
+TD3 Sweep 0710 | Recompensa = -3.2621 | Aceptacion = 0.927
+TD3 Sweep 0720 | Recompensa = -3.2964 | Aceptacion = 0.946
+TD3 Sweep 0730 | Recompensa = -3.2025 | Aceptacion = 0.951
+TD3 Sweep 0740 | Recompensa = -3.1932 | Aceptacion = 0.925
+TD3 Sweep 0750 | Recompensa = -3.3069 | Aceptacion = 0.930
+TD3 Sweep 0760 | Recompensa = -3.2191 | Aceptacion = 0.943
+TD3 Sweep 0770 | Recompensa = -3.3111 | Aceptacion = 0.928
+TD3 Sweep 0780 | Recompensa = -3.2066 | Aceptacion = 0.921
+TD3 Sweep 0790 | Recompensa = -3.2357 | Aceptacion = 0.938
+TD3 Sweep 0800 | Recompensa = -3.2652 | Aceptacion = 0.929
+TD3 Sweep 0810 | Recompensa = -3.1972 | Aceptacion = 0.938
+TD3 Sweep 0820 | Recompensa = -3.2829 | Aceptacion = 0.941
+TD3 Sweep 0830 | Recompensa = -3.2596 | Aceptacion = 0.925
+TD3 Sweep 0840 | Recompensa = -3.1786 | Aceptacion = 0.931
+TD3 Sweep 0850 | Recompensa = -3.1870 | Aceptacion = 0.926
+TD3 Sweep 0860 | Recompensa = -3.2021 | Aceptacion = 0.946
+TD3 Sweep 0870 | Recompensa = -3.2112 | Aceptacion = 0.920
+TD3 Sweep 0880 | Recompensa = -3.2483 | Aceptacion = 0.939
+TD3 Sweep 0890 | Recompensa = -3.2097 | Aceptacion = 0.933
+TD3 Sweep 0900 | Recompensa = -3.1615 | Aceptacion = 0.926
+TD3 Sweep 0910 | Recompensa = -3.1416 | Aceptacion = 0.945
+TD3 Sweep 0920 | Recompensa = -3.2727 | Aceptacion = 0.928
+TD3 Sweep 0930 | Recompensa = -3.2577 | Aceptacion = 0.936
+TD3 Sweep 0940 | Recompensa = -3.3526 | Aceptacion = 0.946
+TD3 Sweep 0950 | Recompensa = -3.2410 | Aceptacion = 0.932
+TD3 Sweep 0960 | Recompensa = -3.2724 | Aceptacion = 0.925
+TD3 Sweep 0970 | Recompensa = -3.2417 | Aceptacion = 0.939
+TD3 Sweep 0980 | Recompensa = -3.2080 | Aceptacion = 0.935
+TD3 Sweep 0990 | Recompensa = -3.2443 | Aceptacion = 0.932
+TD3 Sweep 1000 | Recompensa = -3.1584 | Aceptacion = 0.942
+TD3 Sweep 1010 | Recompensa = -3.2445 | Aceptacion = 0.929
+TD3 Sweep 1020 | Recompensa = -3.2356 | Aceptacion = 0.931
+TD3 Sweep 1030 | Recompensa = -3.2513 | Aceptacion = 0.939
+TD3 Sweep 1040 | Recompensa = -3.2361 | Aceptacion = 0.934
+TD3 Sweep 1050 | Recompensa = -3.3032 | Aceptacion = 0.942
+TD3 Sweep 1060 | Recompensa = -3.2464 | Aceptacion = 0.950
+TD3 Sweep 1070 | Recompensa = -3.2718 | Aceptacion = 0.938
+TD3 Sweep 1080 | Recompensa = -3.1235 | Aceptacion = 0.940
+TD3 Sweep 1090 | Recompensa = -3.1507 | Aceptacion = 0.942
+TD3 Sweep 1100 | Recompensa = -3.2369 | Aceptacion = 0.930
+TD3 Sweep 1110 | Recompensa = -3.2093 | Aceptacion = 0.922
+TD3 Sweep 1120 | Recompensa = -3.1778 | Aceptacion = 0.931
+TD3 Sweep 1130 | Recompensa = -3.2985 | Aceptacion = 0.940
+TD3 Sweep 1140 | Recompensa = -3.1678 | Aceptacion = 0.938
+TD3 Sweep 1150 | Recompensa = -3.2072 | Aceptacion = 0.928
+TD3 Sweep 1160 | Recompensa = -3.1586 | Aceptacion = 0.941
+TD3 Sweep 1170 | Recompensa = -3.2046 | Aceptacion = 0.938
+TD3 Sweep 1180 | Recompensa = -3.1215 | Aceptacion = 0.925
+TD3 Sweep 1190 | Recompensa = -3.1866 | Aceptacion = 0.944
+TD3 Sweep 1200 | Recompensa = -3.2198 | Aceptacion = 0.938
+TD3 Sweep 1210 | Recompensa = -3.2650 | Aceptacion = 0.921
+TD3 Sweep 1220 | Recompensa = -3.1510 | Aceptacion = 0.944
+TD3 Sweep 1230 | Recompensa = -3.2215 | Aceptacion = 0.922
+TD3 Sweep 1240 | Recompensa = -3.2383 | Aceptacion = 0.938
+TD3 Sweep 1250 | Recompensa = -3.1961 | Aceptacion = 0.932
+TD3 Sweep 1260 | Recompensa = -3.2563 | Aceptacion = 0.930
+TD3 Sweep 1270 | Recompensa = -3.1596 | Aceptacion = 0.935
+TD3 Sweep 1280 | Recompensa = -3.2189 | Aceptacion = 0.928
+TD3 Sweep 1290 | Recompensa = -3.2422 | Aceptacion = 0.934
+TD3 Sweep 1300 | Recompensa = -3.1664 | Aceptacion = 0.932
+TD3 Sweep 1310 | Recompensa = -3.1798 | Aceptacion = 0.932
+TD3 Sweep 1320 | Recompensa = -3.1812 | Aceptacion = 0.939
+TD3 Sweep 1330 | Recompensa = -3.3169 | Aceptacion = 0.931
+TD3 Sweep 1340 | Recompensa = -3.1862 | Aceptacion = 0.926
+TD3 Sweep 1350 | Recompensa = -3.1923 | Aceptacion = 0.935
+TD3 Sweep 1360 | Recompensa = -3.1795 | Aceptacion = 0.917
+TD3 Sweep 1370 | Recompensa = -3.2370 | Aceptacion = 0.924
+TD3 Sweep 1380 | Recompensa = -3.2060 | Aceptacion = 0.937
+TD3 Sweep 1390 | Recompensa = -3.1297 | Aceptacion = 0.926
+TD3 Sweep 1400 | Recompensa = -3.3010 | Aceptacion = 0.927
+TD3 Sweep 1410 | Recompensa = -3.1563 | Aceptacion = 0.949
+TD3 Sweep 1420 | Recompensa = -3.1188 | Aceptacion = 0.930
+TD3 Sweep 1430 | Recompensa = -3.2715 | Aceptacion = 0.918
+TD3 Sweep 1440 | Recompensa = -3.2118 | Aceptacion = 0.931
+TD3 Sweep 1450 | Recompensa = -3.2097 | Aceptacion = 0.933
+TD3 Sweep 1460 | Recompensa = -3.2241 | Aceptacion = 0.934
+TD3 Sweep 1470 | Recompensa = -3.2626 | Aceptacion = 0.937
+TD3 Sweep 1480 | Recompensa = -3.1913 | Aceptacion = 0.929
+TD3 Sweep 1490 | Recompensa = -3.2217 | Aceptacion = 0.940
+TD3 Sweep 1500 | Recompensa = -3.1555 | Aceptacion = 0.919
+TD3 Sweep 1510 | Recompensa = -3.1919 | Aceptacion = 0.930
+TD3 Sweep 1520 | Recompensa = -3.2423 | Aceptacion = 0.935
+TD3 Sweep 1530 | Recompensa = -3.2496 | Aceptacion = 0.922
+TD3 Sweep 1540 | Recompensa = -3.2086 | Aceptacion = 0.931
+TD3 Sweep 1550 | Recompensa = -3.2636 | Aceptacion = 0.943
+TD3 Sweep 1560 | Recompensa = -3.2213 | Aceptacion = 0.923
+TD3 Sweep 1570 | Recompensa = -3.1848 | Aceptacion = 0.926
+TD3 Sweep 1580 | Recompensa = -3.1601 | Aceptacion = 0.937
+TD3 Sweep 1590 | Recompensa = -3.3148 | Aceptacion = 0.924
+TD3 Sweep 1600 | Recompensa = -3.1969 | Aceptacion = 0.929
+TD3 Sweep 1610 | Recompensa = -3.2106 | Aceptacion = 0.939
+TD3 Sweep 1620 | Recompensa = -3.1813 | Aceptacion = 0.925
+TD3 Sweep 1630 | Recompensa = -3.2573 | Aceptacion = 0.939
+TD3 Sweep 1640 | Recompensa = -3.1460 | Aceptacion = 0.933
+TD3 Sweep 1650 | Recompensa = -3.1928 | Aceptacion = 0.942
+TD3 Sweep 1660 | Recompensa = -3.1686 | Aceptacion = 0.938
+TD3 Sweep 1670 | Recompensa = -3.2604 | Aceptacion = 0.940
+TD3 Sweep 1680 | Recompensa = -3.2068 | Aceptacion = 0.920
+TD3 Sweep 1690 | Recompensa = -3.2441 | Aceptacion = 0.925
+TD3 Sweep 1700 | Recompensa = -3.2777 | Aceptacion = 0.936
+TD3 Sweep 1710 | Recompensa = -3.1248 | Aceptacion = 0.913
+TD3 Sweep 1720 | Recompensa = -3.2156 | Aceptacion = 0.940
+TD3 Sweep 1730 | Recompensa = -3.1212 | Aceptacion = 0.928
+TD3 Sweep 1740 | Recompensa = -3.2008 | Aceptacion = 0.920
+TD3 Sweep 1750 | Recompensa = -3.1547 | Aceptacion = 0.936
+TD3 Sweep 1760 | Recompensa = -3.1560 | Aceptacion = 0.954
+TD3 Sweep 1770 | Recompensa = -3.2426 | Aceptacion = 0.950
+TD3 Sweep 1780 | Recompensa = -3.1753 | Aceptacion = 0.929
+TD3 Sweep 1790 | Recompensa = -3.1489 | Aceptacion = 0.933
+TD3 Sweep 1800 | Recompensa = -3.1967 | Aceptacion = 0.941
+TD3 Sweep 1810 | Recompensa = -3.2369 | Aceptacion = 0.924
+TD3 Sweep 1820 | Recompensa = -3.1831 | Aceptacion = 0.931
+TD3 Sweep 1830 | Recompensa = -3.2343 | Aceptacion = 0.939
+TD3 Sweep 1840 | Recompensa = -3.2129 | Aceptacion = 0.924
+TD3 Sweep 1850 | Recompensa = -3.1266 | Aceptacion = 0.930
+TD3 Sweep 1860 | Recompensa = -3.2470 | Aceptacion = 0.923
+TD3 Sweep 1870 | Recompensa = -3.1391 | Aceptacion = 0.910
+TD3 Sweep 1880 | Recompensa = -3.3094 | Aceptacion = 0.938
+TD3 Sweep 1890 | Recompensa = -3.1573 | Aceptacion = 0.932
+TD3 Sweep 1900 | Recompensa = -3.2097 | Aceptacion = 0.922
+TD3 Sweep 1910 | Recompensa = -3.1888 | Aceptacion = 0.928
+TD3 Sweep 1920 | Recompensa = -3.1704 | Aceptacion = 0.934
+TD3 Sweep 1930 | Recompensa = -3.1974 | Aceptacion = 0.933
+TD3 Sweep 1940 | Recompensa = -3.2820 | Aceptacion = 0.922
+TD3 Sweep 1950 | Recompensa = -3.2678 | Aceptacion = 0.926
+TD3 Sweep 1960 | Recompensa = -3.1524 | Aceptacion = 0.923
+TD3 Sweep 1970 | Recompensa = -3.2541 | Aceptacion = 0.929
+TD3 Sweep 1980 | Recompensa = -3.2368 | Aceptacion = 0.917
+TD3 Sweep 1990 | Recompensa = -3.1267 | Aceptacion = 0.919
+TD3 Sweep 2000 | Recompensa = -3.1763 | Aceptacion = 0.919
+TD3 Sweep 2010 | Recompensa = -3.1517 | Aceptacion = 0.924
+TD3 Sweep 2020 | Recompensa = -3.1826 | Aceptacion = 0.933
+TD3 Sweep 2030 | Recompensa = -3.1781 | Aceptacion = 0.923
+TD3 Sweep 2040 | Recompensa = -3.1469 | Aceptacion = 0.930
+TD3 Sweep 2050 | Recompensa = -3.1940 | Aceptacion = 0.923
+TD3 Sweep 2060 | Recompensa = -3.1900 | Aceptacion = 0.916
+TD3 Sweep 2070 | Recompensa = -3.1983 | Aceptacion = 0.938
+TD3 Sweep 2080 | Recompensa = -3.1403 | Aceptacion = 0.944
+TD3 Sweep 2090 | Recompensa = -3.1771 | Aceptacion = 0.937
+TD3 Sweep 2100 | Recompensa = -3.1745 | Aceptacion = 0.927
+TD3 Sweep 2110 | Recompensa = -3.2226 | Aceptacion = 0.931
+TD3 Sweep 2120 | Recompensa = -3.1783 | Aceptacion = 0.936
+TD3 Sweep 2130 | Recompensa = -3.1799 | Aceptacion = 0.935
+TD3 Sweep 2140 | Recompensa = -3.1500 | Aceptacion = 0.932
+TD3 Sweep 2150 | Recompensa = -3.1662 | Aceptacion = 0.932
+TD3 Sweep 2160 | Recompensa = -3.1821 | Aceptacion = 0.927
+TD3 Sweep 2170 | Recompensa = -3.1174 | Aceptacion = 0.923
+TD3 Sweep 2180 | Recompensa = -3.1752 | Aceptacion = 0.929
+TD3 Sweep 2190 | Recompensa = -3.1159 | Aceptacion = 0.932
+TD3 Sweep 2200 | Recompensa = -3.1984 | Aceptacion = 0.939
+TD3 Sweep 2210 | Recompensa = -3.2265 | Aceptacion = 0.925
+TD3 Sweep 2220 | Recompensa = -3.1201 | Aceptacion = 0.928
+TD3 Sweep 2230 | Recompensa = -3.2379 | Aceptacion = 0.928
+TD3 Sweep 2240 | Recompensa = -3.2339 | Aceptacion = 0.927
+TD3 Sweep 2250 | Recompensa = -3.1289 | Aceptacion = 0.926
+TD3 Sweep 2260 | Recompensa = -3.1640 | Aceptacion = 0.924
+TD3 Sweep 2270 | Recompensa = -3.1928 | Aceptacion = 0.949
+TD3 Sweep 2280 | Recompensa = -3.1989 | Aceptacion = 0.915
+TD3 Sweep 2290 | Recompensa = -3.2004 | Aceptacion = 0.926
+TD3 Sweep 2300 | Recompensa = -3.1151 | Aceptacion = 0.914
+TD3 Sweep 2310 | Recompensa = -3.1352 | Aceptacion = 0.939
+TD3 Sweep 2320 | Recompensa = -3.2124 | Aceptacion = 0.918
+TD3 Sweep 2330 | Recompensa = -3.2159 | Aceptacion = 0.925
+TD3 Sweep 2340 | Recompensa = -3.0976 | Aceptacion = 0.935
+TD3 Sweep 2350 | Recompensa = -3.1678 | Aceptacion = 0.916
+TD3 Sweep 2360 | Recompensa = -3.0952 | Aceptacion = 0.926
+TD3 Sweep 2370 | Recompensa = -3.1358 | Aceptacion = 0.930
+TD3 Sweep 2380 | Recompensa = -3.1257 | Aceptacion = 0.938
+TD3 Sweep 2390 | Recompensa = -3.1409 | Aceptacion = 0.914
+TD3 Sweep 2400 | Recompensa = -3.1146 | Aceptacion = 0.935
+TD3 Sweep 2410 | Recompensa = -3.2607 | Aceptacion = 0.931
+TD3 Sweep 2420 | Recompensa = -3.1986 | Aceptacion = 0.933
+TD3 Sweep 2430 | Recompensa = -3.1800 | Aceptacion = 0.944
+TD3 Sweep 2440 | Recompensa = -3.2007 | Aceptacion = 0.947
+TD3 Sweep 2450 | Recompensa = -3.1256 | Aceptacion = 0.936
+TD3 Sweep 2460 | Recompensa = -3.1812 | Aceptacion = 0.925
+TD3 Sweep 2470 | Recompensa = -3.1617 | Aceptacion = 0.932
+TD3 Sweep 2480 | Recompensa = -3.1732 | Aceptacion = 0.930
+TD3 Sweep 2490 | Recompensa = -3.2194 | Aceptacion = 0.924
+
+--- CICLO TD3 3/4 ---
+Step: 25000 | E_mean: 5.4768 | Time(s): 0.002 | Stage: VMC | acceptance: 0.667 | d_act: 0.009 | ejd: 0.193 | mag_actor: 0.009 | mag_mala: 0.014 | mean_log_ratio: -0.591 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.230 | Actor_Loss: 102.545 | Critic1_Loss: 3.483 | Critic2_Loss: 3.398
+Step: 25100 | E_mean: 7.1099 | Time(s): 0.161 | Stage: VMC | acceptance: 0.705 | d_act: 0.009 | ejd: 0.203 | mag_actor: 0.009 | mag_mala: 0.013 | mean_log_ratio: -0.526 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.230 | Actor_Loss: 102.545 | Critic1_Loss: 3.483 | Critic2_Loss: 3.398
+Step: 25200 | E_mean: 7.0307 | Time(s): 0.320 | Stage: VMC | acceptance: 0.717 | d_act: 0.009 | ejd: 0.212 | mag_actor: 0.009 | mag_mala: 0.013 | mean_log_ratio: -0.549 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.230 | Actor_Loss: 102.545 | Critic1_Loss: 3.483 | Critic2_Loss: 3.398
+Step: 25300 | E_mean: 7.1660 | Time(s): 0.478 | Stage: VMC | acceptance: 0.716 | d_act: 0.009 | ejd: 0.209 | mag_actor: 0.009 | mag_mala: 0.013 | mean_log_ratio: -0.485 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.230 | Actor_Loss: 102.545 | Critic1_Loss: 3.483 | Critic2_Loss: 3.398
+Step: 25400 | E_mean: 7.1442 | Time(s): 0.635 | Stage: VMC | acceptance: 0.737 | d_act: 0.009 | ejd: 0.214 | mag_actor: 0.009 | mag_mala: 0.013 | mean_log_ratio: -0.525 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.230 | Actor_Loss: 102.545 | Critic1_Loss: 3.483 | Critic2_Loss: 3.398
+Step: 25500 | E_mean: 7.2052 | Time(s): 0.793 | Stage: VMC | acceptance: 0.705 | d_act: 0.009 | ejd: 0.210 | mag_actor: 0.009 | mag_mala: 0.013 | mean_log_ratio: -0.560 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.230 | Actor_Loss: 102.545 | Critic1_Loss: 3.483 | Critic2_Loss: 3.398
+Step: 25600 | E_mean: 7.1484 | Time(s): 0.950 | Stage: VMC | acceptance: 0.724 | d_act: 0.009 | ejd: 0.207 | mag_actor: 0.009 | mag_mala: 0.013 | mean_log_ratio: -0.488 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.230 | Actor_Loss: 102.545 | Critic1_Loss: 3.483 | Critic2_Loss: 3.398
+Step: 25700 | E_mean: 7.0017 | Time(s): 1.108 | Stage: VMC | acceptance: 0.706 | d_act: 0.009 | ejd: 0.209 | mag_actor: 0.009 | mag_mala: 0.013 | mean_log_ratio: -0.511 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.230 | Actor_Loss: 102.545 | Critic1_Loss: 3.483 | Critic2_Loss: 3.398
+Step: 25800 | E_mean: 6.9794 | Time(s): 1.266 | Stage: VMC | acceptance: 0.732 | d_act: 0.009 | ejd: 0.207 | mag_actor: 0.009 | mag_mala: 0.013 | mean_log_ratio: -0.512 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.230 | Actor_Loss: 102.545 | Critic1_Loss: 3.483 | Critic2_Loss: 3.398
+Step: 25900 | E_mean: 6.8798 | Time(s): 1.425 | Stage: VMC | acceptance: 0.718 | d_act: 0.009 | ejd: 0.212 | mag_actor: 0.009 | mag_mala: 0.013 | mean_log_ratio: -0.524 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.230 | Actor_Loss: 102.545 | Critic1_Loss: 3.483 | Critic2_Loss: 3.398
+Step: 26000 | E_mean: 6.9760 | Time(s): 1.584 | Stage: VMC | acceptance: 0.727 | d_act: 0.009 | ejd: 0.214 | mag_actor: 0.009 | mag_mala: 0.013 | mean_log_ratio: -0.573 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.230 | Actor_Loss: 102.545 | Critic1_Loss: 3.483 | Critic2_Loss: 3.398
+Step: 26100 | E_mean: 6.8511 | Time(s): 1.743 | Stage: VMC | acceptance: 0.731 | d_act: 0.009 | ejd: 0.212 | mag_actor: 0.009 | mag_mala: 0.013 | mean_log_ratio: -0.454 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.230 | Actor_Loss: 102.545 | Critic1_Loss: 3.483 | Critic2_Loss: 3.398
+Step: 26200 | E_mean: 6.8539 | Time(s): 1.902 | Stage: VMC | acceptance: 0.709 | d_act: 0.009 | ejd: 0.203 | mag_actor: 0.009 | mag_mala: 0.013 | mean_log_ratio: -0.501 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.230 | Actor_Loss: 102.545 | Critic1_Loss: 3.483 | Critic2_Loss: 3.398
+Step: 26300 | E_mean: 6.9274 | Time(s): 2.060 | Stage: VMC | acceptance: 0.680 | d_act: 0.009 | ejd: 0.196 | mag_actor: 0.009 | mag_mala: 0.013 | mean_log_ratio: -0.577 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.230 | Actor_Loss: 102.545 | Critic1_Loss: 3.483 | Critic2_Loss: 3.398
+Step: 26400 | E_mean: 6.6965 | Time(s): 2.218 | Stage: VMC | acceptance: 0.691 | d_act: 0.009 | ejd: 0.198 | mag_actor: 0.009 | mag_mala: 0.013 | mean_log_ratio: -0.591 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.230 | Actor_Loss: 102.545 | Critic1_Loss: 3.483 | Critic2_Loss: 3.398
+Step: 26500 | E_mean: 6.6290 | Time(s): 2.375 | Stage: VMC | acceptance: 0.722 | d_act: 0.009 | ejd: 0.209 | mag_actor: 0.009 | mag_mala: 0.013 | mean_log_ratio: -0.505 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.230 | Actor_Loss: 102.545 | Critic1_Loss: 3.483 | Critic2_Loss: 3.398
+Step: 26600 | E_mean: 6.7461 | Time(s): 2.533 | Stage: VMC | acceptance: 0.725 | d_act: 0.009 | ejd: 0.214 | mag_actor: 0.009 | mag_mala: 0.013 | mean_log_ratio: -0.520 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.230 | Actor_Loss: 102.545 | Critic1_Loss: 3.483 | Critic2_Loss: 3.398
+Step: 26700 | E_mean: 6.5947 | Time(s): 2.690 | Stage: VMC | acceptance: 0.719 | d_act: 0.009 | ejd: 0.212 | mag_actor: 0.009 | mag_mala: 0.013 | mean_log_ratio: -0.480 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.230 | Actor_Loss: 102.545 | Critic1_Loss: 3.483 | Critic2_Loss: 3.398
+Step: 26800 | E_mean: 6.6925 | Time(s): 2.848 | Stage: VMC | acceptance: 0.707 | d_act: 0.009 | ejd: 0.206 | mag_actor: 0.009 | mag_mala: 0.013 | mean_log_ratio: -0.510 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.230 | Actor_Loss: 102.545 | Critic1_Loss: 3.483 | Critic2_Loss: 3.398
+Step: 26900 | E_mean: 6.5754 | Time(s): 3.005 | Stage: VMC | acceptance: 0.718 | d_act: 0.009 | ejd: 0.208 | mag_actor: 0.009 | mag_mala: 0.013 | mean_log_ratio: -0.497 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.230 | Actor_Loss: 102.545 | Critic1_Loss: 3.483 | Critic2_Loss: 3.398
+Step: 27000 | E_mean: 6.5589 | Time(s): 3.163 | Stage: VMC | acceptance: 0.721 | d_act: 0.009 | ejd: 0.211 | mag_actor: 0.009 | mag_mala: 0.013 | mean_log_ratio: -0.576 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.230 | Actor_Loss: 102.545 | Critic1_Loss: 3.483 | Critic2_Loss: 3.398
+Step: 27100 | E_mean: 6.4420 | Time(s): 3.320 | Stage: VMC | acceptance: 0.727 | d_act: 0.009 | ejd: 0.213 | mag_actor: 0.009 | mag_mala: 0.013 | mean_log_ratio: -0.489 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.230 | Actor_Loss: 102.545 | Critic1_Loss: 3.483 | Critic2_Loss: 3.398
+Step: 27200 | E_mean: 6.5083 | Time(s): 3.478 | Stage: VMC | acceptance: 0.713 | d_act: 0.009 | ejd: 0.206 | mag_actor: 0.009 | mag_mala: 0.013 | mean_log_ratio: -0.546 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.230 | Actor_Loss: 102.545 | Critic1_Loss: 3.483 | Critic2_Loss: 3.398
+Step: 27300 | E_mean: 6.3568 | Time(s): 3.635 | Stage: VMC | acceptance: 0.709 | d_act: 0.009 | ejd: 0.204 | mag_actor: 0.009 | mag_mala: 0.013 | mean_log_ratio: -0.542 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.230 | Actor_Loss: 102.545 | Critic1_Loss: 3.483 | Critic2_Loss: 3.398
+Step: 27400 | E_mean: 6.3526 | Time(s): 3.792 | Stage: VMC | acceptance: 0.734 | d_act: 0.009 | ejd: 0.215 | mag_actor: 0.009 | mag_mala: 0.013 | mean_log_ratio: -0.497 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.230 | Actor_Loss: 102.545 | Critic1_Loss: 3.483 | Critic2_Loss: 3.398
+Step: 27500 | E_mean: 6.2739 | Time(s): 3.957 | Stage: VMC | acceptance: 0.728 | d_act: 0.009 | ejd: 0.214 | mag_actor: 0.009 | mag_mala: 0.013 | mean_log_ratio: -0.468 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.230 | Actor_Loss: 102.545 | Critic1_Loss: 3.483 | Critic2_Loss: 3.398
+Step: 27600 | E_mean: 6.1871 | Time(s): 4.116 | Stage: VMC | acceptance: 0.714 | d_act: 0.009 | ejd: 0.210 | mag_actor: 0.009 | mag_mala: 0.013 | mean_log_ratio: -0.539 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.230 | Actor_Loss: 102.545 | Critic1_Loss: 3.483 | Critic2_Loss: 3.398
+Step: 27700 | E_mean: 6.3354 | Time(s): 4.273 | Stage: VMC | acceptance: 0.715 | d_act: 0.009 | ejd: 0.208 | mag_actor: 0.009 | mag_mala: 0.013 | mean_log_ratio: -0.514 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.230 | Actor_Loss: 102.545 | Critic1_Loss: 3.483 | Critic2_Loss: 3.398
+Step: 27800 | E_mean: 6.2210 | Time(s): 4.431 | Stage: VMC | acceptance: 0.709 | d_act: 0.009 | ejd: 0.202 | mag_actor: 0.009 | mag_mala: 0.013 | mean_log_ratio: -0.575 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.230 | Actor_Loss: 102.545 | Critic1_Loss: 3.483 | Critic2_Loss: 3.398
+Step: 27900 | E_mean: 6.2679 | Time(s): 4.590 | Stage: VMC | acceptance: 0.741 | d_act: 0.009 | ejd: 0.214 | mag_actor: 0.009 | mag_mala: 0.013 | mean_log_ratio: -0.480 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.230 | Actor_Loss: 102.545 | Critic1_Loss: 3.483 | Critic2_Loss: 3.398
+Step: 28000 | E_mean: 6.1459 | Time(s): 4.747 | Stage: VMC | acceptance: 0.745 | d_act: 0.009 | ejd: 0.215 | mag_actor: 0.009 | mag_mala: 0.013 | mean_log_ratio: -0.487 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.230 | Actor_Loss: 102.545 | Critic1_Loss: 3.483 | Critic2_Loss: 3.398
+Step: 28100 | E_mean: 6.1434 | Time(s): 4.905 | Stage: VMC | acceptance: 0.704 | d_act: 0.009 | ejd: 0.202 | mag_actor: 0.009 | mag_mala: 0.013 | mean_log_ratio: -0.566 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.230 | Actor_Loss: 102.545 | Critic1_Loss: 3.483 | Critic2_Loss: 3.398
+Step: 28200 | E_mean: 5.9630 | Time(s): 5.063 | Stage: VMC | acceptance: 0.708 | d_act: 0.009 | ejd: 0.208 | mag_actor: 0.009 | mag_mala: 0.013 | mean_log_ratio: -0.555 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.230 | Actor_Loss: 102.545 | Critic1_Loss: 3.483 | Critic2_Loss: 3.398
+Step: 28300 | E_mean: 5.9287 | Time(s): 5.221 | Stage: VMC | acceptance: 0.721 | d_act: 0.009 | ejd: 0.209 | mag_actor: 0.009 | mag_mala: 0.013 | mean_log_ratio: -0.571 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.230 | Actor_Loss: 102.545 | Critic1_Loss: 3.483 | Critic2_Loss: 3.398
+Step: 28400 | E_mean: 5.9512 | Time(s): 5.378 | Stage: VMC | acceptance: 0.709 | d_act: 0.009 | ejd: 0.210 | mag_actor: 0.009 | mag_mala: 0.013 | mean_log_ratio: -0.494 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.230 | Actor_Loss: 102.545 | Critic1_Loss: 3.483 | Critic2_Loss: 3.398
+Step: 28500 | E_mean: 6.0179 | Time(s): 5.536 | Stage: VMC | acceptance: 0.709 | d_act: 0.009 | ejd: 0.207 | mag_actor: 0.009 | mag_mala: 0.013 | mean_log_ratio: -0.533 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.230 | Actor_Loss: 102.545 | Critic1_Loss: 3.483 | Critic2_Loss: 3.398
+Step: 28600 | E_mean: 5.8200 | Time(s): 5.694 | Stage: VMC | acceptance: 0.722 | d_act: 0.009 | ejd: 0.210 | mag_actor: 0.009 | mag_mala: 0.013 | mean_log_ratio: -0.500 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.230 | Actor_Loss: 102.545 | Critic1_Loss: 3.483 | Critic2_Loss: 3.398
+Step: 28700 | E_mean: 5.7297 | Time(s): 5.854 | Stage: VMC | acceptance: 0.726 | d_act: 0.009 | ejd: 0.215 | mag_actor: 0.009 | mag_mala: 0.013 | mean_log_ratio: -0.470 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.230 | Actor_Loss: 102.545 | Critic1_Loss: 3.483 | Critic2_Loss: 3.398
+Step: 28800 | E_mean: 5.7161 | Time(s): 6.011 | Stage: VMC | acceptance: 0.711 | d_act: 0.009 | ejd: 0.210 | mag_actor: 0.009 | mag_mala: 0.013 | mean_log_ratio: -0.509 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.230 | Actor_Loss: 102.545 | Critic1_Loss: 3.483 | Critic2_Loss: 3.398
+Step: 28900 | E_mean: 5.6837 | Time(s): 6.170 | Stage: VMC | acceptance: 0.720 | d_act: 0.009 | ejd: 0.212 | mag_actor: 0.009 | mag_mala: 0.013 | mean_log_ratio: -0.483 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.230 | Actor_Loss: 102.545 | Critic1_Loss: 3.483 | Critic2_Loss: 3.398
+Step: 29000 | E_mean: 5.6313 | Time(s): 6.330 | Stage: VMC | acceptance: 0.694 | d_act: 0.009 | ejd: 0.203 | mag_actor: 0.009 | mag_mala: 0.013 | mean_log_ratio: -0.566 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.230 | Actor_Loss: 102.545 | Critic1_Loss: 3.483 | Critic2_Loss: 3.398
+Step: 29100 | E_mean: 5.6992 | Time(s): 6.489 | Stage: VMC | acceptance: 0.756 | d_act: 0.009 | ejd: 0.228 | mag_actor: 0.009 | mag_mala: 0.013 | mean_log_ratio: -0.482 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.230 | Actor_Loss: 102.545 | Critic1_Loss: 3.483 | Critic2_Loss: 3.398
+Step: 29200 | E_mean: 5.6073 | Time(s): 6.649 | Stage: VMC | acceptance: 0.707 | d_act: 0.009 | ejd: 0.208 | mag_actor: 0.009 | mag_mala: 0.013 | mean_log_ratio: -0.514 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.230 | Actor_Loss: 102.545 | Critic1_Loss: 3.483 | Critic2_Loss: 3.398
+Step: 29300 | E_mean: 5.6690 | Time(s): 6.809 | Stage: VMC | acceptance: 0.707 | d_act: 0.009 | ejd: 0.205 | mag_actor: 0.009 | mag_mala: 0.013 | mean_log_ratio: -0.463 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.230 | Actor_Loss: 102.545 | Critic1_Loss: 3.483 | Critic2_Loss: 3.398
+Step: 29400 | E_mean: 5.5094 | Time(s): 6.967 | Stage: VMC | acceptance: 0.725 | d_act: 0.009 | ejd: 0.213 | mag_actor: 0.009 | mag_mala: 0.013 | mean_log_ratio: -0.489 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.230 | Actor_Loss: 102.545 | Critic1_Loss: 3.483 | Critic2_Loss: 3.398
+Step: 29500 | E_mean: 5.5496 | Time(s): 7.124 | Stage: VMC | acceptance: 0.705 | d_act: 0.009 | ejd: 0.206 | mag_actor: 0.009 | mag_mala: 0.013 | mean_log_ratio: -0.519 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.230 | Actor_Loss: 102.545 | Critic1_Loss: 3.483 | Critic2_Loss: 3.398
+Step: 29600 | E_mean: 5.5591 | Time(s): 7.282 | Stage: VMC | acceptance: 0.720 | d_act: 0.009 | ejd: 0.208 | mag_actor: 0.009 | mag_mala: 0.013 | mean_log_ratio: -0.469 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.230 | Actor_Loss: 102.545 | Critic1_Loss: 3.483 | Critic2_Loss: 3.398
+Step: 29700 | E_mean: 5.4636 | Time(s): 7.440 | Stage: VMC | acceptance: 0.739 | d_act: 0.009 | ejd: 0.212 | mag_actor: 0.009 | mag_mala: 0.013 | mean_log_ratio: -0.477 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.230 | Actor_Loss: 102.545 | Critic1_Loss: 3.483 | Critic2_Loss: 3.398
+Step: 29800 | E_mean: 5.4307 | Time(s): 7.597 | Stage: VMC | acceptance: 0.730 | d_act: 0.009 | ejd: 0.214 | mag_actor: 0.009 | mag_mala: 0.013 | mean_log_ratio: -0.516 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.230 | Actor_Loss: 102.545 | Critic1_Loss: 3.483 | Critic2_Loss: 3.398
+Step: 29900 | E_mean: 5.3738 | Time(s): 7.755 | Stage: VMC | acceptance: 0.684 | d_act: 0.009 | ejd: 0.197 | mag_actor: 0.009 | mag_mala: 0.013 | mean_log_ratio: -0.595 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.230 | Actor_Loss: 102.545 | Critic1_Loss: 3.483 | Critic2_Loss: 3.398
+Step: 30000 | E_mean: 5.4357 | Time(s): 7.912 | Stage: VMC | acceptance: 0.736 | d_act: 0.009 | ejd: 0.214 | mag_actor: 0.009 | mag_mala: 0.013 | mean_log_ratio: -0.533 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.230 | Actor_Loss: 102.545 | Critic1_Loss: 3.483 | Critic2_Loss: 3.398
+Step: 30100 | E_mean: 5.2913 | Time(s): 8.071 | Stage: VMC | acceptance: 0.726 | d_act: 0.009 | ejd: 0.208 | mag_actor: 0.009 | mag_mala: 0.013 | mean_log_ratio: -0.503 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.230 | Actor_Loss: 102.545 | Critic1_Loss: 3.483 | Critic2_Loss: 3.398
+Step: 30200 | E_mean: 5.3438 | Time(s): 8.229 | Stage: VMC | acceptance: 0.727 | d_act: 0.009 | ejd: 0.211 | mag_actor: 0.009 | mag_mala: 0.013 | mean_log_ratio: -0.494 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.230 | Actor_Loss: 102.545 | Critic1_Loss: 3.483 | Critic2_Loss: 3.398
+Step: 30300 | E_mean: 5.2690 | Time(s): 8.386 | Stage: VMC | acceptance: 0.709 | d_act: 0.009 | ejd: 0.212 | mag_actor: 0.009 | mag_mala: 0.013 | mean_log_ratio: -0.502 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.230 | Actor_Loss: 102.545 | Critic1_Loss: 3.483 | Critic2_Loss: 3.398
+Step: 30400 | E_mean: 5.3140 | Time(s): 8.544 | Stage: VMC | acceptance: 0.728 | d_act: 0.009 | ejd: 0.220 | mag_actor: 0.009 | mag_mala: 0.013 | mean_log_ratio: -0.454 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.230 | Actor_Loss: 102.545 | Critic1_Loss: 3.483 | Critic2_Loss: 3.398
+Step: 30500 | E_mean: 5.2301 | Time(s): 8.702 | Stage: VMC | acceptance: 0.761 | d_act: 0.009 | ejd: 0.218 | mag_actor: 0.009 | mag_mala: 0.013 | mean_log_ratio: -0.473 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.230 | Actor_Loss: 102.545 | Critic1_Loss: 3.483 | Critic2_Loss: 3.398
+Step: 30600 | E_mean: 5.1612 | Time(s): 8.859 | Stage: VMC | acceptance: 0.737 | d_act: 0.009 | ejd: 0.214 | mag_actor: 0.009 | mag_mala: 0.013 | mean_log_ratio: -0.466 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.230 | Actor_Loss: 102.545 | Critic1_Loss: 3.483 | Critic2_Loss: 3.398
+Step: 30700 | E_mean: 5.0298 | Time(s): 9.016 | Stage: VMC | acceptance: 0.690 | d_act: 0.009 | ejd: 0.201 | mag_actor: 0.009 | mag_mala: 0.013 | mean_log_ratio: -0.554 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.230 | Actor_Loss: 102.545 | Critic1_Loss: 3.483 | Critic2_Loss: 3.398
+Step: 30800 | E_mean: 5.1479 | Time(s): 9.174 | Stage: VMC | acceptance: 0.736 | d_act: 0.009 | ejd: 0.217 | mag_actor: 0.009 | mag_mala: 0.013 | mean_log_ratio: -0.512 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.230 | Actor_Loss: 102.545 | Critic1_Loss: 3.483 | Critic2_Loss: 3.398
+Step: 30900 | E_mean: 4.9480 | Time(s): 9.332 | Stage: VMC | acceptance: 0.730 | d_act: 0.009 | ejd: 0.218 | mag_actor: 0.009 | mag_mala: 0.013 | mean_log_ratio: -0.474 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.230 | Actor_Loss: 102.545 | Critic1_Loss: 3.483 | Critic2_Loss: 3.398
+Step: 31000 | E_mean: 5.0668 | Time(s): 9.491 | Stage: VMC | acceptance: 0.726 | d_act: 0.009 | ejd: 0.212 | mag_actor: 0.009 | mag_mala: 0.013 | mean_log_ratio: -0.495 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.230 | Actor_Loss: 102.545 | Critic1_Loss: 3.483 | Critic2_Loss: 3.398
+Step: 31100 | E_mean: 5.0368 | Time(s): 9.658 | Stage: VMC | acceptance: 0.711 | d_act: 0.009 | ejd: 0.208 | mag_actor: 0.009 | mag_mala: 0.013 | mean_log_ratio: -0.500 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.230 | Actor_Loss: 102.545 | Critic1_Loss: 3.483 | Critic2_Loss: 3.398
+Step: 31200 | E_mean: 5.0254 | Time(s): 9.823 | Stage: VMC | acceptance: 0.722 | d_act: 0.009 | ejd: 0.208 | mag_actor: 0.009 | mag_mala: 0.013 | mean_log_ratio: -0.521 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.230 | Actor_Loss: 102.545 | Critic1_Loss: 3.483 | Critic2_Loss: 3.398
+Step: 31300 | E_mean: 4.9658 | Time(s): 9.987 | Stage: VMC | acceptance: 0.711 | d_act: 0.009 | ejd: 0.209 | mag_actor: 0.009 | mag_mala: 0.013 | mean_log_ratio: -0.504 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.230 | Actor_Loss: 102.545 | Critic1_Loss: 3.483 | Critic2_Loss: 3.398
+Step: 31400 | E_mean: 5.0469 | Time(s): 10.144 | Stage: VMC | acceptance: 0.709 | d_act: 0.009 | ejd: 0.207 | mag_actor: 0.009 | mag_mala: 0.013 | mean_log_ratio: -0.474 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.230 | Actor_Loss: 102.545 | Critic1_Loss: 3.483 | Critic2_Loss: 3.398
+Step: 31500 | E_mean: 4.9553 | Time(s): 10.302 | Stage: VMC | acceptance: 0.723 | d_act: 0.009 | ejd: 0.213 | mag_actor: 0.009 | mag_mala: 0.013 | mean_log_ratio: -0.455 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.230 | Actor_Loss: 102.545 | Critic1_Loss: 3.483 | Critic2_Loss: 3.398
+Step: 31600 | E_mean: 4.7652 | Time(s): 10.460 | Stage: VMC | acceptance: 0.721 | d_act: 0.009 | ejd: 0.213 | mag_actor: 0.009 | mag_mala: 0.013 | mean_log_ratio: -0.520 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.230 | Actor_Loss: 102.545 | Critic1_Loss: 3.483 | Critic2_Loss: 3.398
+Step: 31700 | E_mean: 4.9114 | Time(s): 10.617 | Stage: VMC | acceptance: 0.717 | d_act: 0.009 | ejd: 0.207 | mag_actor: 0.009 | mag_mala: 0.013 | mean_log_ratio: -0.482 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.230 | Actor_Loss: 102.545 | Critic1_Loss: 3.483 | Critic2_Loss: 3.398
+Step: 31800 | E_mean: 4.7749 | Time(s): 10.777 | Stage: VMC | acceptance: 0.740 | d_act: 0.009 | ejd: 0.222 | mag_actor: 0.009 | mag_mala: 0.013 | mean_log_ratio: -0.466 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.230 | Actor_Loss: 102.545 | Critic1_Loss: 3.483 | Critic2_Loss: 3.398
+Step: 31900 | E_mean: 4.7106 | Time(s): 10.934 | Stage: VMC | acceptance: 0.713 | d_act: 0.009 | ejd: 0.200 | mag_actor: 0.009 | mag_mala: 0.013 | mean_log_ratio: -0.504 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.230 | Actor_Loss: 102.545 | Critic1_Loss: 3.483 | Critic2_Loss: 3.398
+Step: 32000 | E_mean: 4.7237 | Time(s): 11.092 | Stage: VMC | acceptance: 0.735 | d_act: 0.009 | ejd: 0.214 | mag_actor: 0.009 | mag_mala: 0.013 | mean_log_ratio: -0.515 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.230 | Actor_Loss: 102.545 | Critic1_Loss: 3.483 | Critic2_Loss: 3.398
+Step: 32100 | E_mean: 4.6590 | Time(s): 11.250 | Stage: VMC | acceptance: 0.734 | d_act: 0.009 | ejd: 0.215 | mag_actor: 0.009 | mag_mala: 0.013 | mean_log_ratio: -0.541 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.230 | Actor_Loss: 102.545 | Critic1_Loss: 3.483 | Critic2_Loss: 3.398
+Step: 32200 | E_mean: 4.5974 | Time(s): 11.408 | Stage: VMC | acceptance: 0.717 | d_act: 0.009 | ejd: 0.212 | mag_actor: 0.009 | mag_mala: 0.013 | mean_log_ratio: -0.496 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.230 | Actor_Loss: 102.545 | Critic1_Loss: 3.483 | Critic2_Loss: 3.398
+Step: 32300 | E_mean: 4.7473 | Time(s): 11.565 | Stage: VMC | acceptance: 0.741 | d_act: 0.009 | ejd: 0.219 | mag_actor: 0.009 | mag_mala: 0.013 | mean_log_ratio: -0.446 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.230 | Actor_Loss: 102.545 | Critic1_Loss: 3.483 | Critic2_Loss: 3.398
+Step: 32400 | E_mean: 4.5630 | Time(s): 11.723 | Stage: VMC | acceptance: 0.712 | d_act: 0.009 | ejd: 0.214 | mag_actor: 0.009 | mag_mala: 0.013 | mean_log_ratio: -0.475 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.230 | Actor_Loss: 102.545 | Critic1_Loss: 3.483 | Critic2_Loss: 3.398
+Step: 32500 | E_mean: 4.6047 | Time(s): 11.882 | Stage: VMC | acceptance: 0.710 | d_act: 0.009 | ejd: 0.208 | mag_actor: 0.009 | mag_mala: 0.013 | mean_log_ratio: -0.490 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.230 | Actor_Loss: 102.545 | Critic1_Loss: 3.483 | Critic2_Loss: 3.398
+Step: 32600 | E_mean: 4.5562 | Time(s): 12.042 | Stage: VMC | acceptance: 0.748 | d_act: 0.009 | ejd: 0.222 | mag_actor: 0.009 | mag_mala: 0.013 | mean_log_ratio: -0.458 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.230 | Actor_Loss: 102.545 | Critic1_Loss: 3.483 | Critic2_Loss: 3.398
+Step: 32700 | E_mean: 4.5232 | Time(s): 12.202 | Stage: VMC | acceptance: 0.723 | d_act: 0.009 | ejd: 0.208 | mag_actor: 0.009 | mag_mala: 0.013 | mean_log_ratio: -0.482 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.230 | Actor_Loss: 102.545 | Critic1_Loss: 3.483 | Critic2_Loss: 3.398
+Step: 32800 | E_mean: 4.4684 | Time(s): 12.362 | Stage: VMC | acceptance: 0.737 | d_act: 0.009 | ejd: 0.216 | mag_actor: 0.009 | mag_mala: 0.013 | mean_log_ratio: -0.516 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.230 | Actor_Loss: 102.545 | Critic1_Loss: 3.483 | Critic2_Loss: 3.398
+Step: 32900 | E_mean: 4.4604 | Time(s): 12.524 | Stage: VMC | acceptance: 0.721 | d_act: 0.009 | ejd: 0.207 | mag_actor: 0.009 | mag_mala: 0.013 | mean_log_ratio: -0.473 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.230 | Actor_Loss: 102.545 | Critic1_Loss: 3.483 | Critic2_Loss: 3.398
+Step: 33000 | E_mean: 4.4040 | Time(s): 12.686 | Stage: VMC | acceptance: 0.719 | d_act: 0.009 | ejd: 0.212 | mag_actor: 0.009 | mag_mala: 0.013 | mean_log_ratio: -0.485 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.230 | Actor_Loss: 102.545 | Critic1_Loss: 3.483 | Critic2_Loss: 3.398
+Step: 33100 | E_mean: 4.4126 | Time(s): 12.848 | Stage: VMC | acceptance: 0.728 | d_act: 0.009 | ejd: 0.208 | mag_actor: 0.009 | mag_mala: 0.013 | mean_log_ratio: -0.466 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.230 | Actor_Loss: 102.545 | Critic1_Loss: 3.483 | Critic2_Loss: 3.398
+Step: 33200 | E_mean: 4.3787 | Time(s): 13.007 | Stage: VMC | acceptance: 0.751 | d_act: 0.009 | ejd: 0.217 | mag_actor: 0.009 | mag_mala: 0.013 | mean_log_ratio: -0.439 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.230 | Actor_Loss: 102.545 | Critic1_Loss: 3.483 | Critic2_Loss: 3.398
+Step: 33300 | E_mean: 4.4705 | Time(s): 13.165 | Stage: VMC | acceptance: 0.732 | d_act: 0.009 | ejd: 0.218 | mag_actor: 0.009 | mag_mala: 0.013 | mean_log_ratio: -0.474 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.230 | Actor_Loss: 102.545 | Critic1_Loss: 3.483 | Critic2_Loss: 3.398
+Step: 33400 | E_mean: 4.4345 | Time(s): 13.322 | Stage: VMC | acceptance: 0.740 | d_act: 0.009 | ejd: 0.219 | mag_actor: 0.009 | mag_mala: 0.013 | mean_log_ratio: -0.441 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.230 | Actor_Loss: 102.545 | Critic1_Loss: 3.483 | Critic2_Loss: 3.398
+Step: 33500 | E_mean: 4.2794 | Time(s): 13.480 | Stage: VMC | acceptance: 0.714 | d_act: 0.009 | ejd: 0.211 | mag_actor: 0.009 | mag_mala: 0.013 | mean_log_ratio: -0.494 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.230 | Actor_Loss: 102.545 | Critic1_Loss: 3.483 | Critic2_Loss: 3.398
+Step: 33600 | E_mean: 4.2868 | Time(s): 13.637 | Stage: VMC | acceptance: 0.738 | d_act: 0.009 | ejd: 0.213 | mag_actor: 0.009 | mag_mala: 0.013 | mean_log_ratio: -0.445 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.230 | Actor_Loss: 102.545 | Critic1_Loss: 3.483 | Critic2_Loss: 3.398
+Step: 33700 | E_mean: 4.2605 | Time(s): 13.795 | Stage: VMC | acceptance: 0.730 | d_act: 0.009 | ejd: 0.207 | mag_actor: 0.009 | mag_mala: 0.013 | mean_log_ratio: -0.526 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.230 | Actor_Loss: 102.545 | Critic1_Loss: 3.483 | Critic2_Loss: 3.398
+Step: 33800 | E_mean: 4.2256 | Time(s): 13.952 | Stage: VMC | acceptance: 0.758 | d_act: 0.009 | ejd: 0.227 | mag_actor: 0.009 | mag_mala: 0.013 | mean_log_ratio: -0.483 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.230 | Actor_Loss: 102.545 | Critic1_Loss: 3.483 | Critic2_Loss: 3.398
+Step: 33900 | E_mean: 4.2458 | Time(s): 14.110 | Stage: VMC | acceptance: 0.732 | d_act: 0.009 | ejd: 0.219 | mag_actor: 0.009 | mag_mala: 0.013 | mean_log_ratio: -0.462 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.230 | Actor_Loss: 102.545 | Critic1_Loss: 3.483 | Critic2_Loss: 3.398
+Step: 34000 | E_mean: 4.1966 | Time(s): 14.267 | Stage: VMC | acceptance: 0.710 | d_act: 0.009 | ejd: 0.208 | mag_actor: 0.009 | mag_mala: 0.013 | mean_log_ratio: -0.494 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.230 | Actor_Loss: 102.545 | Critic1_Loss: 3.483 | Critic2_Loss: 3.398
+Step: 34100 | E_mean: 4.2392 | Time(s): 14.425 | Stage: VMC | acceptance: 0.721 | d_act: 0.009 | ejd: 0.212 | mag_actor: 0.009 | mag_mala: 0.013 | mean_log_ratio: -0.556 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.230 | Actor_Loss: 102.545 | Critic1_Loss: 3.483 | Critic2_Loss: 3.398
+Step: 34200 | E_mean: 4.1830 | Time(s): 14.582 | Stage: VMC | acceptance: 0.723 | d_act: 0.009 | ejd: 0.211 | mag_actor: 0.009 | mag_mala: 0.013 | mean_log_ratio: -0.481 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.230 | Actor_Loss: 102.545 | Critic1_Loss: 3.483 | Critic2_Loss: 3.398
+Step: 34300 | E_mean: 4.1247 | Time(s): 14.740 | Stage: VMC | acceptance: 0.737 | d_act: 0.009 | ejd: 0.215 | mag_actor: 0.009 | mag_mala: 0.013 | mean_log_ratio: -0.467 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.230 | Actor_Loss: 102.545 | Critic1_Loss: 3.483 | Critic2_Loss: 3.398
+Step: 34400 | E_mean: 4.1859 | Time(s): 14.898 | Stage: VMC | acceptance: 0.714 | d_act: 0.009 | ejd: 0.207 | mag_actor: 0.009 | mag_mala: 0.013 | mean_log_ratio: -0.498 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.230 | Actor_Loss: 102.545 | Critic1_Loss: 3.483 | Critic2_Loss: 3.398
+Step: 34500 | E_mean: 4.1478 | Time(s): 15.056 | Stage: VMC | acceptance: 0.754 | d_act: 0.009 | ejd: 0.224 | mag_actor: 0.009 | mag_mala: 0.013 | mean_log_ratio: -0.419 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.230 | Actor_Loss: 102.545 | Critic1_Loss: 3.483 | Critic2_Loss: 3.398
+Step: 34600 | E_mean: 4.0422 | Time(s): 15.213 | Stage: VMC | acceptance: 0.746 | d_act: 0.009 | ejd: 0.221 | mag_actor: 0.009 | mag_mala: 0.013 | mean_log_ratio: -0.518 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.230 | Actor_Loss: 102.545 | Critic1_Loss: 3.483 | Critic2_Loss: 3.398
+Step: 34700 | E_mean: 4.0160 | Time(s): 15.371 | Stage: VMC | acceptance: 0.714 | d_act: 0.009 | ejd: 0.210 | mag_actor: 0.009 | mag_mala: 0.013 | mean_log_ratio: -0.496 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.230 | Actor_Loss: 102.545 | Critic1_Loss: 3.483 | Critic2_Loss: 3.398
+Step: 34800 | E_mean: 3.9437 | Time(s): 15.529 | Stage: VMC | acceptance: 0.745 | d_act: 0.009 | ejd: 0.221 | mag_actor: 0.009 | mag_mala: 0.013 | mean_log_ratio: -0.439 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.230 | Actor_Loss: 102.545 | Critic1_Loss: 3.483 | Critic2_Loss: 3.398
+Step: 34900 | E_mean: 4.0286 | Time(s): 15.686 | Stage: VMC | acceptance: 0.729 | d_act: 0.009 | ejd: 0.210 | mag_actor: 0.009 | mag_mala: 0.013 | mean_log_ratio: -0.515 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.230 | Actor_Loss: 102.545 | Critic1_Loss: 3.483 | Critic2_Loss: 3.398
+Step: 35000 | E_mean: 3.9681 | Time(s): 15.848 | Stage: VMC | acceptance: 0.743 | d_act: 0.009 | ejd: 0.221 | mag_actor: 0.009 | mag_mala: 0.013 | mean_log_ratio: -0.465 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.230 | Actor_Loss: 102.545 | Critic1_Loss: 3.483 | Critic2_Loss: 3.398
+Step: 35100 | E_mean: 3.8931 | Time(s): 16.009 | Stage: VMC | acceptance: 0.742 | d_act: 0.009 | ejd: 0.214 | mag_actor: 0.009 | mag_mala: 0.013 | mean_log_ratio: -0.439 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.230 | Actor_Loss: 102.545 | Critic1_Loss: 3.483 | Critic2_Loss: 3.398
+Step: 35200 | E_mean: 3.8690 | Time(s): 16.175 | Stage: VMC | acceptance: 0.741 | d_act: 0.009 | ejd: 0.219 | mag_actor: 0.009 | mag_mala: 0.013 | mean_log_ratio: -0.475 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.230 | Actor_Loss: 102.545 | Critic1_Loss: 3.483 | Critic2_Loss: 3.398
+Step: 35300 | E_mean: 3.9030 | Time(s): 16.336 | Stage: VMC | acceptance: 0.730 | d_act: 0.009 | ejd: 0.218 | mag_actor: 0.009 | mag_mala: 0.013 | mean_log_ratio: -0.472 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.230 | Actor_Loss: 102.545 | Critic1_Loss: 3.483 | Critic2_Loss: 3.398
+Step: 35400 | E_mean: 3.8738 | Time(s): 16.496 | Stage: VMC | acceptance: 0.740 | d_act: 0.009 | ejd: 0.218 | mag_actor: 0.009 | mag_mala: 0.013 | mean_log_ratio: -0.438 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.230 | Actor_Loss: 102.545 | Critic1_Loss: 3.483 | Critic2_Loss: 3.398
+Step: 35500 | E_mean: 3.8174 | Time(s): 16.657 | Stage: VMC | acceptance: 0.735 | d_act: 0.009 | ejd: 0.215 | mag_actor: 0.009 | mag_mala: 0.013 | mean_log_ratio: -0.497 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.230 | Actor_Loss: 102.545 | Critic1_Loss: 3.483 | Critic2_Loss: 3.398
+Step: 35600 | E_mean: 3.8446 | Time(s): 16.823 | Stage: VMC | acceptance: 0.731 | d_act: 0.009 | ejd: 0.212 | mag_actor: 0.009 | mag_mala: 0.013 | mean_log_ratio: -0.440 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.230 | Actor_Loss: 102.545 | Critic1_Loss: 3.483 | Critic2_Loss: 3.398
+Step: 35700 | E_mean: 3.8217 | Time(s): 16.981 | Stage: VMC | acceptance: 0.765 | d_act: 0.009 | ejd: 0.221 | mag_actor: 0.009 | mag_mala: 0.013 | mean_log_ratio: -0.434 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.230 | Actor_Loss: 102.545 | Critic1_Loss: 3.483 | Critic2_Loss: 3.398
+Step: 35800 | E_mean: 3.7857 | Time(s): 17.138 | Stage: VMC | acceptance: 0.744 | d_act: 0.009 | ejd: 0.222 | mag_actor: 0.009 | mag_mala: 0.013 | mean_log_ratio: -0.493 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.230 | Actor_Loss: 102.545 | Critic1_Loss: 3.483 | Critic2_Loss: 3.398
+Step: 35900 | E_mean: 3.7614 | Time(s): 17.295 | Stage: VMC | acceptance: 0.734 | d_act: 0.009 | ejd: 0.218 | mag_actor: 0.009 | mag_mala: 0.013 | mean_log_ratio: -0.453 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.230 | Actor_Loss: 102.545 | Critic1_Loss: 3.483 | Critic2_Loss: 3.398
+Step: 36000 | E_mean: 3.6967 | Time(s): 17.454 | Stage: VMC | acceptance: 0.752 | d_act: 0.009 | ejd: 0.220 | mag_actor: 0.009 | mag_mala: 0.013 | mean_log_ratio: -0.441 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.230 | Actor_Loss: 102.545 | Critic1_Loss: 3.483 | Critic2_Loss: 3.398
+Step: 36100 | E_mean: 3.7015 | Time(s): 17.611 | Stage: VMC | acceptance: 0.729 | d_act: 0.009 | ejd: 0.215 | mag_actor: 0.009 | mag_mala: 0.013 | mean_log_ratio: -0.509 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.230 | Actor_Loss: 102.545 | Critic1_Loss: 3.483 | Critic2_Loss: 3.398
+Step: 36200 | E_mean: 3.6759 | Time(s): 17.774 | Stage: VMC | acceptance: 0.743 | d_act: 0.009 | ejd: 0.219 | mag_actor: 0.009 | mag_mala: 0.013 | mean_log_ratio: -0.511 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.230 | Actor_Loss: 102.545 | Critic1_Loss: 3.483 | Critic2_Loss: 3.398
+Step: 36300 | E_mean: 3.6898 | Time(s): 17.935 | Stage: VMC | acceptance: 0.752 | d_act: 0.009 | ejd: 0.222 | mag_actor: 0.009 | mag_mala: 0.013 | mean_log_ratio: -0.417 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.230 | Actor_Loss: 102.545 | Critic1_Loss: 3.483 | Critic2_Loss: 3.398
+Step: 36400 | E_mean: 3.6466 | Time(s): 18.097 | Stage: VMC | acceptance: 0.739 | d_act: 0.009 | ejd: 0.211 | mag_actor: 0.009 | mag_mala: 0.013 | mean_log_ratio: -0.490 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.230 | Actor_Loss: 102.545 | Critic1_Loss: 3.483 | Critic2_Loss: 3.398
+Step: 36500 | E_mean: 3.7074 | Time(s): 18.257 | Stage: VMC | acceptance: 0.744 | d_act: 0.009 | ejd: 0.223 | mag_actor: 0.009 | mag_mala: 0.013 | mean_log_ratio: -0.461 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.230 | Actor_Loss: 102.545 | Critic1_Loss: 3.483 | Critic2_Loss: 3.398
+Step: 36600 | E_mean: 3.6305 | Time(s): 18.418 | Stage: VMC | acceptance: 0.732 | d_act: 0.009 | ejd: 0.209 | mag_actor: 0.009 | mag_mala: 0.013 | mean_log_ratio: -0.493 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.230 | Actor_Loss: 102.545 | Critic1_Loss: 3.483 | Critic2_Loss: 3.398
+Step: 36700 | E_mean: 3.5937 | Time(s): 18.579 | Stage: VMC | acceptance: 0.716 | d_act: 0.009 | ejd: 0.210 | mag_actor: 0.009 | mag_mala: 0.013 | mean_log_ratio: -0.505 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.230 | Actor_Loss: 102.545 | Critic1_Loss: 3.483 | Critic2_Loss: 3.398
+Step: 36800 | E_mean: 3.6168 | Time(s): 18.739 | Stage: VMC | acceptance: 0.733 | d_act: 0.009 | ejd: 0.211 | mag_actor: 0.009 | mag_mala: 0.013 | mean_log_ratio: -0.458 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.230 | Actor_Loss: 102.545 | Critic1_Loss: 3.483 | Critic2_Loss: 3.398
+Step: 36900 | E_mean: 3.5785 | Time(s): 18.904 | Stage: VMC | acceptance: 0.718 | d_act: 0.009 | ejd: 0.209 | mag_actor: 0.009 | mag_mala: 0.013 | mean_log_ratio: -0.465 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.230 | Actor_Loss: 102.545 | Critic1_Loss: 3.483 | Critic2_Loss: 3.398
+Step: 37000 | E_mean: 3.5569 | Time(s): 19.066 | Stage: VMC | acceptance: 0.761 | d_act: 0.009 | ejd: 0.226 | mag_actor: 0.009 | mag_mala: 0.013 | mean_log_ratio: -0.440 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.230 | Actor_Loss: 102.545 | Critic1_Loss: 3.483 | Critic2_Loss: 3.398
+Step: 37100 | E_mean: 3.5372 | Time(s): 19.224 | Stage: VMC | acceptance: 0.746 | d_act: 0.009 | ejd: 0.222 | mag_actor: 0.009 | mag_mala: 0.013 | mean_log_ratio: -0.467 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.230 | Actor_Loss: 102.545 | Critic1_Loss: 3.483 | Critic2_Loss: 3.398
+Step: 37200 | E_mean: 3.5207 | Time(s): 19.389 | Stage: VMC | acceptance: 0.753 | d_act: 0.009 | ejd: 0.223 | mag_actor: 0.009 | mag_mala: 0.013 | mean_log_ratio: -0.498 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.230 | Actor_Loss: 102.545 | Critic1_Loss: 3.483 | Critic2_Loss: 3.398
+Step: 37300 | E_mean: 3.4809 | Time(s): 19.562 | Stage: VMC | acceptance: 0.749 | d_act: 0.009 | ejd: 0.218 | mag_actor: 0.009 | mag_mala: 0.013 | mean_log_ratio: -0.432 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.230 | Actor_Loss: 102.545 | Critic1_Loss: 3.483 | Critic2_Loss: 3.398
+Step: 37400 | E_mean: 3.4998 | Time(s): 19.723 | Stage: VMC | acceptance: 0.736 | d_act: 0.009 | ejd: 0.219 | mag_actor: 0.009 | mag_mala: 0.013 | mean_log_ratio: -0.460 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.230 | Actor_Loss: 102.545 | Critic1_Loss: 3.483 | Critic2_Loss: 3.398
+TD3 Sweep 0000 | Recompensa = -3.1833 | Aceptacion = 0.959
+TD3 Sweep 0010 | Recompensa = -3.2161 | Aceptacion = 0.959
+TD3 Sweep 0020 | Recompensa = -3.2535 | Aceptacion = 0.964
+TD3 Sweep 0030 | Recompensa = -3.2628 | Aceptacion = 0.954
+TD3 Sweep 0040 | Recompensa = -3.3024 | Aceptacion = 0.948
+TD3 Sweep 0050 | Recompensa = -3.2717 | Aceptacion = 0.951
+TD3 Sweep 0060 | Recompensa = -3.2190 | Aceptacion = 0.945
+TD3 Sweep 0070 | Recompensa = -3.2768 | Aceptacion = 0.942
+TD3 Sweep 0080 | Recompensa = -3.2371 | Aceptacion = 0.957
+TD3 Sweep 0090 | Recompensa = -3.2245 | Aceptacion = 0.957
+TD3 Sweep 0100 | Recompensa = -3.2190 | Aceptacion = 0.961
+TD3 Sweep 0110 | Recompensa = -3.2927 | Aceptacion = 0.958
+TD3 Sweep 0120 | Recompensa = -3.2394 | Aceptacion = 0.964
+TD3 Sweep 0130 | Recompensa = -3.2548 | Aceptacion = 0.941
+TD3 Sweep 0140 | Recompensa = -3.2900 | Aceptacion = 0.951
+TD3 Sweep 0150 | Recompensa = -3.2344 | Aceptacion = 0.955
+TD3 Sweep 0160 | Recompensa = -3.1927 | Aceptacion = 0.947
+TD3 Sweep 0170 | Recompensa = -3.3179 | Aceptacion = 0.955
+TD3 Sweep 0180 | Recompensa = -3.2600 | Aceptacion = 0.951
+TD3 Sweep 0190 | Recompensa = -3.1938 | Aceptacion = 0.948
+TD3 Sweep 0200 | Recompensa = -3.2409 | Aceptacion = 0.946
+TD3 Sweep 0210 | Recompensa = -3.2738 | Aceptacion = 0.947
+TD3 Sweep 0220 | Recompensa = -3.3046 | Aceptacion = 0.946
+TD3 Sweep 0230 | Recompensa = -3.2157 | Aceptacion = 0.955
+TD3 Sweep 0240 | Recompensa = -3.3820 | Aceptacion = 0.951
+TD3 Sweep 0250 | Recompensa = -3.2976 | Aceptacion = 0.945
+TD3 Sweep 0260 | Recompensa = -3.3509 | Aceptacion = 0.945
+TD3 Sweep 0270 | Recompensa = -3.2478 | Aceptacion = 0.944
+TD3 Sweep 0280 | Recompensa = -3.2276 | Aceptacion = 0.945
+TD3 Sweep 0290 | Recompensa = -3.2502 | Aceptacion = 0.950
+TD3 Sweep 0300 | Recompensa = -3.2547 | Aceptacion = 0.949
+TD3 Sweep 0310 | Recompensa = -3.3140 | Aceptacion = 0.955
+TD3 Sweep 0320 | Recompensa = -3.1965 | Aceptacion = 0.943
+TD3 Sweep 0330 | Recompensa = -3.2090 | Aceptacion = 0.955
+TD3 Sweep 0340 | Recompensa = -3.3144 | Aceptacion = 0.945
+TD3 Sweep 0350 | Recompensa = -3.2808 | Aceptacion = 0.949
+TD3 Sweep 0360 | Recompensa = -3.2883 | Aceptacion = 0.938
+TD3 Sweep 0370 | Recompensa = -3.2832 | Aceptacion = 0.962
+TD3 Sweep 0380 | Recompensa = -3.2574 | Aceptacion = 0.957
+TD3 Sweep 0390 | Recompensa = -3.2149 | Aceptacion = 0.947
+TD3 Sweep 0400 | Recompensa = -3.1995 | Aceptacion = 0.943
+TD3 Sweep 0410 | Recompensa = -3.2285 | Aceptacion = 0.953
+TD3 Sweep 0420 | Recompensa = -3.1959 | Aceptacion = 0.946
+TD3 Sweep 0430 | Recompensa = -3.2650 | Aceptacion = 0.951
+TD3 Sweep 0440 | Recompensa = -3.3158 | Aceptacion = 0.957
+TD3 Sweep 0450 | Recompensa = -3.2658 | Aceptacion = 0.950
+TD3 Sweep 0460 | Recompensa = -3.2532 | Aceptacion = 0.963
+TD3 Sweep 0470 | Recompensa = -3.2631 | Aceptacion = 0.950
+TD3 Sweep 0480 | Recompensa = -3.2792 | Aceptacion = 0.955
+TD3 Sweep 0490 | Recompensa = -3.2153 | Aceptacion = 0.943
+TD3 Sweep 0500 | Recompensa = -3.2137 | Aceptacion = 0.948
+TD3 Sweep 0510 | Recompensa = -3.3086 | Aceptacion = 0.953
+TD3 Sweep 0520 | Recompensa = -3.2072 | Aceptacion = 0.941
+TD3 Sweep 0530 | Recompensa = -3.2339 | Aceptacion = 0.947
+TD3 Sweep 0540 | Recompensa = -3.2240 | Aceptacion = 0.949
+TD3 Sweep 0550 | Recompensa = -3.2977 | Aceptacion = 0.939
+TD3 Sweep 0560 | Recompensa = -3.2406 | Aceptacion = 0.948
+TD3 Sweep 0570 | Recompensa = -3.2316 | Aceptacion = 0.955
+TD3 Sweep 0580 | Recompensa = -3.1476 | Aceptacion = 0.963
+TD3 Sweep 0590 | Recompensa = -3.2877 | Aceptacion = 0.954
+TD3 Sweep 0600 | Recompensa = -3.1998 | Aceptacion = 0.946
+TD3 Sweep 0610 | Recompensa = -3.2649 | Aceptacion = 0.954
+TD3 Sweep 0620 | Recompensa = -3.2026 | Aceptacion = 0.953
+TD3 Sweep 0630 | Recompensa = -3.2196 | Aceptacion = 0.956
+TD3 Sweep 0640 | Recompensa = -3.2278 | Aceptacion = 0.951
+TD3 Sweep 0650 | Recompensa = -3.2569 | Aceptacion = 0.946
+TD3 Sweep 0660 | Recompensa = -3.2296 | Aceptacion = 0.938
+TD3 Sweep 0670 | Recompensa = -3.2820 | Aceptacion = 0.950
+TD3 Sweep 0680 | Recompensa = -3.1650 | Aceptacion = 0.947
+TD3 Sweep 0690 | Recompensa = -3.2251 | Aceptacion = 0.940
+TD3 Sweep 0700 | Recompensa = -3.1956 | Aceptacion = 0.948
+TD3 Sweep 0710 | Recompensa = -3.2886 | Aceptacion = 0.955
+TD3 Sweep 0720 | Recompensa = -3.2075 | Aceptacion = 0.952
+TD3 Sweep 0730 | Recompensa = -3.2051 | Aceptacion = 0.946
+TD3 Sweep 0740 | Recompensa = -3.3224 | Aceptacion = 0.959
+TD3 Sweep 0750 | Recompensa = -3.2733 | Aceptacion = 0.946
+TD3 Sweep 0760 | Recompensa = -3.2868 | Aceptacion = 0.954
+TD3 Sweep 0770 | Recompensa = -3.2467 | Aceptacion = 0.963
+TD3 Sweep 0780 | Recompensa = -3.2163 | Aceptacion = 0.955
+TD3 Sweep 0790 | Recompensa = -3.2873 | Aceptacion = 0.950
+TD3 Sweep 0800 | Recompensa = -3.1653 | Aceptacion = 0.958
+TD3 Sweep 0810 | Recompensa = -3.2867 | Aceptacion = 0.950
+TD3 Sweep 0820 | Recompensa = -3.2805 | Aceptacion = 0.950
+TD3 Sweep 0830 | Recompensa = -3.2456 | Aceptacion = 0.943
+TD3 Sweep 0840 | Recompensa = -3.1794 | Aceptacion = 0.938
+TD3 Sweep 0850 | Recompensa = -3.2233 | Aceptacion = 0.938
+TD3 Sweep 0860 | Recompensa = -3.1415 | Aceptacion = 0.948
+TD3 Sweep 0870 | Recompensa = -3.3049 | Aceptacion = 0.954
+TD3 Sweep 0880 | Recompensa = -3.1629 | Aceptacion = 0.956
+TD3 Sweep 0890 | Recompensa = -3.2371 | Aceptacion = 0.943
+TD3 Sweep 0900 | Recompensa = -3.1848 | Aceptacion = 0.951
+TD3 Sweep 0910 | Recompensa = -3.1049 | Aceptacion = 0.954
+TD3 Sweep 0920 | Recompensa = -3.1760 | Aceptacion = 0.962
+TD3 Sweep 0930 | Recompensa = -3.1534 | Aceptacion = 0.950
+TD3 Sweep 0940 | Recompensa = -3.2373 | Aceptacion = 0.953
+TD3 Sweep 0950 | Recompensa = -3.2333 | Aceptacion = 0.947
+TD3 Sweep 0960 | Recompensa = -3.2461 | Aceptacion = 0.949
+TD3 Sweep 0970 | Recompensa = -3.1583 | Aceptacion = 0.950
+TD3 Sweep 0980 | Recompensa = -3.2499 | Aceptacion = 0.937
+TD3 Sweep 0990 | Recompensa = -3.2628 | Aceptacion = 0.949
+TD3 Sweep 1000 | Recompensa = -3.2017 | Aceptacion = 0.945
+TD3 Sweep 1010 | Recompensa = -3.3525 | Aceptacion = 0.962
+TD3 Sweep 1020 | Recompensa = -3.1618 | Aceptacion = 0.944
+TD3 Sweep 1030 | Recompensa = -3.2438 | Aceptacion = 0.940
+TD3 Sweep 1040 | Recompensa = -3.2487 | Aceptacion = 0.952
+TD3 Sweep 1050 | Recompensa = -3.2337 | Aceptacion = 0.952
+TD3 Sweep 1060 | Recompensa = -3.3248 | Aceptacion = 0.944
+TD3 Sweep 1070 | Recompensa = -3.2120 | Aceptacion = 0.937
+TD3 Sweep 1080 | Recompensa = -3.1911 | Aceptacion = 0.956
+TD3 Sweep 1090 | Recompensa = -3.2258 | Aceptacion = 0.947
+TD3 Sweep 1100 | Recompensa = -3.1603 | Aceptacion = 0.945
+TD3 Sweep 1110 | Recompensa = -3.2658 | Aceptacion = 0.945
+TD3 Sweep 1120 | Recompensa = -3.1884 | Aceptacion = 0.939
+TD3 Sweep 1130 | Recompensa = -3.1749 | Aceptacion = 0.950
+TD3 Sweep 1140 | Recompensa = -3.1867 | Aceptacion = 0.948
+TD3 Sweep 1150 | Recompensa = -3.2808 | Aceptacion = 0.952
+TD3 Sweep 1160 | Recompensa = -3.2232 | Aceptacion = 0.949
+TD3 Sweep 1170 | Recompensa = -3.2622 | Aceptacion = 0.944
+TD3 Sweep 1180 | Recompensa = -3.1505 | Aceptacion = 0.951
+TD3 Sweep 1190 | Recompensa = -3.2248 | Aceptacion = 0.948
+TD3 Sweep 1200 | Recompensa = -3.2133 | Aceptacion = 0.951
+TD3 Sweep 1210 | Recompensa = -3.2292 | Aceptacion = 0.947
+TD3 Sweep 1220 | Recompensa = -3.1759 | Aceptacion = 0.946
+TD3 Sweep 1230 | Recompensa = -3.2353 | Aceptacion = 0.954
+TD3 Sweep 1240 | Recompensa = -3.2312 | Aceptacion = 0.962
+TD3 Sweep 1250 | Recompensa = -3.1698 | Aceptacion = 0.940
+TD3 Sweep 1260 | Recompensa = -3.0894 | Aceptacion = 0.945
+TD3 Sweep 1270 | Recompensa = -3.1131 | Aceptacion = 0.948
+TD3 Sweep 1280 | Recompensa = -3.2680 | Aceptacion = 0.944
+TD3 Sweep 1290 | Recompensa = -3.1653 | Aceptacion = 0.946
+TD3 Sweep 1300 | Recompensa = -3.2633 | Aceptacion = 0.958
+TD3 Sweep 1310 | Recompensa = -3.1363 | Aceptacion = 0.931
+TD3 Sweep 1320 | Recompensa = -3.2319 | Aceptacion = 0.949
+TD3 Sweep 1330 | Recompensa = -3.2114 | Aceptacion = 0.954
+TD3 Sweep 1340 | Recompensa = -3.2044 | Aceptacion = 0.934
+TD3 Sweep 1350 | Recompensa = -3.2767 | Aceptacion = 0.950
+TD3 Sweep 1360 | Recompensa = -3.1956 | Aceptacion = 0.950
+TD3 Sweep 1370 | Recompensa = -3.1763 | Aceptacion = 0.948
+TD3 Sweep 1380 | Recompensa = -3.2433 | Aceptacion = 0.951
+TD3 Sweep 1390 | Recompensa = -3.2198 | Aceptacion = 0.957
+TD3 Sweep 1400 | Recompensa = -3.2079 | Aceptacion = 0.941
+TD3 Sweep 1410 | Recompensa = -3.2190 | Aceptacion = 0.948
+TD3 Sweep 1420 | Recompensa = -3.1409 | Aceptacion = 0.944
+TD3 Sweep 1430 | Recompensa = -3.1537 | Aceptacion = 0.952
+TD3 Sweep 1440 | Recompensa = -3.2307 | Aceptacion = 0.956
+TD3 Sweep 1450 | Recompensa = -3.2242 | Aceptacion = 0.955
+TD3 Sweep 1460 | Recompensa = -3.2018 | Aceptacion = 0.946
+TD3 Sweep 1470 | Recompensa = -3.2344 | Aceptacion = 0.939
+TD3 Sweep 1480 | Recompensa = -3.1203 | Aceptacion = 0.938
+TD3 Sweep 1490 | Recompensa = -3.2235 | Aceptacion = 0.949
+TD3 Sweep 1500 | Recompensa = -3.2531 | Aceptacion = 0.943
+TD3 Sweep 1510 | Recompensa = -3.1695 | Aceptacion = 0.953
+TD3 Sweep 1520 | Recompensa = -3.1609 | Aceptacion = 0.944
+TD3 Sweep 1530 | Recompensa = -3.1385 | Aceptacion = 0.945
+TD3 Sweep 1540 | Recompensa = -3.1788 | Aceptacion = 0.941
+TD3 Sweep 1550 | Recompensa = -3.2426 | Aceptacion = 0.946
+TD3 Sweep 1560 | Recompensa = -3.1727 | Aceptacion = 0.946
+TD3 Sweep 1570 | Recompensa = -3.1276 | Aceptacion = 0.957
+TD3 Sweep 1580 | Recompensa = -3.1479 | Aceptacion = 0.956
+TD3 Sweep 1590 | Recompensa = -3.1796 | Aceptacion = 0.956
+TD3 Sweep 1600 | Recompensa = -3.2051 | Aceptacion = 0.966
+TD3 Sweep 1610 | Recompensa = -3.2303 | Aceptacion = 0.950
+TD3 Sweep 1620 | Recompensa = -3.1371 | Aceptacion = 0.942
+TD3 Sweep 1630 | Recompensa = -3.1809 | Aceptacion = 0.950
+TD3 Sweep 1640 | Recompensa = -3.1957 | Aceptacion = 0.946
+TD3 Sweep 1650 | Recompensa = -3.1689 | Aceptacion = 0.967
+TD3 Sweep 1660 | Recompensa = -3.0948 | Aceptacion = 0.951
+TD3 Sweep 1670 | Recompensa = -3.2232 | Aceptacion = 0.950
+TD3 Sweep 1680 | Recompensa = -3.1975 | Aceptacion = 0.948
+TD3 Sweep 1690 | Recompensa = -3.2143 | Aceptacion = 0.940
+TD3 Sweep 1700 | Recompensa = -3.2129 | Aceptacion = 0.949
+TD3 Sweep 1710 | Recompensa = -3.1395 | Aceptacion = 0.947
+TD3 Sweep 1720 | Recompensa = -3.2078 | Aceptacion = 0.939
+TD3 Sweep 1730 | Recompensa = -3.1482 | Aceptacion = 0.940
+TD3 Sweep 1740 | Recompensa = -3.2442 | Aceptacion = 0.935
+TD3 Sweep 1750 | Recompensa = -3.2000 | Aceptacion = 0.947
+TD3 Sweep 1760 | Recompensa = -3.1256 | Aceptacion = 0.962
+TD3 Sweep 1770 | Recompensa = -3.2028 | Aceptacion = 0.938
+TD3 Sweep 1780 | Recompensa = -3.1529 | Aceptacion = 0.931
+TD3 Sweep 1790 | Recompensa = -3.1845 | Aceptacion = 0.957
+TD3 Sweep 1800 | Recompensa = -3.0982 | Aceptacion = 0.955
+TD3 Sweep 1810 | Recompensa = -3.2237 | Aceptacion = 0.943
+TD3 Sweep 1820 | Recompensa = -3.1951 | Aceptacion = 0.948
+TD3 Sweep 1830 | Recompensa = -3.2146 | Aceptacion = 0.955
+TD3 Sweep 1840 | Recompensa = -3.1655 | Aceptacion = 0.947
+TD3 Sweep 1850 | Recompensa = -3.1447 | Aceptacion = 0.943
+TD3 Sweep 1860 | Recompensa = -3.1954 | Aceptacion = 0.947
+TD3 Sweep 1870 | Recompensa = -3.2020 | Aceptacion = 0.959
+TD3 Sweep 1880 | Recompensa = -3.0989 | Aceptacion = 0.940
+TD3 Sweep 1890 | Recompensa = -3.1208 | Aceptacion = 0.953
+TD3 Sweep 1900 | Recompensa = -3.2756 | Aceptacion = 0.965
+TD3 Sweep 1910 | Recompensa = -3.1846 | Aceptacion = 0.947
+TD3 Sweep 1920 | Recompensa = -3.1350 | Aceptacion = 0.940
+TD3 Sweep 1930 | Recompensa = -3.0954 | Aceptacion = 0.947
+TD3 Sweep 1940 | Recompensa = -3.1485 | Aceptacion = 0.951
+TD3 Sweep 1950 | Recompensa = -3.1906 | Aceptacion = 0.954
+TD3 Sweep 1960 | Recompensa = -3.1700 | Aceptacion = 0.938
+TD3 Sweep 1970 | Recompensa = -3.1741 | Aceptacion = 0.944
+TD3 Sweep 1980 | Recompensa = -3.1704 | Aceptacion = 0.938
+TD3 Sweep 1990 | Recompensa = -3.1878 | Aceptacion = 0.933
+TD3 Sweep 2000 | Recompensa = -3.1602 | Aceptacion = 0.937
+TD3 Sweep 2010 | Recompensa = -3.0299 | Aceptacion = 0.949
+TD3 Sweep 2020 | Recompensa = -3.2078 | Aceptacion = 0.957
+TD3 Sweep 2030 | Recompensa = -3.1290 | Aceptacion = 0.945
+TD3 Sweep 2040 | Recompensa = -3.1653 | Aceptacion = 0.958
+TD3 Sweep 2050 | Recompensa = -3.1902 | Aceptacion = 0.952
+TD3 Sweep 2060 | Recompensa = -3.1983 | Aceptacion = 0.955
+TD3 Sweep 2070 | Recompensa = -3.1516 | Aceptacion = 0.944
+TD3 Sweep 2080 | Recompensa = -3.0851 | Aceptacion = 0.951
+TD3 Sweep 2090 | Recompensa = -3.1728 | Aceptacion = 0.947
+TD3 Sweep 2100 | Recompensa = -3.1446 | Aceptacion = 0.940
+TD3 Sweep 2110 | Recompensa = -3.1486 | Aceptacion = 0.949
+TD3 Sweep 2120 | Recompensa = -3.1917 | Aceptacion = 0.938
+TD3 Sweep 2130 | Recompensa = -3.1338 | Aceptacion = 0.946
+TD3 Sweep 2140 | Recompensa = -3.1414 | Aceptacion = 0.938
+TD3 Sweep 2150 | Recompensa = -3.1269 | Aceptacion = 0.951
+TD3 Sweep 2160 | Recompensa = -3.1940 | Aceptacion = 0.953
+TD3 Sweep 2170 | Recompensa = -3.1361 | Aceptacion = 0.952
+TD3 Sweep 2180 | Recompensa = -3.2113 | Aceptacion = 0.944
+TD3 Sweep 2190 | Recompensa = -3.2117 | Aceptacion = 0.947
+TD3 Sweep 2200 | Recompensa = -3.1694 | Aceptacion = 0.951
+TD3 Sweep 2210 | Recompensa = -3.2209 | Aceptacion = 0.950
+TD3 Sweep 2220 | Recompensa = -3.1102 | Aceptacion = 0.940
+TD3 Sweep 2230 | Recompensa = -3.1893 | Aceptacion = 0.938
+TD3 Sweep 2240 | Recompensa = -3.1094 | Aceptacion = 0.946
+TD3 Sweep 2250 | Recompensa = -3.1639 | Aceptacion = 0.941
+TD3 Sweep 2260 | Recompensa = -3.2152 | Aceptacion = 0.942
+TD3 Sweep 2270 | Recompensa = -3.2057 | Aceptacion = 0.940
+TD3 Sweep 2280 | Recompensa = -3.2027 | Aceptacion = 0.949
+TD3 Sweep 2290 | Recompensa = -3.0742 | Aceptacion = 0.943
+TD3 Sweep 2300 | Recompensa = -3.1514 | Aceptacion = 0.938
+TD3 Sweep 2310 | Recompensa = -3.1095 | Aceptacion = 0.956
+TD3 Sweep 2320 | Recompensa = -3.1676 | Aceptacion = 0.943
+TD3 Sweep 2330 | Recompensa = -3.1408 | Aceptacion = 0.959
+TD3 Sweep 2340 | Recompensa = -3.1462 | Aceptacion = 0.954
+TD3 Sweep 2350 | Recompensa = -3.1808 | Aceptacion = 0.955
+TD3 Sweep 2360 | Recompensa = -3.1534 | Aceptacion = 0.937
+TD3 Sweep 2370 | Recompensa = -3.1994 | Aceptacion = 0.946
+TD3 Sweep 2380 | Recompensa = -3.0937 | Aceptacion = 0.945
+TD3 Sweep 2390 | Recompensa = -3.1693 | Aceptacion = 0.946
+TD3 Sweep 2400 | Recompensa = -3.2969 | Aceptacion = 0.956
+TD3 Sweep 2410 | Recompensa = -3.1193 | Aceptacion = 0.942
+TD3 Sweep 2420 | Recompensa = -3.0968 | Aceptacion = 0.954
+TD3 Sweep 2430 | Recompensa = -3.1032 | Aceptacion = 0.950
+TD3 Sweep 2440 | Recompensa = -3.0996 | Aceptacion = 0.945
+TD3 Sweep 2450 | Recompensa = -3.0698 | Aceptacion = 0.943
+TD3 Sweep 2460 | Recompensa = -3.1520 | Aceptacion = 0.939
+TD3 Sweep 2470 | Recompensa = -3.1297 | Aceptacion = 0.946
+TD3 Sweep 2480 | Recompensa = -3.1085 | Aceptacion = 0.947
+TD3 Sweep 2490 | Recompensa = -3.1747 | Aceptacion = 0.938
+
+--- CICLO TD3 4/4 ---
+Step: 37500 | E_mean: 3.2055 | Time(s): 0.002 | Stage: VMC | acceptance: 0.758 | d_act: 0.009 | ejd: 0.222 | mag_actor: 0.009 | mag_mala: 0.012 | mean_log_ratio: -0.429 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.211 | Actor_Loss: 149.491 | Critic1_Loss: 3.378 | Critic2_Loss: 3.328
+Step: 37600 | E_mean: 3.4496 | Time(s): 0.165 | Stage: VMC | acceptance: 0.731 | d_act: 0.009 | ejd: 0.218 | mag_actor: 0.009 | mag_mala: 0.013 | mean_log_ratio: -0.478 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.211 | Actor_Loss: 149.491 | Critic1_Loss: 3.378 | Critic2_Loss: 3.328
+Step: 37700 | E_mean: 3.4413 | Time(s): 0.326 | Stage: VMC | acceptance: 0.756 | d_act: 0.009 | ejd: 0.219 | mag_actor: 0.009 | mag_mala: 0.013 | mean_log_ratio: -0.453 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.211 | Actor_Loss: 149.491 | Critic1_Loss: 3.378 | Critic2_Loss: 3.328
+Step: 37800 | E_mean: 3.3853 | Time(s): 0.486 | Stage: VMC | acceptance: 0.755 | d_act: 0.009 | ejd: 0.222 | mag_actor: 0.009 | mag_mala: 0.013 | mean_log_ratio: -0.389 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.211 | Actor_Loss: 149.491 | Critic1_Loss: 3.378 | Critic2_Loss: 3.328
+Step: 37900 | E_mean: 3.3883 | Time(s): 0.647 | Stage: VMC | acceptance: 0.740 | d_act: 0.009 | ejd: 0.219 | mag_actor: 0.009 | mag_mala: 0.012 | mean_log_ratio: -0.440 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.211 | Actor_Loss: 149.491 | Critic1_Loss: 3.378 | Critic2_Loss: 3.328
+Step: 38000 | E_mean: 3.3767 | Time(s): 0.807 | Stage: VMC | acceptance: 0.731 | d_act: 0.009 | ejd: 0.211 | mag_actor: 0.009 | mag_mala: 0.012 | mean_log_ratio: -0.449 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.211 | Actor_Loss: 149.491 | Critic1_Loss: 3.378 | Critic2_Loss: 3.328
+Step: 38100 | E_mean: 3.3694 | Time(s): 0.968 | Stage: VMC | acceptance: 0.743 | d_act: 0.009 | ejd: 0.216 | mag_actor: 0.009 | mag_mala: 0.013 | mean_log_ratio: -0.436 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.211 | Actor_Loss: 149.491 | Critic1_Loss: 3.378 | Critic2_Loss: 3.328
+Step: 38200 | E_mean: 3.3612 | Time(s): 1.128 | Stage: VMC | acceptance: 0.746 | d_act: 0.009 | ejd: 0.212 | mag_actor: 0.009 | mag_mala: 0.012 | mean_log_ratio: -0.450 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.211 | Actor_Loss: 149.491 | Critic1_Loss: 3.378 | Critic2_Loss: 3.328
+Step: 38300 | E_mean: 3.3027 | Time(s): 1.288 | Stage: VMC | acceptance: 0.728 | d_act: 0.009 | ejd: 0.215 | mag_actor: 0.009 | mag_mala: 0.013 | mean_log_ratio: -0.475 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.211 | Actor_Loss: 149.491 | Critic1_Loss: 3.378 | Critic2_Loss: 3.328
+Step: 38400 | E_mean: 3.3436 | Time(s): 1.449 | Stage: VMC | acceptance: 0.759 | d_act: 0.009 | ejd: 0.227 | mag_actor: 0.009 | mag_mala: 0.012 | mean_log_ratio: -0.417 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.211 | Actor_Loss: 149.491 | Critic1_Loss: 3.378 | Critic2_Loss: 3.328
+Step: 38500 | E_mean: 3.3431 | Time(s): 1.609 | Stage: VMC | acceptance: 0.746 | d_act: 0.009 | ejd: 0.223 | mag_actor: 0.009 | mag_mala: 0.012 | mean_log_ratio: -0.431 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.211 | Actor_Loss: 149.491 | Critic1_Loss: 3.378 | Critic2_Loss: 3.328
+Step: 38600 | E_mean: 3.2942 | Time(s): 1.770 | Stage: VMC | acceptance: 0.741 | d_act: 0.009 | ejd: 0.219 | mag_actor: 0.009 | mag_mala: 0.013 | mean_log_ratio: -0.427 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.211 | Actor_Loss: 149.491 | Critic1_Loss: 3.378 | Critic2_Loss: 3.328
+Step: 38700 | E_mean: 3.3025 | Time(s): 1.930 | Stage: VMC | acceptance: 0.762 | d_act: 0.009 | ejd: 0.225 | mag_actor: 0.009 | mag_mala: 0.012 | mean_log_ratio: -0.428 | mean_sigma: 0.384 | sig_scale: 1.000 | mean_reward: -3.211 | Actor_Loss: 149.491 | Critic1_Loss: 3.378 | Critic2_Loss: 3.328

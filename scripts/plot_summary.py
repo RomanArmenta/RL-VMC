@@ -68,6 +68,7 @@ def main():
     parser.add_argument("--n_samples", type=int, default=5000)
     parser.add_argument("--subsample", type=int, default=10)
     parser.add_argument("--n_ter", type=int, default=1000) # Recepción del argumento n_ter
+    parser.add_argument("--n_elec", type=int, default=0)
     args = parser.parse_args()
     
     df = parse_logs(args.logs_dir)
@@ -89,7 +90,7 @@ def main():
     sns.set_theme(style="whitegrid")
     fig, axs = plt.subplots(2, 2, figsize=(14, 10))
     # Incorporando n_ter al título superior de la gráfica
-    fig.suptitle(fr"Resumen: Desempeño RL-VMC vs Fuerza de Interacción ($N=10$, Amp=0.01, $N_{{ter}}$={args.n_ter})", fontsize=16)
+    fig.suptitle(fr"Resumen: Desempeño RL-VMC vs Fuerza de Interacción ($N={args.n_elec}$, Amp=0.01, $N_{{ter}}$={args.n_ter})", fontsize=16)
 
     g_vals = df['g']
 
