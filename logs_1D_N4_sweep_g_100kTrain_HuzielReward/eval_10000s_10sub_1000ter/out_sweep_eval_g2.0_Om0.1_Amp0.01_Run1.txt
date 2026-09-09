@@ -1,0 +1,3 @@
+MALA: MALA
+TD3:       TD3
+Gráfico comparativo guardado en: ./results_1D_N4_sweep_g_100kTrain_HuzielReward/Compare_g2.0_Om0.1_Amp0.01_1.png

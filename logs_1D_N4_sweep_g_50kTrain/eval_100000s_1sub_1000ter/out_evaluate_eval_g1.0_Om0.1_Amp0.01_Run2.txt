@@ -1,0 +1,49 @@
+JAX was imported before deepqmc, TensorFloat32 precision might be enabled. You may experience numerical issues.
+W0904 19:41:43.582602  218398 bfc_allocator.cc:501] Allocator (GPU_0_bfc) ran out of memory trying to allocate 1.53GiB (rounded to 1638400000)requested by op 
+If the cause is memory fragmentation maybe the environment variable 'TF_GPU_ALLOCATOR=cuda_malloc_async' will improve the situation. 
+Current allocation summary follows.
+Current allocation summary follows.
+W0904 19:41:43.582751  218398 bfc_allocator.cc:512] **************************************___________***************************************___________*
+E0904 19:41:43.582761  218398 pjrt_stream_executor_client.cc:2974] Execution of replica 0 failed: RESOURCE_EXHAUSTED: Out of memory while trying to allocate 1638400000 bytes. [tf-allocator-allocation-error='']
+Número de samples: 100000. Número de subsamples: 1
+Número de samples: 100000 | Subsample: 1 | N_ter: 1000
+Termalizando MALA (1000 pasos y compilando JAX)...
+Muestreando MALA Clásico...
+Termalizando TD3 (1000 pasos y compilando JAX)...
+Muestreando TD3...
+Generando Gráfico de Densidades Superpuestas...
+Generando Perfil del Actor...
+Calculando Energías Locales y Autocorrelación...
+Traceback (most recent call last):
+  File "/home/huziel/RomanArmenta/RL-VMC/scripts/evaluate_1D_models.py", line 340, in <module>
+    main()
+    ~~~~^^
+  File "/home/huziel/RomanArmenta/RL-VMC/scripts/evaluate_1D_models.py", line 278, in main
+    traj_mala = jnp.array(hist_mala)[:, 0, :, 0]
+                ~~~~~~~~~^^^^^^^^^^^
+  File "/home/huziel/anaconda3/envs/jax-gpu/lib/python3.13/site-packages/jax/_src/numpy/array_constructors.py", line 263, in array
+    out = lax._array_copy(object) if copy else object
+          ~~~~~~~~~~~~~~~^^^^^^^^
+  File "/home/huziel/anaconda3/envs/jax-gpu/lib/python3.13/site-packages/jax/_src/lax/lax.py", line 8561, in _array_copy
+    return copy_p.bind(arr)
+           ~~~~~~~~~~~^^^^^
+  File "/home/huziel/anaconda3/envs/jax-gpu/lib/python3.13/site-packages/jax/_src/core.py", line 632, in bind
+    return self._true_bind(*args, **params)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/home/huziel/anaconda3/envs/jax-gpu/lib/python3.13/site-packages/jax/_src/core.py", line 648, in _true_bind
+    return self.bind_with_trace(prev_trace, args, params)
+           ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/huziel/anaconda3/envs/jax-gpu/lib/python3.13/site-packages/jax/_src/core.py", line 660, in bind_with_trace
+    return trace.process_primitive(self, args, params)
+           ~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^
+  File "/home/huziel/anaconda3/envs/jax-gpu/lib/python3.13/site-packages/jax/_src/core.py", line 1189, in process_primitive
+    return primitive.impl(*args, **params)
+           ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/home/huziel/anaconda3/envs/jax-gpu/lib/python3.13/site-packages/jax/_src/lax/lax.py", line 8602, in _copy_impl
+    return dispatch.apply_primitive(prim, *args, **kwargs)
+           ~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/huziel/anaconda3/envs/jax-gpu/lib/python3.13/site-packages/jax/_src/dispatch.py", line 94, in apply_primitive
+    outs = fun(*args)
+jax.errors.JaxRuntimeError: RESOURCE_EXHAUSTED: Out of memory while trying to allocate 1638400000 bytes.
+--------------------
+For simplicity, JAX has removed its internal frames from the traceback of the following exception. Set JAX_TRACEBACK_FILTERING=off to include these.

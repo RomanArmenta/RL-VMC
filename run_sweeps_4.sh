@@ -45,9 +45,9 @@ MAX_PHYS_JUMP=5.0
 LR_ANSATZ=5e-5
 LR_ACTOR=5e-5
 LR_CRITIC=5e-4
-TRAIN_STEPS=50_000
+TRAIN_STEPS=100_000
 MEASURE_STEPS=5_000
-COUPLED_CYCLES=4
+COUPLED_CYCLES=8
 VMC_ITERS=12_500
 RL_SWEEPS=2_500
 RL_REPLAY_CAP=10_000
@@ -72,7 +72,7 @@ N_TER_TRAIN=1000
 # 0. PARSEO DE ARGUMENTOS
 # ==============================================================================
 MODE="train" # Por defecto
-BASE_DIR_NAME="1D_N${N_ELEC}_sweep_g_50kTrain"
+BASE_DIR_NAME="1D_N${N_ELEC}_sweep_g_100kTrain_HuzielReward"
 
 while [[ "$#" -gt 0 ]]; do
     case $1 in
@@ -85,7 +85,7 @@ done
 
 # Parámetros de evaluación
 N_SAMPLES_EVALUATIONS=(5000 10000 100000)
-N_SUBSAMPLES_EVALUATIONS=(1)
+N_SUBSAMPLES_EVALUATIONS=(1 10)
 N_TER_EVALUATIONS=(0 1000 5000)
 
 MALA_DIR="None" # Forzamos a que Python use la carpeta local de la permutación

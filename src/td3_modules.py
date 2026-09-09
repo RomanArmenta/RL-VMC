@@ -218,11 +218,33 @@ class TD3Trainer:
         # 2. Distancia recortada al salto físico máximo
         max_phys_jump = 5.0 * jnp.sqrt(self.tau) # Equivale a args.max_phys_jump_std
         clipped_dist = jnp.clip(disp, a_min=0.0, a_max=max_phys_jump)
-        
+        # =================================================================
         # 3. Nueva recompensa idéntica a REINFORCE (ignoramos soft_node_penalty por rendimiento)
-        kappa = 0.5 # Mismo valor que args.kappa
+        # kappa = 0.5 # Mismo valor que args.kappa
+        # # Mi recompensa:
         # reward = (alpha_exact * clipped_dist) + kappa * (1.0 - alpha_exact) * alpha_exact
+        # =================================================================
+        # Recompensa de Huziel
         reward = jnp.log(self.epsilon + alpha_exact * clipped_dist ** 2)
+
+        # # =================================================================
+        # # RECOMPENSA CDLB (Wang et al. 2026, Eq. 11)
+        # # =================================================================
+        # # A. Explotación: 2 * (log|Psi(X*)| - log|Psi(X)|)
+        # log_p_diff = 2.0 * (new_logp - curr_logp)
+        # exploitation = alpha_exact * log_p_diff
+
+        # # B. Entropía de Aceptación (Añadiendo 1e-8 para evitar NaN en log(0))
+        # entropy_alpha = -alpha_exact * jnp.log(alpha_exact + 1e-8) - (1.0 - alpha_exact) * jnp.log(1.0 - alpha_exact + 1e-8)
+
+        # # C. Exploración: -alpha * log q(X* | X)
+        # # En RMALA, la densidad de propuesta ya está en la variable log_q_fwd
+        # exploration = -alpha_exact * log_q_fwd
+
+        # # Recompensa combinada. Se multiplica por 0.1 para que el MSE del Crítico no explote
+        # reward = (exploitation + entropy_alpha + exploration) * 0.1
+        # =================================================================
+
         next_state = build_td3_state(next_w, next_grad, (elec_idx + 1) % self.n_elec, self.n_elec, self.n_up, self.n_dn)
         
         return next_w, next_logp, next_grad, state_old, action_old, reward, next_state, accept, disp
