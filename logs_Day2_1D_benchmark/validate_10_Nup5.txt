@@ -1,0 +1,3 @@
+JAX was imported before deepqmc, TensorFloat32 precision might be enabled. You may experience numerical issues.
+Muestreando N=10, g=0.0...
+Gráfica de validación generada exitosamente: ./results_Day2_1D_benchmark/Validation_Ne10_Nup5_g0.0.png

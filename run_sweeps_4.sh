@@ -24,9 +24,9 @@ METHODS=("MALA" "TD3")
 # ==============================================================================
 # 2. PARÁMETROS ESTÁTICOS
 # ==============================================================================
-N_ELEC=4
-N_UP=2
-N_DN=2
+N_ELEC=10
+N_UP=5
+N_DN=5
 SOFTENING=0.1
 WF_MODEL="slater_jastrow"
 ORBITAL_MODEL="backflow_ho"
@@ -72,7 +72,7 @@ N_TER_TRAIN=1000
 # 0. PARSEO DE ARGUMENTOS
 # ==============================================================================
 MODE="train" # Por defecto
-BASE_DIR_NAME="1D_N${N_ELEC}_sweep_g_100kTrain_HuzielReward"
+BASE_DIR_NAME="1D_N${N_ELEC}_sweep_g_100kTrain_PaperReward"
 
 while [[ "$#" -gt 0 ]]; do
     case $1 in
@@ -86,7 +86,7 @@ done
 # Parámetros de evaluación
 N_SAMPLES_EVALUATIONS=(5000 10000 100000)
 N_SUBSAMPLES_EVALUATIONS=(1 10)
-N_TER_EVALUATIONS=(0 1000 5000)
+N_TER_EVALUATIONS=(0 1000)
 
 MALA_DIR="None" # Forzamos a que Python use la carpeta local de la permutación
 

@@ -42,7 +42,6 @@ class ReplayBuffer:
 # 2. EXTRACTOR DE CARACTERÍSTICAS (Deep Sets)
 # ==========================================
 def build_td3_state(x, g, elec_idx, n_elec, n_up, n_dn):
-    # 1. BLINDAJE DE DIMENSIONES: Aseguramos que x y g sean puramente 2D [batch, N]
     if x.ndim == 3: x = x[..., 0]
     if g.ndim == 3: g = g[..., 0]
     
@@ -53,22 +52,14 @@ def build_td3_state(x, g, elec_idx, n_elec, n_up, n_dn):
     spins = jnp.concatenate([jnp.ones(n_up), -jnp.ones(n_dn)])
     spin_i = spins[i]
     
-    # local_feat tendrá forma exacta de [batch_size, 4]
-    local_feat = jnp.stack([
-        x_i, 
-        x_i - jnp.mean(x, axis=1), 
-        jnp.tanh(g_i / 5.0), 
-        jnp.full_like(x_i, spin_i)
-    ], axis=-1)
+    local_feat = jnp.stack([x_i, x_i - jnp.mean(x, axis=1), jnp.tanh(g_i / 5.0), jnp.full_like(x_i, spin_i)], axis=-1)
     
     global_feat = jnp.asarray([n_elec / 10.0, n_up / max(n_elec, 1), jnp.tanh(1.0), jnp.tanh(1.0), jnp.tanh(0.25)])
     global_feat = jnp.broadcast_to(global_feat[None, :], (batch_size, 5))
     
-    # Cálculos de distancias vectorizados
     dx = x[:, i, None] - x
     r = jnp.abs(dx)
     
-    # Máscaras
     not_self = jnp.arange(n_elec) != i
     same_mask = (spins == spin_i) & not_self
     opp_mask = (spins != spin_i) & not_self
@@ -76,20 +67,13 @@ def build_td3_state(x, g, elec_idx, n_elec, n_up, n_dn):
     def get_slots(r_val, dx_val, mask_val, max_slots):
         if max_slots == 0: 
             return jnp.zeros((batch_size, 0, 3))
-        
         mask_w = jnp.broadcast_to(mask_val[None, :], (batch_size, n_elec))
         keys = jnp.where(mask_w, r_val, 1e12)
         order = jnp.argsort(keys, axis=1)[:, :max_slots]
-        
         rr = jnp.take_along_axis(r_val, order, axis=1)
         dd = jnp.take_along_axis(dx_val, order, axis=1)
         mm = jnp.take_along_axis(mask_w, order, axis=1)
-        
-        return jnp.stack([
-            jnp.where(mm, rr / 5.0, 0.0), 
-            jnp.where(mm, jnp.sign(dd), 0.0), 
-            mm.astype(jnp.float32)
-        ], axis=-1)
+        return jnp.stack([jnp.where(mm, rr / 5.0, 0.0), jnp.where(mm, jnp.sign(dd), 0.0), mm.astype(jnp.float32)], axis=-1)
         
     max_same = max(max(n_up - 1, 0), max(n_dn - 1, 0))
     max_opp = max(n_up, n_dn) if (n_up > 0 and n_dn > 0) else 0
@@ -141,13 +125,46 @@ class FlaxTD3Critic(nn.Module):
         x = nn.silu(nn.Dense(64)(nn.silu(nn.Dense(64)(x))))
         return nn.Dense(1)(x)[..., 0]
 
+class FlaxFlatActor(nn.Module):
+    actor_amplitude: float
+
+    @nn.compact
+    def __call__(self, state):
+        x = nn.Dense(128)(state)
+        x = nn.relu(x)
+        x = nn.Dense(128)(x)
+        x = nn.relu(x)
+        x = nn.Dense(128)(x)
+        x = nn.relu(x)
+        drift = nn.Dense(1)(x)
+        drift = jnp.tanh(drift)
+        scale = nn.Dense(1)(x)
+        return jnp.concatenate([drift, scale], axis=-1)
+
+class FlaxFlatCritic(nn.Module):
+    @nn.compact
+    def __call__(self, state, action):
+        x = jnp.concatenate([state, action], axis=-1)
+        q1 = nn.Dense(128)(x)
+        q1 = nn.relu(q1)
+        q1 = nn.Dense(128)(q1)
+        q1 = nn.relu(q1)
+        q1 = nn.Dense(1)(q1)
+        
+        q2 = nn.Dense(128)(x)
+        q2 = nn.relu(q2)
+        q2 = nn.Dense(128)(q2)
+        q2 = nn.relu(q2)
+        q2 = nn.Dense(1)(q2)
+        return q1, q2
+
 # ==========================================
 # 4. TD3 TRAINER SECUENCIAL
 # ==========================================
 class TD3Trainer:
     def __init__(self, ansatz_apply, n_elec, n_up, n_dn, tau, actor_amp, 
                  beta=10.0, gamma_reward=0.1, gamma_td3=0.99, tau_polyak=0.005, 
-                 target_noise=0.15, noise_clip=0.35, epsilon=0.001):
+                 target_noise=0.15, noise_clip=0.35, epsilon=0.001, actor_type="full"):
         self.ansatz_apply = ansatz_apply
         self.n_elec, self.n_up, self.n_dn = n_elec, n_up, n_dn
         self.tau, self.actor_amp = tau, actor_amp
@@ -155,9 +172,14 @@ class TD3Trainer:
         self.gamma_td3, self.tau_polyak = gamma_td3, tau_polyak
         self.target_noise, self.noise_clip = target_noise, noise_clip
         self.epsilon = epsilon
+        self.actor_type = actor_type
         
-        self.actor_model = FlaxTD3Actor(n_up=n_up, n_dn=n_dn, actor_amplitude=actor_amp)
-        self.critic_model = FlaxTD3Critic()
+        if self.actor_type == "flat":
+            self.actor_model = FlaxFlatActor(actor_amplitude=actor_amp)
+            self.critic_model = FlaxFlatCritic()
+        else:
+            self.actor_model = FlaxTD3Actor(n_up=n_up, n_dn=n_dn, actor_amplitude=actor_amp)
+            self.critic_model = FlaxTD3Critic()
 
     @partial(jax.jit, static_argnums=(0,))
     def get_logp_and_grad(self, params_psi, walkers):
@@ -168,7 +190,17 @@ class TD3Trainer:
     def td3_update_one_electron(self, key, walkers, curr_logp, curr_grad, params_psi, params_actor, elec_idx, exp_std):
         n_w = walkers.shape[0]
         k_act, k_prop, k_acc = jax.random.split(key, 3)
-        state_old = build_td3_state(walkers, curr_grad, elec_idx, self.n_elec, self.n_up, self.n_dn)
+        
+        w_1d = walkers[..., 0] if walkers.ndim == 3 else walkers
+        g_1d = curr_grad[..., 0] if curr_grad.ndim == 3 else curr_grad
+        
+        # Estado Inicial: Condicionado a Ablación
+        if self.actor_type == "flat":
+            target_w = jax.lax.dynamic_slice_in_dim(w_1d, elec_idx, 1, axis=-1)
+            target_g = jax.lax.dynamic_slice_in_dim(g_1d, elec_idx, 1, axis=-1)
+            state_old = jnp.concatenate([target_w, target_g, w_1d, g_1d], axis=-1)
+        else:
+            state_old = build_td3_state(w_1d, g_1d, elec_idx, self.n_elec, self.n_up, self.n_dn)
         
         base_act = self.actor_model.apply(params_actor, state_old)
         aux_noise = exp_std * jax.random.normal(k_act, base_act.shape)
@@ -177,7 +209,6 @@ class TD3Trainer:
         base_step = jnp.sqrt(2.0 * self.tau)
         sigma_fwd = jnp.maximum(base_step * jnp.exp(action_old[..., 1]), 1e-4)
         
-        # [CAMBIO 1: Agregamos el '0' para aplanar todo a (batch_size,)]
         drift_fwd = jnp.clip(self.tau * curr_grad[:, elec_idx, 0], -10.0, 10.0)
         residual_fwd = base_step * action_old[..., 0] * self.actor_amp
         
@@ -185,11 +216,20 @@ class TD3Trainer:
         mean_fwd_dist = old_coord + drift_fwd + residual_fwd
         proposed_coord = mean_fwd_dist + sigma_fwd * jax.random.normal(k_prop, (n_w,))
         
-        # [CAMBIO 2: Escribimos específicamente en la ranura aplanada]
         proposal = walkers.at[:, elec_idx, 0].set(proposed_coord)
-        
         new_logp, new_grad = self.get_logp_and_grad(params_psi, proposal)
-        state_prop = build_td3_state(proposal, new_grad, elec_idx, self.n_elec, self.n_up, self.n_dn)
+        
+        p_1d = proposal[..., 0] if proposal.ndim == 3 else proposal
+        ng_1d = new_grad[..., 0] if new_grad.ndim == 3 else new_grad
+
+        # Estado Propuesto: Condicionado a Ablación
+        if self.actor_type == "flat":
+            target_p = jax.lax.dynamic_slice_in_dim(p_1d, elec_idx, 1, axis=-1)
+            target_ng = jax.lax.dynamic_slice_in_dim(ng_1d, elec_idx, 1, axis=-1)
+            state_prop = jnp.concatenate([target_p, target_ng, p_1d, ng_1d], axis=-1)
+        else:
+            state_prop = build_td3_state(p_1d, ng_1d, elec_idx, self.n_elec, self.n_up, self.n_dn)
+
         action_rev = jnp.clip(self.actor_model.apply(params_actor, state_prop) + aux_noise, -1.0, 1.0)
         
         sigma_rev = jnp.maximum(base_step * jnp.exp(action_rev[..., 1]), 1e-4)
@@ -203,29 +243,23 @@ class TD3Trainer:
         clipped_log_alpha = jnp.minimum(0.0, (new_logp - curr_logp) + (log_q_rev - log_q_fwd))
         accept = jnp.log(jax.random.uniform(k_acc, (n_w,), minval=1e-15)) < clipped_log_alpha
         
-        # [CAMBIO 3: Usamos [:, None, None] para proyectar booleanos sobre (batch_size, n_elec, 1)]
         next_w = jnp.where(accept[:, None, None], proposal, walkers)
         next_logp = jnp.where(accept, new_logp, curr_logp)
         next_grad = jnp.where(accept[:, None, None], new_grad, curr_grad)
         
         disp = jnp.abs(proposed_coord - old_coord)
-        # reward = jnp.clip(self.beta * 2.0 * jnp.log(disp + 1e-8) + self.gamma_reward * clipped_log_alpha, -30.0, 30.0)
-        # Reemplazar: reward = jnp.clip(self.beta * 2.0 * jnp.log(disp + 1e-8) + ...)
-        
-        # 1. Extraer probabilidad de aceptación (alpha_exact)
+        max_phys_jump = 5.0 * jnp.sqrt(self.tau)
+        clipped_dist = jnp.clip(disp, a_min=0.0, a_max=max_phys_jump)
         alpha_exact = jnp.exp(clipped_log_alpha)
         
-        # 2. Distancia recortada al salto físico máximo
-        max_phys_jump = 5.0 * jnp.sqrt(self.tau) # Equivale a args.max_phys_jump_std
-        clipped_dist = jnp.clip(disp, a_min=0.0, a_max=max_phys_jump)
-        # =================================================================
-        # 3. Nueva recompensa idéntica a REINFORCE (ignoramos soft_node_penalty por rendimiento)
-        # kappa = 0.5 # Mismo valor que args.kappa
-        # # Mi recompensa:
-        # reward = (alpha_exact * clipped_dist) + kappa * (1.0 - alpha_exact) * alpha_exact
-        # =================================================================
-        # Recompensa de Huziel
-        reward = jnp.log(self.epsilon + alpha_exact * clipped_dist ** 2)
+        # RECOMPENSA CDLB (Wang et al. 2026, Eq. 11)
+        # log_p_diff = 2.0 * (new_logp - curr_logp)
+        # exploitation = alpha_exact * log_p_diff
+        # entropy_alpha = -alpha_exact * jnp.log(alpha_exact + 1e-8) - (1.0 - alpha_exact) * jnp.log(1.0 - alpha_exact + 1e-8)
+        # exploration = -alpha_exact * log_q_fwd
+        # reward = (exploitation + entropy_alpha + exploration) * 0.1
+
+        # reward = jnp.log(self.epsilon + alpha_exact * (clipped_dist ** 2))
 
         # # =================================================================
         # # RECOMPENSA CDLB (Wang et al. 2026, Eq. 11)
@@ -243,9 +277,35 @@ class TD3Trainer:
 
         # # Recompensa combinada. Se multiplica por 0.1 para que el MSE del Crítico no explote
         # reward = (exploitation + entropy_alpha + exploration) * 0.1
+        # # =================================================================
+
+        # =================================================================
+        # 3. Nueva recompensa idéntica a REINFORCE (ignoramos soft_node_penalty por rendimiento)
+        kappa = 0.5 # Mismo valor que args.kappa
+        # # Mi recompensa:
+        reward = (alpha_exact * clipped_dist) + kappa * (1.0 - alpha_exact) * alpha_exact
         # =================================================================
 
-        next_state = build_td3_state(next_w, next_grad, (elec_idx + 1) % self.n_elec, self.n_elec, self.n_up, self.n_dn)
+        # =================================================================
+        
+        # Recompensa de Huziel
+        # 
+        # reward = jnp.log(self.epsilon + alpha_exact * clipped_dist ** 2)
+
+        # =================================================================
+
+
+        next_idx = (elec_idx + 1) % self.n_elec
+        nw_1d = next_w[..., 0] if next_w.ndim == 3 else next_w
+        nwg_1d = next_grad[..., 0] if next_grad.ndim == 3 else next_grad
+
+        # Siguiente Estado: Condicionado a Ablación
+        if self.actor_type == "flat":
+            target_nw = jax.lax.dynamic_slice_in_dim(nw_1d, next_idx, 1, axis=-1)
+            target_nwg = jax.lax.dynamic_slice_in_dim(nwg_1d, next_idx, 1, axis=-1)
+            next_state = jnp.concatenate([target_nw, target_nwg, nw_1d, nwg_1d], axis=-1)
+        else:
+            next_state = build_td3_state(nw_1d, nwg_1d, next_idx, self.n_elec, self.n_up, self.n_dn)
         
         return next_w, next_logp, next_grad, state_old, action_old, reward, next_state, accept, disp
 
@@ -253,29 +313,46 @@ class TD3Trainer:
     def train_networks(self, key, p_act, p_c1, p_c2, t_act, t_c1, t_c2, opt_act, opt_c1, opt_c2, batch, update_actor):
         noise = jnp.clip(self.target_noise * jax.random.normal(key, batch["action"].shape), -self.noise_clip, self.noise_clip)
         next_action = jnp.clip(self.actor_model.apply(t_act, batch["next_state"]) + noise, -1.0, 1.0)
-        y = jax.lax.stop_gradient(batch["reward"] + self.gamma_td3 * jnp.minimum(
-            self.critic_model.apply(t_c1, batch["next_state"], next_action),
-            self.critic_model.apply(t_c2, batch["next_state"], next_action)
-        ))
         
-        def critic_loss(p_crit): return jnp.mean((self.critic_model.apply(p_crit, batch["state"], batch["action"]) - y)**2)
-        l1, g1 = jax.value_and_grad(critic_loss)(p_c1)
-        l2, g2 = jax.value_and_grad(critic_loss)(p_c2)
+        if self.actor_type == "flat":
+            q1_next, _ = self.critic_model.apply(t_c1, batch["next_state"], next_action)
+            _, q2_next = self.critic_model.apply(t_c2, batch["next_state"], next_action)
+            q_target = jnp.minimum(q1_next, q2_next)
+        else:
+            q_target = jnp.minimum(
+                self.critic_model.apply(t_c1, batch["next_state"], next_action),
+                self.critic_model.apply(t_c2, batch["next_state"], next_action)
+            )
+
+        y = jax.lax.stop_gradient(batch["reward"] + self.gamma_td3 * q_target)
+        
+        def critic_loss(p_crit, is_q1): 
+            if self.actor_type == "flat":
+                q1, q2 = self.critic_model.apply(p_crit, batch["state"], batch["action"])
+                q = q1 if is_q1 else q2
+                return jnp.mean((q - y)**2)
+            else:
+                return jnp.mean((self.critic_model.apply(p_crit, batch["state"], batch["action"]) - y)**2)
+        
+        l1, g1 = jax.value_and_grad(critic_loss)(p_c1, True)
+        l2, g2 = jax.value_and_grad(critic_loss)(p_c2, False)
         
         u1, opt_c1 = self.opt_c.update(g1, opt_c1, p_c1); p_c1 = optax.apply_updates(p_c1, u1)
         u2, opt_c2 = self.opt_c.update(g2, opt_c2, p_c2); p_c2 = optax.apply_updates(p_c2, u2)
         
         def actor_update():
-            def actor_loss(p_a): return -jnp.mean(self.critic_model.apply(p_c1, batch["state"], self.actor_model.apply(p_a, batch["state"])))
+            def actor_loss(p_a): 
+                act = self.actor_model.apply(p_a, batch["state"])
+                if self.actor_type == "flat":
+                    q1, _ = self.critic_model.apply(p_c1, batch["state"], act)
+                    return -jnp.mean(q1)
+                else:
+                    return -jnp.mean(self.critic_model.apply(p_c1, batch["state"], act))
+            
             l_act, g_act = jax.value_and_grad(actor_loss)(p_act)
             u_act, new_opt_act = self.opt_a.update(g_act, opt_act, p_act)
             new_p_act = optax.apply_updates(p_act, u_act)
             return new_p_act, optax.incremental_update(new_p_act, t_act, self.tau_polyak), optax.incremental_update(p_c1, t_c1, self.tau_polyak), optax.incremental_update(p_c2, t_c2, self.tau_polyak), new_opt_act, l_act
             
-        # NUEVO: Cast explícito de 0.0 a float32 para igualar a la rama verdadera
-        p_act, t_act, t_c1, t_c2, opt_act, l_act = jax.lax.cond(
-            update_actor, 
-            actor_update, 
-            lambda: (p_act, t_act, t_c1, t_c2, opt_act, jnp.array(0.0, dtype=jnp.float32))
-        )
+        p_act, t_act, t_c1, t_c2, opt_act, l_act = jax.lax.cond(update_actor, actor_update, lambda: (p_act, t_act, t_c1, t_c2, opt_act, jnp.array(0.0, dtype=jnp.float32)))
         return p_act, p_c1, p_c2, t_act, t_c1, t_c2, opt_act, opt_c1, opt_c2, l1, l2, l_act
