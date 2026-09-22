@@ -1,0 +1,29 @@
+JAX was imported before deepqmc, TensorFloat32 precision might be enabled. You may experience numerical issues.
+/home/romanarmenta/Documents/projects/RL-VMC-main/RL-VMC/scripts/evaluate_1D_models.py:80: RuntimeWarning: invalid value encountered in divide
+  return result[result.size // 2:] / result[result.size // 2]
+Número de samples: 10000. Número de subsamples: 1
+Número de samples: 10000 | Subsample: 1 | N_ter: 500
+Termalizando MALA (500 pasos y compilando JAX)...
+Muestreando MALA Clásico...
+Termalizando TD3 (500 pasos y compilando JAX)...
+Muestreando TD3...
+Generando Gráfico de Densidades Superpuestas...
+Generando Perfil del Actor...
+Calculando Energías Locales y Autocorrelación...
+==================================================
+MÉTRICAS FINALES (g=1.0):
+--------------------------------------------------
+Energía MALA: 13.47122 Ha
+Energía TD3:  -73.91296 Ha
+Tau_int (E) MALA: 10.80
+Tau_int (E) TD3:  395.02
+--------------------------------------------------
+N_eff MALA: 925 muestras útiles
+N_eff TD3:  25 muestras útiles
+Tiempo Muestreo MALA: 4.95 s
+Tiempo Muestreo TD3:  7.99 s
+--------------------------------------------------
+ESS/sec MALA: 187.16 muestras/segundo
+ESS/sec TD3:  3.17 muestras/segundo
+==================================================
+Evaluación completada. Gráficos guardados en ./results_1D_N10_sweep_g_100kTrain_StagTransLearning/Perm_g1.0_Om0.1_Amp0.01_Run1/TD3/compiled_plots_10000_samples_1_subsample

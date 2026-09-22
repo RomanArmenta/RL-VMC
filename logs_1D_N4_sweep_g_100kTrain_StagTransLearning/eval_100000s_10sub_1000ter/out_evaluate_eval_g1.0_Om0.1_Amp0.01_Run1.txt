@@ -1,0 +1,28 @@
+JAX was imported before deepqmc, TensorFloat32 precision might be enabled. You may experience numerical issues.
+E0909 18:52:34.010198 3516330 cuda_timer.cc:86] Delay kernel timed out: measured time has sub-optimal accuracy. There may be a missing warmup execution, please investigate in Nsight Systems.
+Número de samples: 100000. Número de subsamples: 10
+Número de samples: 100000 | Subsample: 10 | N_ter: 1000
+Termalizando MALA (1000 pasos y compilando JAX)...
+Muestreando MALA Clásico...
+Termalizando TD3 (1000 pasos y compilando JAX)...
+Muestreando TD3...
+Generando Gráfico de Densidades Superpuestas...
+Generando Perfil del Actor...
+Calculando Energías Locales y Autocorrelación...
+==================================================
+MÉTRICAS FINALES (g=1.0):
+--------------------------------------------------
+Energía MALA: 1.91112 Ha
+Energía TD3:  1.94186 Ha
+Tau_int (E) MALA: 1.00
+Tau_int (E) TD3:  43.41
+--------------------------------------------------
+N_eff MALA: 100000 muestras útiles
+N_eff TD3:  2303 muestras útiles
+Tiempo Muestreo MALA: 19.93 s
+Tiempo Muestreo TD3:  26.79 s
+--------------------------------------------------
+ESS/sec MALA: 5018.48 muestras/segundo
+ESS/sec TD3:  86.00 muestras/segundo
+==================================================
+Evaluación completada. Gráficos guardados en ./results_1D_N4_sweep_g_100kTrain_StagTransLearning/Perm_g1.0_Om0.1_Amp0.01_Run1/TD3/compiled_plots_100000_samples_10_subsample

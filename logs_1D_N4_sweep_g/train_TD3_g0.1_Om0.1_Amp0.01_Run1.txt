@@ -6037,3 +6037,5 @@ TD3 Sweep 2480 | Recompensa = -3.1819 | Aceptacion = 0.974
 TD3 Sweep 2490 | Recompensa = -3.1878 | Aceptacion = 0.976
 
 --- MIDIENDO ENERGÍA FINAL (10000 Pasos) ---
+-> Energía Final Promedio: -4.30901 Ha
+Tiempo Total: 26.65 minutos

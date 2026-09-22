@@ -1,0 +1,32 @@
+MALA: MALA
+TD3:       TD3
+Traceback (most recent call last):
+  File "/home/romanarmenta/Documents/projects/RL-VMC-main/RL-VMC/scripts/plot_sweep.py", line 126, in <module>
+    main()
+    ~~~~^^
+  File "/home/romanarmenta/Documents/projects/RL-VMC-main/RL-VMC/scripts/plot_sweep.py", line 51, in main
+    df_re = pd.read_csv(os.path.join(dir_re, "training_metrics.csv"))
+  File "/home/romanarmenta/miniconda3/envs/jax-gpu/lib/python3.13/site-packages/pandas/io/parsers/readers.py", line 873, in read_csv
+    return _read(filepath_or_buffer, kwds)
+  File "/home/romanarmenta/miniconda3/envs/jax-gpu/lib/python3.13/site-packages/pandas/io/parsers/readers.py", line 300, in _read
+    parser = TextFileReader(filepath_or_buffer, **kwds)
+  File "/home/romanarmenta/miniconda3/envs/jax-gpu/lib/python3.13/site-packages/pandas/io/parsers/readers.py", line 1645, in __init__
+    self._engine = self._make_engine(f, self.engine)
+                   ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^
+  File "/home/romanarmenta/miniconda3/envs/jax-gpu/lib/python3.13/site-packages/pandas/io/parsers/readers.py", line 1904, in _make_engine
+    self.handles = get_handle(
+                   ~~~~~~~~~~^
+        f,
+        ^^
+    ...<6 lines>...
+        storage_options=self.options.get("storage_options", None),
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/home/romanarmenta/miniconda3/envs/jax-gpu/lib/python3.13/site-packages/pandas/io/common.py", line 930, in get_handle
+    handle = open(
+        handle,
+    ...<3 lines>...
+        newline="",
+    )
+FileNotFoundError: [Errno 2] No such file or directory: './results_1D_N4_sweep_g_100kTrain_StagTransLearning/Perm_g0.1_Om0.1_Amp0.01_Run1/MALA/training_metrics.csv'

@@ -1,0 +1,12 @@
+JAX was imported before deepqmc, TensorFloat32 precision might be enabled. You may experience numerical issues.
+Traceback (most recent call last):
+  File "/home/romanarmenta/Documents/projects/RL-VMC-main/RL-VMC/scripts/evaluate_1D_models.py", line 340, in <module>
+    main()
+    ~~~~^^
+  File "/home/romanarmenta/Documents/projects/RL-VMC-main/RL-VMC/scripts/evaluate_1D_models.py", line 120, in main
+    p_ansatz_mala, p_actor_mala = load_weights(dir_mala, "MALA")
+                                  ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^
+  File "/home/romanarmenta/Documents/projects/RL-VMC-main/RL-VMC/scripts/evaluate_1D_models.py", line 42, in load_weights
+    with open(os.path.join(folder, f"{method}_ansatz_weights.pkl"), "rb") as f:
+         ~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: './results_1D_N4_sweep_g_100kTrain_StagTransLearning/Perm_g0.1_Om0.1_Amp0.01_Run1/MALA/MALA_ansatz_weights.pkl'

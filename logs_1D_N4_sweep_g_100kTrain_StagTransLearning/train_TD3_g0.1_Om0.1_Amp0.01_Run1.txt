@@ -1,0 +1,31 @@
+JAX was imported before deepqmc, TensorFloat32 precision might be enabled. You may experience numerical issues.
+Staggered transfer learning
+E0908 14:56:03.405461 1434081 pjrt_stream_executor_client.cc:2974] Execution of replica 0 failed: INTERNAL: jaxlib/gpu/blas_handle_pool.cc:33: operation gpublasCreate(&handle) failed: cuBlas allocation failure
+Traceback (most recent call last):
+  File "/home/romanarmenta/Documents/projects/RL-VMC-main/RL-VMC/scripts/run_experiment_1D_3.py", line 362, in <module>
+    main()
+    ~~~~^^
+  File "/home/romanarmenta/Documents/projects/RL-VMC-main/RL-VMC/scripts/run_experiment_1D_3.py", line 153, in main
+    "log_psi_curr": ansatz.apply(params_psi, walkers),
+                    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+  File "/home/romanarmenta/Documents/projects/RL-VMC-main/RL-VMC/src/wavefunctions.py", line 242, in apply
+    return jax.vmap(single_apply)(x_1d)
+           ~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/home/romanarmenta/Documents/projects/RL-VMC-main/RL-VMC/src/wavefunctions.py", line 240, in single_apply
+    return log_abs_psi(params, x, self.sys_cfg, self.wf_cfg, self.orbital_cfg, self.correlation_cfg)
+  File "/home/romanarmenta/Documents/projects/RL-VMC-main/RL-VMC/src/wavefunction.py", line 93, in log_abs_psi
+    logdet, _ = determinant_logabs_sign(
+                ~~~~~~~~~~~~~~~~~~~~~~~^
+        x,
+        ^^
+    ...<3 lines>...
+        node_epsilon=wf_cfg.node_epsilon,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/home/romanarmenta/Documents/projects/RL-VMC-main/RL-VMC/src/orbitals.py", line 258, in determinant_logabs_sign
+    sign, logabs = jnp.linalg.slogdet(M)
+                   ~~~~~~~~~~~~~~~~~~^^^
+jax.errors.JaxRuntimeError: INTERNAL: jaxlib/gpu/blas_handle_pool.cc:33: operation gpublasCreate(&handle) failed: cuBlas allocation failure
+--------------------
+For simplicity, JAX has removed its internal frames from the traceback of the following exception. Set JAX_TRACEBACK_FILTERING=off to include these.

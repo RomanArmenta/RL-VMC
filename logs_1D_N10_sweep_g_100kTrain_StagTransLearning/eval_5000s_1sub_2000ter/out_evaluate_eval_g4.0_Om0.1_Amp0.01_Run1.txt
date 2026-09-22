@@ -1,0 +1,27 @@
+JAX was imported before deepqmc, TensorFloat32 precision might be enabled. You may experience numerical issues.
+Número de samples: 5000. Número de subsamples: 1
+Número de samples: 5000 | Subsample: 1 | N_ter: 2000
+Termalizando MALA (2000 pasos y compilando JAX)...
+Muestreando MALA Clásico...
+Termalizando TD3 (2000 pasos y compilando JAX)...
+Muestreando TD3...
+Generando Gráfico de Densidades Superpuestas...
+Generando Perfil del Actor...
+Calculando Energías Locales y Autocorrelación...
+==================================================
+MÉTRICAS FINALES (g=4.0):
+--------------------------------------------------
+Energía MALA: 28.02775 Ha
+Energía TD3:  29.09331 Ha
+Tau_int (E) MALA: 111.93
+Tau_int (E) TD3:  66.66
+--------------------------------------------------
+N_eff MALA: 44 muestras útiles
+N_eff TD3:  75 muestras útiles
+Tiempo Muestreo MALA: 3.62 s
+Tiempo Muestreo TD3:  6.52 s
+--------------------------------------------------
+ESS/sec MALA: 12.33 muestras/segundo
+ESS/sec TD3:  11.51 muestras/segundo
+==================================================
+Evaluación completada. Gráficos guardados en ./results_1D_N10_sweep_g_100kTrain_StagTransLearning/Perm_g4.0_Om0.1_Amp0.01_Run1/TD3/compiled_plots_5000_samples_1_subsample
