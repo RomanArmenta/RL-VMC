@@ -164,7 +164,7 @@ class FlaxFlatCritic(nn.Module):
 class TD3Trainer:
     def __init__(self, ansatz_apply, n_elec, n_up, n_dn, tau, actor_amp, 
                  beta=10.0, gamma_reward=0.1, gamma_td3=0.99, tau_polyak=0.005, 
-                 target_noise=0.15, noise_clip=0.35, epsilon=0.001, actor_type="full"):
+                 target_noise=0.15, lambda_ = 0.1, noise_clip=0.35, epsilon=0.001, actor_type="full"):
         self.ansatz_apply = ansatz_apply
         self.n_elec, self.n_up, self.n_dn = n_elec, n_up, n_dn
         self.tau, self.actor_amp = tau, actor_amp
@@ -173,6 +173,7 @@ class TD3Trainer:
         self.target_noise, self.noise_clip = target_noise, noise_clip
         self.epsilon = epsilon
         self.actor_type = actor_type
+        self.lambda_ = lambda_
         
         if self.actor_type == "flat":
             self.actor_model = FlaxFlatActor(actor_amplitude=actor_amp)
@@ -276,7 +277,7 @@ class TD3Trainer:
         exploration = -alpha_exact * log_q_fwd
 
         # # Recompensa combinada. Se multiplica por 0.1 para que el MSE del Crítico no explote
-        reward = (exploitation + entropy_alpha + exploration) * 0.1
+        reward = (exploitation + entropy_alpha + exploration) * self.lambda_
         # # =================================================================
 
         # =================================================================

@@ -13,10 +13,10 @@ TAUS_MALA=(0.001 0.005 0.01 0.02 0.05)
 # Parámetros físicos e hiperparámetros estáticos
 OMEGA=0.1
 AMP=0.01
-N_EVALUATIONS=5 # Número de evaluaciones independientes por modelo
-TRAIN_STEPS=100000
+N_EVALUATIONS=3 # Número de evaluaciones independientes por modelo
+TRAIN_STEPS=50000
 
-GPUS=(0 1 2) # Ajusta según tus GPUs disponibles
+GPUS=(0) # Ajusta según tus GPUs disponibles
 
 get_free_gpu(){
     while true; do

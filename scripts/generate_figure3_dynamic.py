@@ -9,12 +9,13 @@ import seaborn as sns
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--base_dir", type=str, required=True, help="Carpeta base (ej. results)")
+    parser.add_argument("--base_dir", type=str, required=True, help="Carpeta base")
     parser.add_argument("--n_elec", type=int, required=True)
     parser.add_argument("--omega", type=float, default=0.1)
     args = parser.parse_args()
 
-    sys_dirs = glob.glob(os.path.join(args.base_dir, f"results_N{args.n_elec}_g*"))
+    # CORRECCIÓN: Filtro estricto de carpetas
+    sys_dirs = [d for d in glob.glob(os.path.join(args.base_dir, f"results_N{args.n_elec}_g*")) if os.path.isdir(d)]
     
     records = []
     for sdir in sys_dirs:
@@ -35,9 +36,8 @@ def main():
     sns.set_theme(style="whitegrid", context="paper", font_scale=1.3)
     fig, axs = plt.subplots(1, 2, figsize=(14, 6))
     
-    fig.suptitle(fr"Figure 3: Sampler Efficiency across Interaction Strengths ($N={args.n_elec}, \omega={args.omega}$)" + "\n" + r"MALA values represent $\tau$-optimized baselines | Reward: CDLB", weight='bold', fontsize=15)
+    fig.suptitle(fr"Figure 3: Sampler Efficiency across Interaction Strengths ($N={args.n_elec}, \omega={args.omega}$)" + "\n" + r"MALA values represent $\tau$-optimized baselines", weight='bold', fontsize=15)
 
-    # Panel A: ESS/s vs Lambda
     ax0 = axs[0]
     ax0.errorbar(df['lambda'], df['MALA_ESS_mean'], yerr=df['MALA_ESS_std'], fmt='k--o', capsize=4, linewidth=2, label="Optimized MALA")
     ax0.errorbar(df['lambda'], df['TD3_ESS_mean'], yerr=df['TD3_ESS_std'], fmt='r-s', capsize=4, linewidth=2, markersize=8, label="RL-MALA (TD3)")
@@ -47,7 +47,6 @@ def main():
     ax0.set_title("Absolute Computational Efficiency")
     ax0.legend()
 
-    # Panel B: G_RL vs Lambda
     ax1 = axs[1]
     ax1.axhline(1.0, color='gray', linestyle=':', linewidth=2)
     ax1.plot(df['lambda'], df['G_RL'], 'b-^', linewidth=2, markersize=9, label=f"N = {args.n_elec}")

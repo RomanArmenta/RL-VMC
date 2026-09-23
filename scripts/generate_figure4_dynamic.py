@@ -80,7 +80,7 @@ def get_eloc_safe(p_psi, flat_w, sys_cfg, wf_cfg, orbital_cfg, correlation_cfg, 
 def evaluate_model(dir_path, args, is_td3=False):
     with open(os.path.join(dir_path, "params.json"), "r") as f: cfg = json.load(f)
     n_elec, n_up, n_dn = cfg["n_elec"], cfg["n_up"], cfg["n_dn"]
-    omega, g_val = cfg["omega"], cfg["interaction_strength"]
+    omega, g_val = cfg["interaction_strength"] if "interaction_strength" in cfg else cfg["g"], cfg.get("interaction_strength", cfg.get("g"))
     
     with open(os.path.join(dir_path, f"{'TD3' if is_td3 else 'MALA'}_ansatz_weights.pkl"), "rb") as f: p_ansatz = pickle.load(f)
     p_act = None
@@ -139,26 +139,39 @@ def main():
     parser.add_argument("--n_ter", type=int, default=2000)
     args = parser.parse_args()
 
-    mala_dirs = glob.glob(os.path.join(args.sys_dir, "MALA_tau*"))
-    best_mala = {"ess_mean": -1}
-    best_mala_name = ""
+    # --- LA CORRECCIÓN CLAVE ESTÁ AQUÍ: Ignoramos los archivos .log ---
+    mala_dirs = [d for d in glob.glob(os.path.join(args.sys_dir, "MALA_tau*")) if os.path.isdir(d)]
+    
+    if not mala_dirs:
+        print("Aún no hay directorios MALA listos o válidos.")
+        return
+
+    best_mala = {"ess_mean": -1, "tau": 0}
 
     # 1. Encontrar el mejor MALA
     for m_dir in mala_dirs:
-        res = evaluate_model(m_dir, args, is_td3=False)
-        if res["ess_mean"] > best_mala["ess_mean"]:
-            best_mala = res
-            best_mala_name = os.path.basename(m_dir)
+        try:
+            res = evaluate_model(m_dir, args, is_td3=False)
+            if res["ess_mean"] > best_mala["ess_mean"]:
+                best_mala = res
+        except Exception as e:
+            print(f"Saltando evaluación de {m_dir} por error: {e}")
 
     # 2. Evaluar TD3
     td3_dir = os.path.join(args.sys_dir, "TD3")
+    if not os.path.isdir(td3_dir):
+        print("El modelo TD3 aún no termina. Saliendo.")
+        return
+
     res_td3 = evaluate_model(td3_dir, args, is_td3=True)
 
     cfg = res_td3["cfg"]
+    g_val = cfg.get("interaction_strength", cfg.get("g"))
+    
     stats_data = {
-        "N": cfg["n_elec"], "g": cfg["interaction_strength"], "omega": cfg["omega"],
-        "MALA_best_tau": best_mala["tau"], "MALA_ESS_mean": best_mala["ess_mean"], "MALA_ESS_std": best_mala["ess_std"],
-        "TD3_ESS_mean": res_td3["ess_mean"], "TD3_ESS_std": res_td3["ess_std"]
+        "N": cfg["n_elec"], "g": g_val, "omega": cfg["omega"],
+        "MALA_best_tau": best_mala["tau"], "MALA_ESS_mean": float(best_mala["ess_mean"]), "MALA_ESS_std": float(best_mala.get("ess_std", 0)),
+        "TD3_ESS_mean": float(res_td3["ess_mean"]), "TD3_ESS_std": float(res_td3["ess_std"])
     }
     
     with open(os.path.join(args.sys_dir, "stats.json"), "w") as f:
@@ -170,11 +183,11 @@ def main():
     
     labels = [fr"Opt. MALA ($\tau={best_mala['tau']}$)", "Proposed RL-MALA"]
     means = [best_mala["ess_mean"], res_td3["ess_mean"]]
-    stds = [best_mala["ess_std"], res_td3["ess_std"]]
+    stds = [best_mala.get("ess_std", 0), res_td3["ess_std"]]
     
     bars = plt.bar(labels, means, yerr=stds, capsize=10, color=['#7f8c8d', '#2c3e50'], edgecolor='black', linewidth=1.5)
     
-    plt.title(fr"Figure 4: Computational Efficiency ($N={cfg['n_elec']}, g={cfg['interaction_strength']}$)" + "\n" + fr"Evaluations: {args.n_evaluations} | Thermalization: {args.n_ter} steps | Reward: CDLB", weight='bold', pad=15)
+    plt.title(fr"Figure 4: Computational Efficiency ($N={cfg['n_elec']}, g={g_val}$)" + "\n" + fr"Evaluations: {args.n_evaluations} | Thermalization: {args.n_ter} steps", weight='bold', pad=15)
     plt.ylabel("Effective Sample Size / sec (ESS/s)", weight='bold')
     plt.yscale('log')
     
