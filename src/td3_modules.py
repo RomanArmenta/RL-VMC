@@ -41,7 +41,7 @@ class ReplayBuffer:
 # ==========================================
 # 2. EXTRACTOR DE CARACTERÍSTICAS (Deep Sets)
 # ==========================================
-def build_td3_state(x, g, elec_idx, n_elec, n_up, n_dn):
+def build_td3_state(x, g, elec_idx, n_elec, n_up, n_dn, quantum_force_norm=5.0, particle_factor=10.0, dist_factor=5.0, omega=0.1, gs=0.5, softening=0.1):
     if x.ndim == 3: x = x[..., 0]
     if g.ndim == 3: g = g[..., 0]
     
@@ -52,9 +52,9 @@ def build_td3_state(x, g, elec_idx, n_elec, n_up, n_dn):
     spins = jnp.concatenate([jnp.ones(n_up), -jnp.ones(n_dn)])
     spin_i = spins[i]
     
-    local_feat = jnp.stack([x_i, x_i - jnp.mean(x, axis=1), jnp.tanh(g_i / 5.0), jnp.full_like(x_i, spin_i)], axis=-1)
+    local_feat = jnp.stack([x_i, x_i - jnp.mean(x, axis=1), jnp.tanh(g_i / quantum_force_norm), jnp.full_like(x_i, spin_i)], axis=-1)
     
-    global_feat = jnp.asarray([n_elec / 10.0, n_up / max(n_elec, 1), jnp.tanh(1.0), jnp.tanh(1.0), jnp.tanh(0.25)])
+    global_feat = jnp.asarray([n_elec / particle_factor, n_up / max(n_elec, 1), jnp.tanh(omega), jnp.tanh(gs), jnp.tanh(softening)])
     global_feat = jnp.broadcast_to(global_feat[None, :], (batch_size, 5))
     
     dx = x[:, i, None] - x
@@ -90,6 +90,11 @@ class FlaxTD3Actor(nn.Module):
     n_up: int
     n_dn: int
     actor_amplitude: float = 0.05
+    sigma_action_scale: float = 0.2
+    hidden_dim_local: int = 32
+    hidden_dim_global: int = 16
+    hidden_dim_messages: int = 32
+    hidden_dim_actor: int = 64
     
     @nn.compact
     def __call__(self, state):
@@ -100,29 +105,32 @@ class FlaxTD3Actor(nn.Module):
         same_slots = state[..., p : p + 3*max_same].reshape(state.shape[:-1] + (max_same, 3)); p += 3*max_same
         opp_slots = state[..., p : p + 3*max_opp].reshape(state.shape[:-1] + (max_opp, 3))
         
-        h_local = nn.silu(nn.Dense(32)(nn.silu(nn.Dense(32)(local_feat))))
-        h_global = nn.silu(nn.Dense(16)(nn.silu(nn.Dense(16)(global_feat))))
+        h_local = nn.silu(nn.Dense(self.hidden_dim_local)(nn.silu(nn.Dense(self.hidden_dim_local)(local_feat))))
+        h_global = nn.silu(nn.Dense(self.hidden_dim_global)(nn.silu(nn.Dense(self.hidden_dim_global)(global_feat))))
         
-        msg_same = nn.silu(nn.Dense(32)(nn.silu(nn.Dense(32)(same_slots))))
+        msg_same = nn.silu(nn.Dense(self.hidden_dim_messages)(nn.silu(nn.Dense(self.hidden_dim_messages)(same_slots))))
         mask_same = same_slots[..., 2:3]
         pool_same = jnp.sum(msg_same * mask_same, axis=-2) / jnp.maximum(jnp.sum(mask_same, axis=-2), 1.0)
         
-        msg_opp = nn.silu(nn.Dense(32)(nn.silu(nn.Dense(32)(opp_slots))))
+        msg_opp = nn.silu(nn.Dense(self.hidden_dim_messages)(nn.silu(nn.Dense(self.hidden_dim_messages)(opp_slots))))
         mask_opp = opp_slots[..., 2:3]
         pool_opp = jnp.sum(msg_opp * mask_opp, axis=-2) / jnp.maximum(jnp.sum(mask_opp, axis=-2), 1.0)
         
         fused = jnp.concatenate([h_local, h_global, pool_same, pool_opp], axis=-1)
-        h = nn.silu(nn.Dense(64)(fused))
+        h = nn.silu(nn.Dense(self.hidden_dim_actor)(fused))
         
         mean = nn.tanh(nn.Dense(1, kernel_init=nn.initializers.zeros)(h))
-        scale = nn.tanh(nn.Dense(1, kernel_init=nn.initializers.zeros)(h))
+        scale = self.sigma_action_scale * nn.tanh(nn.Dense(1, kernel_init=nn.initializers.zeros)(h))
         return jnp.concatenate([mean, scale], axis=-1)
 
 class FlaxTD3Critic(nn.Module):
+
+    hidden_dim_critic: int = 64
+
     @nn.compact
     def __call__(self, state, action):
         x = jnp.concatenate([state, action], axis=-1)
-        x = nn.silu(nn.Dense(64)(nn.silu(nn.Dense(64)(x))))
+        x = nn.silu(nn.Dense(self.hidden_dim_critic)(nn.silu(nn.Dense(self.hidden_dim_critic)(x))))
         return nn.Dense(1)(x)[..., 0]
 
 class FlaxFlatActor(nn.Module):
@@ -164,7 +172,10 @@ class FlaxFlatCritic(nn.Module):
 class TD3Trainer:
     def __init__(self, ansatz_apply, n_elec, n_up, n_dn, tau, actor_amp, 
                  beta=10.0, gamma_reward=0.1, gamma_td3=0.99, tau_polyak=0.005, 
-                 target_noise=0.15, lambda_ = 0.1, noise_clip=0.35, epsilon=0.001, actor_type="full"):
+                 target_noise=0.15, lambda_ = 1.0, noise_clip=0.35, epsilon=0.001, actor_type="full",
+                 drift_limit=10., max_phys_jump_factor=5.0, action_rev_limit=1.0, sigma_action_scale=0.2):
+
+        
         self.ansatz_apply = ansatz_apply
         self.n_elec, self.n_up, self.n_dn = n_elec, n_up, n_dn
         self.tau, self.actor_amp = tau, actor_amp
@@ -174,12 +185,16 @@ class TD3Trainer:
         self.epsilon = epsilon
         self.actor_type = actor_type
         self.lambda_ = lambda_
+        self.max_phys_jump_factor = max_phys_jump_factor
+        self.drift_limit = drift_limit
+        self.action_rev_limit = action_rev_limit
+        self.sigma_action_scale = sigma_action_scale
         
         if self.actor_type == "flat":
             self.actor_model = FlaxFlatActor(actor_amplitude=actor_amp)
             self.critic_model = FlaxFlatCritic()
         else:
-            self.actor_model = FlaxTD3Actor(n_up=n_up, n_dn=n_dn, actor_amplitude=actor_amp)
+            self.actor_model = FlaxTD3Actor(n_up=n_up, n_dn=n_dn, actor_amplitude=actor_amp, sigma_action_scale=self.sigma_action_scale)
             self.critic_model = FlaxTD3Critic()
 
     @partial(jax.jit, static_argnums=(0,))
@@ -210,8 +225,8 @@ class TD3Trainer:
         base_step = jnp.sqrt(2.0 * self.tau)
         sigma_fwd = jnp.maximum(base_step * jnp.exp(action_old[..., 1]), 1e-4)
         
-        drift_fwd = jnp.clip(self.tau * curr_grad[:, elec_idx, 0], -10.0, 10.0)
-        residual_fwd = base_step * action_old[..., 0] * self.actor_amp
+        drift_fwd = jnp.clip(self.tau * curr_grad[:, elec_idx, 0], -self.drift_limit, self.drift_limit)
+        residual_fwd = action_old[..., 0] * self.actor_amp
         
         old_coord = walkers[:, elec_idx, 0] 
         mean_fwd_dist = old_coord + drift_fwd + residual_fwd
@@ -231,17 +246,17 @@ class TD3Trainer:
         else:
             state_prop = build_td3_state(p_1d, ng_1d, elec_idx, self.n_elec, self.n_up, self.n_dn)
 
-        action_rev = jnp.clip(self.actor_model.apply(params_actor, state_prop) + aux_noise, -1.0, 1.0)
+        action_rev = jnp.clip(self.actor_model.apply(params_actor, state_prop) + aux_noise, -self.action_rev_limit, self.action_rev_limit)
         
         sigma_rev = jnp.maximum(base_step * jnp.exp(action_rev[..., 1]), 1e-4)
-        drift_rev = jnp.clip(self.tau * new_grad[:, elec_idx, 0], -10.0, 10.0)
-        residual_rev = base_step * action_rev[..., 0] * self.actor_amp
+        drift_rev = jnp.clip(self.tau * new_grad[:, elec_idx, 0], -self.drift_limit, self.drift_limit)
+        residual_rev = action_rev[..., 0] * self.actor_amp
         mean_rev_dist = proposed_coord + drift_rev + residual_rev
         
         log_q_fwd = -jnp.log(sigma_fwd) - 0.5 * ((proposed_coord - mean_fwd_dist) / sigma_fwd)**2
         log_q_rev = -jnp.log(sigma_rev) - 0.5 * ((old_coord - mean_rev_dist) / sigma_rev)**2
         
-        clipped_log_alpha = jnp.minimum(0.0, (new_logp - curr_logp) + (log_q_rev - log_q_fwd))
+        clipped_log_alpha = jnp.minimum(0.0, 2.0 * (new_logp - curr_logp) + (log_q_rev - log_q_fwd))
         accept = jnp.log(jax.random.uniform(k_acc, (n_w,), minval=1e-15)) < clipped_log_alpha
         
         next_w = jnp.where(accept[:, None, None], proposal, walkers)
@@ -249,7 +264,7 @@ class TD3Trainer:
         next_grad = jnp.where(accept[:, None, None], new_grad, curr_grad)
         
         disp = jnp.abs(proposed_coord - old_coord)
-        max_phys_jump = 5.0 * jnp.sqrt(self.tau)
+        max_phys_jump = self.max_phys_jump_factor * jnp.sqrt(self.tau)
         clipped_dist = jnp.clip(disp, a_min=0.0, a_max=max_phys_jump)
         alpha_exact = jnp.exp(clipped_log_alpha)
         
@@ -262,23 +277,27 @@ class TD3Trainer:
 
         # reward = jnp.log(self.epsilon + alpha_exact * (clipped_dist ** 2))
 
-        # # =================================================================
-        # # RECOMPENSA CDLB (Wang et al. 2026, Eq. 11)
-        # # =================================================================
-        # # A. Explotación: 2 * (log|Psi(X*)| - log|Psi(X)|)
+        # =================================================================
+        # RECOMPENSA CDLB (Wang et al. 2026, Eq. 11)
+        # =================================================================
+        # A. Explotación: 2 * (log|Psi(X*)| - log|Psi(X)|)
         log_p_diff = 2.0 * (new_logp - curr_logp)
         exploitation = alpha_exact * log_p_diff
 
-        # # B. Entropía de Aceptación (Añadiendo 1e-8 para evitar NaN en log(0))
+        # B. Entropía de Aceptación (Añadiendo 1e-8 para evitar NaN en log(0))
         entropy_alpha = -alpha_exact * jnp.log(alpha_exact + 1e-8) - (1.0 - alpha_exact) * jnp.log(1.0 - alpha_exact + 1e-8)
 
-        # # C. Exploración: -alpha * log q(X* | X)
-        # # En RMALA, la densidad de propuesta ya está en la variable log_q_fwd
+        # C. Exploración: -alpha * log q(X* | X)
+        # En RMALA, la densidad de propuesta ya está en la variable log_q_fwd
         exploration = -alpha_exact * log_q_fwd
 
         # # Recompensa combinada. Se multiplica por 0.1 para que el MSE del Crítico no explote
         reward = (exploitation + entropy_alpha + exploration) * self.lambda_
         # # =================================================================
+
+        # Recompensa Equilibrada: Fomenta saltos físicos largos, pero castiga si la aceptación cae de un umbral
+        #dist_sq = jnp.clip(disp**2, 0.0, max_phys_jump**2)
+        #reward = alpha_exact * dist_sq - self.penalty_factor * (1.0 - alpha_exact)**2
 
         # =================================================================
         # 3. Nueva recompensa idéntica a REINFORCE (ignoramos soft_node_penalty por rendimiento)

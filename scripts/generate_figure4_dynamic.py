@@ -82,7 +82,9 @@ def evaluate_model(dir_path, args, is_td3=False):
     n_elec, n_up, n_dn = cfg["n_elec"], cfg["n_up"], cfg["n_dn"]
     omega, g_val = cfg["interaction_strength"] if "interaction_strength" in cfg else cfg["g"], cfg.get("interaction_strength", cfg.get("g"))
     
-    with open(os.path.join(dir_path, f"{'TD3' if is_td3 else 'MALA'}_ansatz_weights.pkl"), "rb") as f: p_ansatz = pickle.load(f)
+    #with open(os.path.join(dir_path, f"{'TD3' if is_td3 else 'MALA'}_ansatz_weights.pkl"), "rb") as f: p_ansatz = pickle.load(f)
+    td3_master_path = os.path.join(os.path.dirname(dir_path), "TD3", "TD3_ansatz_weights.pkl")
+    with open(td3_master_path, "rb") as f: p_ansatz = pickle.load(f)
     p_act = None
     
     system = Harmonic_1D(name="Harm", n_elec=n_elec, n_up=n_up, n_dn=n_dn, coords=jnp.array([[0.0]]), charges=jnp.array([0]), omega=omega, interaction_strength=g_val, softening=cfg["softening"], dim=1)
@@ -98,10 +100,18 @@ def evaluate_model(dir_path, args, is_td3=False):
     if is_td3:
         with open(os.path.join(dir_path, "TD3_actor_weights.pkl"), "rb") as f: p_act = pickle.load(f)
         td3_model = FlaxTD3Actor(n_up=n_up, n_dn=n_dn, actor_amplitude=cfg["actor_amplitude"])
+
         def wrapper(p_a, w, e_idx, r_nuc, exp, grad):
-            st = build_td3_state(w[..., 0], grad[..., 0], e_idx, n_elec, n_up, n_dn)
+            st = build_td3_state(
+                w[..., 0], grad[..., 0], e_idx, n_elec, n_up, n_dn,
+                quantum_force_norm=cfg.get("force_scale", 5.0),
+                particle_factor=cfg.get("n_scale", 10.0),
+                dist_factor=cfg.get("r_scale", 5.0),
+                omega=omega, gs=g_val, softening=cfg["softening"]
+            )
             act = td3_model.apply(p_a, st)
-            return act[:, 0:1]*cfg["actor_amplitude"], act[:, 1:2], {}
+            return act[:, 0:1]*cfg.get("actor_amplitude", 0.15), act[:, 1:2], {}
+
         sampler = RLMALASampler_Huziel(ansatz_apply=ansatz.apply, system=system, batch_size=cfg["batch_size"], actor_apply=wrapper, tau=cfg["tau"], gamma=0.1, beta=10.0, kappa=0.5, penalty_factor=0.1, max_clip_log_ratio=50.0, min_clip_log_ratio=-50.0, nan_clip_log_ratio=-50.0, neginf_clip_log_ratio=-50.0, posinf_clip_log_ratio=50.0, scale_clip_min=-5.0, scale_clip_max=1.0, min_clip_grads_ansatz=-20.0, max_clip_grads_ansatz=20.0)
     else:
         sampler = MALASampler(ansatz.apply, cfg["batch_size"], cfg["tau"], system, 20.0, -20.0, 50.0, -50.0, -50.0, -50.0, 50.0)
@@ -170,8 +180,11 @@ def main():
     
     stats_data = {
         "N": cfg["n_elec"], "g": g_val, "omega": cfg["omega"],
-        "MALA_best_tau": best_mala["tau"], "MALA_ESS_mean": float(best_mala["ess_mean"]), "MALA_ESS_std": float(best_mala.get("ess_std", 0)),
-        "TD3_ESS_mean": float(res_td3["ess_mean"]), "TD3_ESS_std": float(res_td3["ess_std"])
+        "MALA_best_tau": best_mala["tau"], 
+        "MALA_ESS_mean": float(best_mala["ess_mean"]), 
+        "MALA_tau_int_mean": float(best_mala["tau_mean"]),
+        "TD3_ESS_mean": float(res_td3["ess_mean"]), 
+        "TD3_tau_int_mean": float(res_td3["tau_mean"])
     }
     
     with open(os.path.join(args.sys_dir, "stats.json"), "w") as f:

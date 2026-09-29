@@ -25,14 +25,16 @@ def autocorr(x):
     result = np.correlate(x, x, mode='full')
     return result[result.size // 2:] / result[result.size // 2]
 
-def calculate_iat(acf_array):
+def calculate_iat(acf_array, c=5.0):
     tau = 1.0
-    for rho in acf_array[1:]:
-        if rho < 0: break
+    for t, rho in enumerate(acf_array[1:], 1):
+        if rho < 0.05 or t >= c * tau: 
+            break
         tau += 2.0 * rho
     return tau
 
-@partial(jax.jit, static_argnums=(0, 5))
+# CORRECCIÓN: static_argnums=(0, 4) porque chunk_size ahora es el argumento 4 (el quinto)
+@partial(jax.jit, static_argnums=(0, 4))
 def _collect_chunk(sampler_obj, w_start, k_start, p_psi, chunk_size):
     def step_fn(carry, _):
         w, k, cache = carry
@@ -112,7 +114,7 @@ def main():
             t_total = time.time() - t0
             
             eloc_w0 = get_eloc_safe(p_ansatz, hist_w[:, 0, :, 0], sys_cfg, wf_cfg, orbital_cfg, correlation_cfg)
-            tau_int = calculate_iat(autocorr(eloc_w0)[:2000])
+            tau = calculate_iat(autocorr(eloc_w0))
             ess_s = ((len(hist_w) * cfg["batch_size"]) / max(tau_int, 1.0)) / max(t_total, 1e-6)
             
             if ess_s > best_ess:

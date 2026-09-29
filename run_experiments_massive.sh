@@ -7,14 +7,14 @@
 # ------------------------------------------------------------------------------
 # 1. BARRIDOS Y PARÁMETROS FÍSICOS
 # ------------------------------------------------------------------------------
-BASE_DIR="results_massive_2"
+BASE_DIR="results_massive_4"
 mkdir -p "$BASE_DIR"
 
 #NS=(2 4 6 10)
 NS=(4 10)
 #GS=(0.01 0.1 0.5 1.0 2.0 3.0 4.0 5.0)
 GS=(0.1 1.0 3.0 5.0)
-TAUS_MALA=(0.001 0.005 0.01 0.02 0.05)
+TAUS_MALA=(0.001 0.005 0.01 0.05)
 GPUS=(0) # GPUs disponibles en tu servidor
 
 # ------------------------------------------------------------------------------
@@ -35,13 +35,13 @@ BF_ENV_LEN=3.0
 
 # Entrenamiento VMC / RL
 BATCH_SIZE=1024
-ACTOR_AMPLITUDE=0.01
+ACTOR_AMPLITUDE=0.15
 LR_ANSATZ=5e-5
 LR_ACTOR=5e-5
 LR_CRITIC=5e-4
 TRAIN_STEPS=100000
 MEASURE_STEPS=5000
-N_TER_TRAIN=0
+N_TER_TRAIN=2000
 
 # Ciclos Acoplados TD3 (Staggered Transfer)
 COUPLED_CYCLES=8

@@ -2,9 +2,9 @@
     "N": 10,
     "g": 5.0,
     "omega": 0.1,
-    "MALA_best_tau": 0.02,
-    "MALA_ESS_mean": 23414.15625,
-    "MALA_ESS_std": 3876.198974609375,
-    "TD3_ESS_mean": 36337.171875,
-    "TD3_ESS_std": 4039.93359375
+    "MALA_best_tau": 0.05,
+    "MALA_ESS_mean": 1160453.375,
+    "MALA_ESS_std": 584534.25,
+    "TD3_ESS_mean": 23701.94140625,
+    "TD3_ESS_std": 2800.886474609375
 }

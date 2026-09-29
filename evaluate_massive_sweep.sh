@@ -8,11 +8,11 @@
 # ------------------------------------------------------------------------------
 # 1. HIPERPARÁMETROS Y RUTAS CONFIGURABLES
 # ------------------------------------------------------------------------------
-BASE_DIR="results_massive"
+BASE_DIR="results_massive_2"
 
 # Espacio físico evaluado (Debe coincidir con las carpetas existentes)
-NS=(2 4 6 10)
-GS=(0.01 0.1 0.5 1.0 2.0 3.0 4.0 5.0)
+NS=(4 10)
+GS=(0.1 1.0 3.0 5.0)
 OMEGA=0.1
 
 # Parámetros estrictos de la evaluación (MCMC)
