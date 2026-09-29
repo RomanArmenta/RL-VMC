@@ -205,7 +205,7 @@ for n in "${NS[@]}"; do
             FREE_GPU=$(get_free_gpu)
             
             echo "[$(date +'%H:%M:%S')] -> MALA (Tau=${tau}) en GPU ${FREE_GPU} [Seed=${SEED}]"
-            CUDA_VISIBLE_DEVICES="$FREE_GPU" nohup python3 -u scripts/run_experiment_1D_4.py \
+            CUDA_VISIBLE_DEVICES="$FREE_GPU" nohup python3 -u scripts/run_experiment_1D_5.py \
                 --method="MALA" --n_elec=$n --n_up=$N_UP --n_dn=$N_DN \
                 --omega=$OMEGA --interaction_strength=$g --softening=$SOFTENING \
                 --wf_model=$WF_MODEL --orbital_model=$ORBITAL_MODEL --correlation_model=$CORR_MODEL \

@@ -1,6 +1,7 @@
 # .gitignore
 logs/
 results/
+results_massive_2/
 __pycache__/
 *.pkl
 *.csv
