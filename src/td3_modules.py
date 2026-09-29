@@ -202,6 +202,79 @@ class TD3Trainer:
         def single_logp(w): return self.ansatz_apply(params_psi, w[None, ...])[0]
         return jax.vmap(jax.value_and_grad(single_logp))(walkers)
 
+    @partial(jax.jit, static_argnums=(0,))
+    def td3_update_all_electrons(self, key, walkers, curr_logp, curr_grad, params_psi, params_actor, exp_std):
+        n_w = walkers.shape[0]
+        k_act, k_prop, k_acc = jax.random.split(key, 3)
+        
+        w_1d = walkers[..., 0] if walkers.ndim == 3 else walkers
+        g_1d = curr_grad[..., 0] if curr_grad.ndim == 3 else curr_grad
+        
+        # 1. Estado Global: Vectorizar sobre todos los electrones -> Shape: (N_elec, Batch, Dim)
+        state_vmap = jax.vmap(build_td3_state, in_axes=(None, None, 0, None, None, None))
+        state_old = state_vmap(w_1d, g_1d, jnp.arange(self.n_elec), self.n_elec, self.n_up, self.n_dn)
+        state_old = jnp.transpose(state_old, (1, 0, 2)) # Transponer a (Batch, N_elec, Dim)
+        
+        # 2. Acción Global
+        actor_vmap = jax.vmap(self.actor_model.apply, in_axes=(None, 1), out_axes=1)
+        base_act = actor_vmap(params_actor, state_old)
+        aux_noise = exp_std * jax.random.normal(k_act, base_act.shape)
+        action_old = jnp.clip(base_act + aux_noise, -1.0, 1.0)
+        
+        # 3. Propuesta Híbrida Simultánea
+        base_step = jnp.sqrt(2.0 * self.tau)
+        sigma_fwd = jnp.maximum(base_step * jnp.exp(action_old[..., 1]), 1e-4)
+        drift_fwd = jnp.clip(self.tau * curr_grad[..., 0], -self.drift_limit, self.drift_limit)
+        residual_fwd = action_old[..., 0] * self.actor_amp
+        
+        old_coord = walkers[..., 0]
+        mean_fwd_dist = old_coord + drift_fwd + residual_fwd
+        proposed_coord = mean_fwd_dist + sigma_fwd * jax.random.normal(k_prop, old_coord.shape)
+        
+        # Inyectar dimensión espacial
+        proposal = proposed_coord[..., None] if walkers.ndim == 3 else proposed_coord
+        new_logp, new_grad = self.get_logp_and_grad(params_psi, proposal)
+        
+        p_1d = proposal[..., 0] if proposal.ndim == 3 else proposal
+        ng_1d = new_grad[..., 0] if new_grad.ndim == 3 else new_grad
+
+        # 4. Evaluación Inversa Simultánea
+        state_prop = jnp.transpose(state_vmap(p_1d, ng_1d, jnp.arange(self.n_elec), self.n_elec, self.n_up, self.n_dn), (1, 0, 2))
+        action_rev = jnp.clip(actor_vmap(params_actor, state_prop) + aux_noise, -self.action_rev_limit, self.action_rev_limit)
+        
+        sigma_rev = jnp.maximum(base_step * jnp.exp(action_rev[..., 1]), 1e-4)
+        drift_rev = jnp.clip(self.tau * new_grad[..., 0], -self.drift_limit, self.drift_limit)
+        residual_rev = action_rev[..., 0] * self.actor_amp
+        mean_rev_dist = proposed_coord + drift_rev + residual_rev
+        
+        # 5. Kernel Asimétrico Global
+        log_q_fwd = jnp.sum(-jnp.log(sigma_fwd) - 0.5 * ((proposed_coord - mean_fwd_dist) / sigma_fwd)**2, axis=-1)
+        log_q_rev = jnp.sum(-jnp.log(sigma_rev) - 0.5 * ((old_coord - mean_rev_dist) / sigma_rev)**2, axis=-1)
+        
+        clipped_log_alpha = jnp.minimum(0.0, 2.0 * (new_logp - curr_logp) + (log_q_rev - log_q_fwd))
+        accept = jnp.log(jax.random.uniform(k_acc, (n_w,), minval=1e-15)) < clipped_log_alpha
+        
+        next_w = jnp.where(accept[:, None, None], proposal, walkers)
+        next_logp = jnp.where(accept, new_logp, curr_logp)
+        next_grad = jnp.where(accept[:, None, None], new_grad, curr_grad)
+        
+        # 6. Recompensa (Ajustada al cálculo CDLB ya corregido)
+        disp = jnp.mean(jnp.abs(proposed_coord - old_coord), axis=-1)
+        alpha_exact = jnp.exp(clipped_log_alpha)
+        
+        log_p_diff = 2.0 * (new_logp - curr_logp)
+        exploitation = alpha_exact * log_p_diff
+        entropy_alpha = -alpha_exact * jnp.log(alpha_exact + 1e-8) - (1.0 - alpha_exact) * jnp.log(1.0 - alpha_exact + 1e-8)
+        exploration = -alpha_exact * log_q_fwd
+        
+        reward = self.penalty_factor * (exploitation + entropy_alpha + exploration)
+        
+        nw_1d = next_w[..., 0] if next_w.ndim == 3 else next_w
+        nwg_1d = next_grad[..., 0] if next_grad.ndim == 3 else next_grad
+        next_state = jnp.transpose(state_vmap(nw_1d, nwg_1d, jnp.arange(self.n_elec), self.n_elec, self.n_up, self.n_dn), (1, 0, 2))
+        
+        return next_w, next_logp, next_grad, state_old, action_old, reward, next_state, accept, disp
+
     @partial(jax.jit, static_argnums=(0, 7))
     def td3_update_one_electron(self, key, walkers, curr_logp, curr_grad, params_psi, params_actor, elec_idx, exp_std):
         n_w = walkers.shape[0]

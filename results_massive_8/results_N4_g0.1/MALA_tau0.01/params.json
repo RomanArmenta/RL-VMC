@@ -50,7 +50,7 @@
     "neginf_clip_log_ratio": -50.0,
     "scale_clip_min": -5.0,
     "scale_clip_max": 1.0,
-    "seed": 4852,
+    "seed": 22811,
     "n_print": 100,
     "n_log": 50,
     "steps_for_best": 500,

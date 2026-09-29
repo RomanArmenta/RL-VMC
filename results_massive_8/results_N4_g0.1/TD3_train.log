@@ -1,8 +1,0 @@
-JAX was imported before deepqmc, TensorFloat32 precision might be enabled. You may experience numerical issues.
-Iniciando RL-VMC (Staggered Transfer Learning) - Version 4 (Fully Parameterized)
-rewards = kappa * (1 - ratio) * alpha + alpha * |x - x_prop|^2
-
-Termalizando caminantes TD3 por 2000 pasos...
-Termalización completada. Iniciando entrenamiento acoplado...
-
---- CICLO TD3 1/8 ---
