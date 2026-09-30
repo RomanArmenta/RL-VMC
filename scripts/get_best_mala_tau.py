@@ -123,7 +123,8 @@ def main():
         except Exception:
             pass
 
-    print(best_tau)
+    print(best_tau, flush=True)
+    os._exit(0)
 
 if __name__ == "__main__":
     main()

@@ -213,5 +213,8 @@ def main():
     plt.savefig(os.path.join(args.sys_dir, "Figure4_Efficiency.pdf"), dpi=300, format='pdf')
     plt.close()
 
+    sys.stdout.flush()
+    os._exit(0)
+
 if __name__ == "__main__":
     main()

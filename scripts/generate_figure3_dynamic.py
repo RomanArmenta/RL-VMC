@@ -6,6 +6,7 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
+import sys
 
 def main():
     parser = argparse.ArgumentParser()
@@ -59,6 +60,9 @@ def main():
     out_pdf = os.path.join(args.base_dir, f"Figure3_LambdaSweep_N{args.n_elec}.pdf")
     plt.savefig(out_pdf, dpi=300, format='pdf')
     print(f"Figura 3 generada y guardada en {out_pdf}")
+
+    sys.stdout.flush()
+    os._exit(0)
 
 if __name__ == "__main__":
     main()

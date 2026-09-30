@@ -389,6 +389,7 @@ def main():
     pd.DataFrame(training_history).to_csv(os.path.join(out_dir, "training_metrics.csv"), index=False)
     pd.DataFrame({"Step": np.arange(args.measure_steps), "E_Local_Mean": np.mean(np.array(el_hist), axis=1), "Acceptance": np.array(acc_hist)}).to_csv(os.path.join(out_dir, "measurement_data.csv"), index=False)
     print(f"Tiempo Total: {(time.time() - global_start_time)/60:.2f} minutos")
+    os._exit(0)
 
 if __name__ == "__main__":
     main()

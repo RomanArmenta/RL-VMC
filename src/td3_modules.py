@@ -267,7 +267,7 @@ class TD3Trainer:
         entropy_alpha = -alpha_exact * jnp.log(alpha_exact + 1e-8) - (1.0 - alpha_exact) * jnp.log(1.0 - alpha_exact + 1e-8)
         exploration = -alpha_exact * log_q_fwd
         
-        reward = self.penalty_factor * (exploitation + entropy_alpha + exploration)
+        reward = self.lambda_ * (exploitation + entropy_alpha + exploration)
         
         nw_1d = next_w[..., 0] if next_w.ndim == 3 else next_w
         nwg_1d = next_grad[..., 0] if next_grad.ndim == 3 else next_grad
