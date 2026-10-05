@@ -140,6 +140,8 @@ def evaluate_model(dir_path, args, is_td3=False):
 
     return {
         "dir_name": os.path.basename(dir_path),
+        "N": n_elec,
+        "g": g_val,
         "ess_mean": np.mean(ess_results), 
         "ess_std": np.std(ess_results), 
         "tau_mean": np.mean(tau_results),
@@ -161,9 +163,10 @@ def main():
     mala_dirs = [d for d in glob.glob(os.path.join(mala_base_dir, "MALA_tau*")) if os.path.isdir(d)]
     td3_dirs = [d for d in glob.glob(os.path.join(args.base_dir, "TD3_amp*")) if os.path.isdir(d)]
 
-    # 1. Evaluar MALA y encontrar la mejor línea base
+# 1. Evaluar MALA y encontrar la mejor línea base
     print("Evaluando baselines de MALA...")
-    best_mala = {"ess_mean": -1, "tau_mean": float('inf')}
+    # CORRECCIÓN: Agregar dir_name por defecto para evitar KeyError
+    best_mala = {"dir_name": "None", "ess_mean": -1, "tau_mean": float('inf')}
     for m_dir in mala_dirs:
         try:
             res = evaluate_model(m_dir, args, is_td3=False)
@@ -171,6 +174,10 @@ def main():
                 best_mala = res
         except Exception as e:
             print(f"Error en {m_dir}: {e}")
+
+    if best_mala["ess_mean"] == -1:
+        print("[ERROR CRÍTICO] Ningún MALA generó pesos válidos. Abortando evaluación.", file=sys.stderr)
+        os._exit(1)
 
     # 2. Evaluar todo el Grid Search de TD3
     print(f"Mejor MALA: {best_mala['dir_name']} (Tau={best_mala['tau_mean']:.2f}, ESS/s={best_mala['ess_mean']:.0f})")
@@ -187,7 +194,11 @@ def main():
         except Exception as e:
             print(f" -> Falla en {os.path.basename(td3_dir)}: {e}")
 
-    # 3. Guardar resultados
+    # 3. Guardar resultados (¡BLINDADO!)
+    if len(td3_results) == 0:
+        print("ERROR CRÍTICO: Ningún modelo TD3 generó resultados válidos. Revisa los logs de entrenamiento.")
+        os._exit(1)
+        
     df = pd.DataFrame(td3_results).sort_values("G_RL", ascending=False)
     df.to_csv(os.path.join(args.base_dir, "hyperparam_sweep_results.csv"), index=False)
     
@@ -222,8 +233,9 @@ def main():
     ax2.plot(labels, top_df["ess_mean"], color=color, marker='o', linewidth=2, markersize=8, label="Wall-clock ESS/s")
     ax2.tick_params(axis='y', labelcolor=color)
     ax2.set_yscale('log')
-    
-    fig.suptitle(r"Hyperparameter Grid Search Evaluation: Strongly Correlated Wigner Regime ($N=10, g=5.0$)", weight='bold', fontsize=15)
+    sys_N = top_df.iloc[0]["N"]
+    sys_g = top_df.iloc[0]["g"]
+    fig.suptitle(fr"Hyperparameter Grid Search Evaluation: Strongly Correlated Wigner Regime ($N={sys_N}, g={sys_g}$)", weight='bold', fontsize=15)
     fig.tight_layout()
     plt.savefig(os.path.join(args.base_dir, "Hyperparam_Sweep_Dashboard.pdf"), dpi=300, format='pdf')
     print("Dashboard del Grid Search generado y guardado con éxito.")

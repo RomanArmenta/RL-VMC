@@ -33,7 +33,6 @@ def calculate_iat(acf_array, c=5.0):
         tau += 2.0 * rho
     return tau
 
-# CORRECCIÓN: static_argnums=(0, 4) porque chunk_size ahora es el argumento 4 (el quinto)
 @partial(jax.jit, static_argnums=(0, 4))
 def _collect_chunk(sampler_obj, w_start, k_start, p_psi, chunk_size):
     def step_fn(carry, _):
@@ -91,7 +90,7 @@ def main():
             
             n_elec, n_up, n_dn = cfg["n_elec"], cfg["n_up"], cfg["n_dn"]
             omega, g_val = cfg["omega"], cfg.get("interaction_strength", cfg.get("g"))
-            tau = cfg["tau"]
+            tau_val = cfg["tau"]
 
             system = Harmonic_1D(name="Harm", n_elec=n_elec, n_up=n_up, n_dn=n_dn, coords=jnp.array([[0.0]]), charges=jnp.array([0]), omega=omega, interaction_strength=g_val, softening=cfg["softening"], dim=1)
             sys_cfg = SystemConfig(n_electrons=n_elec, n_up=n_up, omega=omega, interaction_strength=g_val, softening=cfg["softening"])
@@ -103,7 +102,7 @@ def main():
             ansatz = Ansatz1D_Backflow(system, wf_cfg, orbital_cfg, correlation_cfg)
             ansatz_apply = ansatz.apply
 
-            sampler = MALASampler(ansatz.apply, cfg["batch_size"], tau, system, 20.0, -20.0, 50.0, -50.0, -50.0, -50.0, 50.0)
+            sampler = MALASampler(ansatz.apply, cfg["batch_size"], tau_val, system, 20.0, -20.0, 50.0, -50.0, -50.0, -50.0, 50.0)
 
             key = jax.random.PRNGKey(42)
             w_init = jax.random.normal(key, (cfg["batch_size"], n_elec, 1))
@@ -114,14 +113,15 @@ def main():
             t_total = time.time() - t0
             
             eloc_w0 = get_eloc_safe(p_ansatz, hist_w[:, 0, :, 0], sys_cfg, wf_cfg, orbital_cfg, correlation_cfg)
-            tau = calculate_iat(autocorr(eloc_w0))
-            ess_s = ((len(hist_w) * cfg["batch_size"]) / max(tau_int, 1.0)) / max(t_total, 1e-6)
+            
+            tau_sokal = calculate_iat(autocorr(eloc_w0))
+            ess_s = ((len(hist_w) * cfg["batch_size"]) / max(tau_sokal, 1.0)) / max(t_total, 1e-6)
             
             if ess_s > best_ess:
                 best_ess = ess_s
-                best_tau = tau
-        except Exception:
-            pass
+                best_tau = tau_val
+        except Exception as e:
+            print(f"Error procesando {dir_path}: {e}", file=sys.stderr)
 
     print(best_tau, flush=True)
     os._exit(0)

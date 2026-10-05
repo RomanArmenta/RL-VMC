@@ -182,8 +182,10 @@ def main():
         "N": cfg["n_elec"], "g": g_val, "omega": cfg["omega"],
         "MALA_best_tau": best_mala["tau"], 
         "MALA_ESS_mean": float(best_mala["ess_mean"]), 
+        "MALA_ESS_std": float(best_mala.get("ess_std", 0.0)),  # <- CLAVE AÑADIDA
         "MALA_tau_int_mean": float(best_mala["tau_mean"]),
         "TD3_ESS_mean": float(res_td3["ess_mean"]), 
+        "TD3_ESS_std": float(res_td3.get("ess_std", 0.0)),     # <- CLAVE AÑADIDA
         "TD3_tau_int_mean": float(res_td3["tau_mean"])
     }
     

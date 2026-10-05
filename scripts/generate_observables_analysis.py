@@ -10,6 +10,7 @@ import jax.numpy as jnp
 import matplotlib.pyplot as plt
 import seaborn as sns
 from functools import partial
+import sys
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from src.system import Harmonic_1D
@@ -163,16 +164,17 @@ def main():
     # Plotting
     sns.set_theme(style="whitegrid", context="paper", font_scale=1.2)
     fig, axs = plt.subplots(2, 2, figsize=(14, 10))
-    fig.suptitle(f"Deep Statistical Scan", weight='bold', fontsize=16)
+    fig.suptitle(f"Deep Statistical Scan: MALA vs RL-MALA", weight='bold', fontsize=16)
 
-    # Panel 1: Función de Autocorrelación (ACF)
+    # Panel 1: Función de Autocorrelación (ACF) ZoomDinámico
     axs[0, 0].plot(res_mala["acf"], color='#7f8c8d', linewidth=2, label=res_mala["label"])
     axs[0, 0].plot(res_td3["acf"], color='#2c3e50', linewidth=2, label=res_td3["label"])
     axs[0, 0].axhline(0.05, color='r', linestyle='--', alpha=0.5, label='Sokal Threshold')
     axs[0, 0].set_title("Energy Autocorrelation Function (ACF)", weight='bold')
     axs[0, 0].set_xlabel("Lag (steps)")
     axs[0, 0].set_ylabel(r"$\rho(t)$")
-    axs[0, 0].set_xlim(0, 2500)
+    axs[0, 0].set_xlim(0, 500) # Zoom en los primeros 500 lags
+    axs[0, 0].set_ylim(-0.2, 0.4) # Zoom asimétrico al centro
     axs[0, 0].legend()
 
     # Panel 2: Varianza Móvil de la Energía
@@ -183,13 +185,16 @@ def main():
     axs[0, 1].set_xlabel("MCMC Step")
     axs[0, 1].set_ylabel(r"$Var(E_L)$")
 
-    # Panel 3: Perfil de Densidad Unidimensional
+    # Panel 3: Perfil de Densidad Unidimensional Dinámico
     sns.kdeplot(res_mala["density"], ax=axs[1, 0], color='#7f8c8d', fill=True, alpha=0.3, label=res_mala["label"])
     sns.kdeplot(res_td3["density"], ax=axs[1, 0], color='#2c3e50', fill=True, alpha=0.3, label=res_td3["label"])
     axs[1, 0].set_title(r"One-Body Density $\rho(x)$", weight='bold')
     axs[1, 0].set_xlabel("Position (x)")
     axs[1, 0].set_ylabel("Density")
-    axs[1, 0].set_xlim(-6, 6)
+    # Dinámico: basar el X_limite en los percentiles 1 y 99 de los datos para no cortar las colas
+    min_x = np.percentile(res_td3["density"], 1) - 1.0
+    max_x = np.percentile(res_td3["density"], 99) + 1.0
+    axs[1, 0].set_xlim(min_x, max_x)
 
     # Panel 4: Distribución de Pares (Hueco de Fermi/Coulomb)
     sns.kdeplot(res_mala["pair_distances"], ax=axs[1, 1], color='#7f8c8d', linewidth=2, label=res_mala["label"])
@@ -197,13 +202,14 @@ def main():
     axs[1, 1].set_title(r"Pairwise Distance Distribution $P(r_{ij})$", weight='bold')
     axs[1, 1].set_xlabel(r"Distance $r_{ij}$")
     axs[1, 1].set_ylabel("Density")
-    axs[1, 1].set_xlim(0, 8)
+    max_dist = np.percentile(res_td3["pair_distances"], 99) + 0.5
+    axs[1, 1].set_xlim(0, max_dist)
 
     plt.tight_layout()
     out_file = os.path.join(args.out_dir, "Winning_Config_Observables.pdf")
     plt.savefig(out_file, dpi=300, format='pdf')
     print(f"Escaneo de observables generado: {out_file}")
-
+    
     sys.stdout.flush()
     os._exit(0)
 
