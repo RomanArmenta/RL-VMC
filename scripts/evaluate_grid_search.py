@@ -161,7 +161,8 @@ def main():
 
     mala_base_dir = os.path.join(args.base_dir, "MALA_Baselines")
     mala_dirs = [d for d in glob.glob(os.path.join(mala_base_dir, "MALA_tau*")) if os.path.isdir(d)]
-    td3_dirs = [d for d in glob.glob(os.path.join(args.base_dir, "TD3_amp*")) if os.path.isdir(d)]
+    # Busca cualquier carpeta que empiece con TD3_, pero ignora el symlink genérico "TD3"
+    td3_dirs = [d for d in glob.glob(os.path.join(args.base_dir, "TD3_*")) if os.path.isdir(d) and os.path.basename(d) != "TD3"]
 
 # 1. Evaluar MALA y encontrar la mejor línea base
     print("Evaluando baselines de MALA...")

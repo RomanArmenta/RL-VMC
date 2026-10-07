@@ -47,11 +47,16 @@ def main():
             if 'mag_mala' in df_td3.columns:
                 axs[1, 0].plot(df_td3['Step'], df_td3['mag_mala'], color='gray', linestyle=':', label="Base Langevin Mag")
             
-        # Panel 4: Salud de RL (Componentes de Recompensa)
-        if all(k in df_td3.columns for k in ['mean_reward', 'reward_dist', 'reward_penalty']):
+        # Panel 4: Salud de RL (Tolerante a columnas faltantes)
+        if 'mean_reward' in df_td3.columns:
             l1 = axs[1, 1].plot(df_td3['Step'], df_td3['mean_reward'], color='purple', linewidth=2, label="Total Reward (CDLB)")
-            l2 = axs[1, 1].plot(df_td3['Step'], df_td3['reward_dist'], color='green', linestyle='--', alpha=0.7, label="Exploration (Dist)")
-            l3 = axs[1, 1].plot(df_td3['Step'], -df_td3['reward_penalty'], color='red', linestyle=':', alpha=0.7, label="Penalty (Force)")
+            lns = l1
+            
+            # Si existen las componentes desglosadas, graficarlas
+            if 'reward_dist' in df_td3.columns and 'reward_penalty' in df_td3.columns:
+                l2 = axs[1, 1].plot(df_td3['Step'], df_td3['reward_dist'], color='green', linestyle='--', alpha=0.7, label="Exploration (Dist)")
+                l3 = axs[1, 1].plot(df_td3['Step'], -df_td3['reward_penalty'], color='red', linestyle=':', alpha=0.7, label="Penalty (Force)")
+                lns = l1 + l2 + l3
             
             axs[1, 1].axhline(0, color='gray', linestyle='-')
             
@@ -60,10 +65,8 @@ def main():
                 l4 = ax_loss.plot(df_td3['Step'], df_td3['Actor_Loss'], color='orange', alpha=0.5, label="Actor Loss")
                 ax_loss.set_yscale('symlog')
                 ax_loss.set_ylabel("Loss", color='orange')
-            else:
-                l4 = []
+                lns += l4
                 
-            lns = l1 + l2 + l3 + l4
             labs = [l.get_label() for l in lns]
             axs[1, 1].legend(lns, labs, loc='center right')
 

@@ -31,11 +31,11 @@
     "lr_actor": 1e-05,
     "lr_critic": 0.0001,
     "train_steps": 5000,
-    "measure_steps": 10000,
-    "n_ter": 10000,
-    "coupled_training_cycles": 16,
+    "measure_steps": 5000,
+    "n_ter": 3000,
+    "coupled_training_cycles": 8,
     "vmc_iterations_per_cycle": 12500,
-    "rl_sweeps_per_cycle": 5000,
+    "rl_sweeps_per_cycle": 2500,
     "rl_replay_capacity": 10000,
     "rl_gamma_td3": 0.99,
     "energy_clip_min": -5000.0,
@@ -54,5 +54,5 @@
     "n_print": 100,
     "n_log": 50,
     "steps_for_best": 1000,
-    "results_out_dir": "results_linear_search_4/results_N10_g20.0/TD3_amp0.10_pen0.3_sig0.2_jmp3.0"
+    "results_out_dir": "results_linear_search_3/results_N10_g20.0/TD3_amp0.10_pen0.3_sig0.2_jmp3.0"
 }

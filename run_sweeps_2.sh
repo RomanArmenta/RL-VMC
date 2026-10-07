@@ -4,7 +4,7 @@
 # 0. PARSEO DE ARGUMENTOS
 # ==============================================================================
 MODE="train" # Por defecto
-BASE_DIR_NAME="1D_N4_sweep_g"
+BASE_DIR_NAME="1D_N10_sweep_g"
 
 while [[ "$#" -gt 0 ]]; do
     case $1 in

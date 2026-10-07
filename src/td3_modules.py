@@ -273,7 +273,7 @@ class TD3Trainer:
         nwg_1d = next_grad[..., 0] if next_grad.ndim == 3 else next_grad
         next_state = jnp.transpose(state_vmap(nw_1d, nwg_1d, jnp.arange(self.n_elec), self.n_elec, self.n_up, self.n_dn), (1, 0, 2))
         
-        return next_w, next_logp, next_grad, state_old, action_old, reward, next_state, accept, disp
+        return next_w, next_logp, next_grad, state_old, action_old, reward, exploitation, entropy_alpha, exploration, next_state, accept, disp
 
     @partial(jax.jit, static_argnums=(0, 7))
     def td3_update_one_electron(self, key, walkers, curr_logp, curr_grad, params_psi, params_actor, elec_idx, exp_std):

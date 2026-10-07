@@ -30,9 +30,9 @@
     "lr_ansatz": 1e-05,
     "lr_actor": 0.001,
     "lr_critic": 0.0003,
-    "train_steps": 200000,
-    "measure_steps": 10000,
-    "n_ter": 10000,
+    "train_steps": 100000,
+    "measure_steps": 5000,
+    "n_ter": 3000,
     "coupled_training_cycles": 8,
     "vmc_iterations_per_cycle": 1250,
     "rl_sweeps_per_cycle": 100,
@@ -54,5 +54,5 @@
     "n_print": 100,
     "n_log": 50,
     "steps_for_best": 1000,
-    "results_out_dir": "results_linear_search_4/results_N10_g20.0/MALA_Baselines/MALA_tau0.0005"
+    "results_out_dir": "results_linear_search_3/results_N10_g20.0/MALA_Baselines/MALA_tau0.0005"
 }

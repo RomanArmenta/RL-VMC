@@ -1,0 +1,16 @@
+JAX was imported before deepqmc, TensorFloat32 precision might be enabled. You may experience numerical issues.
+Iniciando RL-VMC (Staggered Transfer Learning) - Version 4 (Fully Parameterized)
+rewards = kappa * (1 - ratio) * alpha + alpha * |x - x_prop|^2
+
+Termalizando caminantes TD3 por 5000 pasos...
+Termalización completada. Iniciando entrenamiento acoplado...
+
+--- CICLO TD3 1/20 ---
+Traceback (most recent call last):
+  File "/home/huziel/RomanArmenta/RL-VMC/scripts/run_experiment_1D_6.py", line 408, in <module>
+    main()
+    ~~~~^^
+  File "/home/huziel/RomanArmenta/RL-VMC/scripts/run_experiment_1D_6.py", line 312, in main
+    stats["reward_entropy"] = last_reward_entropy # NUEVO
+                              ^^^^^^^^^^^^^^^^^^^
+UnboundLocalError: cannot access local variable 'last_reward_entropy' where it is not associated with a value
