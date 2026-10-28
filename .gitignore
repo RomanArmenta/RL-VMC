@@ -12,3 +12,5 @@ __pycache__/
 venv/
 params/
 #plot_results.py
+**/results*/
+**/logs*/
