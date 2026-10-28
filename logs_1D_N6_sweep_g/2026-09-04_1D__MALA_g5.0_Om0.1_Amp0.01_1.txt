@@ -1,6 +1,0 @@
-JAX was imported before deepqmc, TensorFloat32 precision might be enabled. You may experience numerical issues.
-Traceback (most recent call last):
-  File "/home/huziel/RomanArmenta/RL-VMC/scripts/run_experiment_1D_2.py", line 31, in <module>
-    @partial(jax.jit, static_argnums=(0, 6))
-     ^^^^^^^
-NameError: name 'partial' is not defined

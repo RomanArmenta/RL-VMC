@@ -1,9 +1,0 @@
-JAX was imported before deepqmc, TensorFloat32 precision might be enabled. You may experience numerical issues.
-Staggered transfer learning
-rewards = kappa * (1 - ratio) * alpha + alpha * |x - x_prop|^2
-
-Termalizando caminantes TD3 por 0 pasos...
-Termalización completada. Iniciando entrenamiento acoplado...
-
---- CICLO TD3 1/8 ---
-Step: 00000 | E_mean: 251.0248 | Time(s): 4.144 | Stage: VMC | acceptance: 0.281 | d_act: 0.000 | ejd: 0.100 | mag_actor: 0.000 | mag_mala: 0.708 | mean_log_ratio: -21.974 | mean_sigma: 0.316 | sig_scale: 0.000 | mean_reward: 0.000 | Actor_Loss: 0.000 | Critic1_Loss: 0.000 | Critic2_Loss: 0.000

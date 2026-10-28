@@ -1,9 +1,0 @@
-Traceback (most recent call last):
-  File "/home/huziel/RomanArmenta/RL-VMC/scripts/plot_sweep.py", line 117, in <module>
-    main()
-    ~~~~^^
-  File "/home/huziel/RomanArmenta/RL-VMC/scripts/plot_sweep.py", line 36, in main
-    dir_re = find_folder(args.base_dir, "MALA", args.g, args.omega, args.amp, args.run_id)
-  File "/home/huziel/RomanArmenta/RL-VMC/scripts/plot_sweep.py", line 22, in find_folder
-    raise FileNotFoundError(f"No se encontró carpeta para: {pattern}")
-FileNotFoundError: No se encontró carpeta para: *_1D__MALA_g5.0_Om0.1_Amp0.011_1

@@ -1,3 +1,0 @@
-MALA: 2026-09-03_1D__MALA_g5.0_Om0.1_Amp0.1_1
-TD3:       2026-09-03_1D__TD3_g5.0_Om0.1_Amp0.012_1
-Gráfico comparativo guardado en: ./results_1D_new_N10_g5.0_actamp_sweep_5_100k_huziel_reward/Compare_g5.0_Om0.1_Amp0.012_1.png

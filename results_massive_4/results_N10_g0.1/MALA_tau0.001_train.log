@@ -1,8 +1,0 @@
-JAX was imported before deepqmc, TensorFloat32 precision might be enabled. You may experience numerical issues.
-Traceback (most recent call last):
-  File "/home/huziel/RomanArmenta/RL-VMC/scripts/run_experiment_1D_3.py", line 30, in <module>
-    from src.td3_modules import TD3Trainer, ReplayBuffer
-  File "/home/huziel/RomanArmenta/RL-VMC/src/td3_modules.py", line 44
-    def build_td3_state(x, g, elec_idx, n_elec, n_up, n_dn, quantum_force_norm=5.0, particle_factor=10.0, dist_factor=5.0, omega=0.1, g=0.5, softening=0.1):
-                                                                                                                                      ^
-SyntaxError: duplicate argument 'g' in function definition

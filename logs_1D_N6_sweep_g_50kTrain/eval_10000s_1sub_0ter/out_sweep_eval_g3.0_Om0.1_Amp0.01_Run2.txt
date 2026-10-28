@@ -1,3 +1,0 @@
-MALA: MALA
-TD3:       TD3
-Gráfico comparativo guardado en: ./results_1D_N6_sweep_g_50kTrain/Compare_g3.0_Om0.1_Amp0.01_2.png

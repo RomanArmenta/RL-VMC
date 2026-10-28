@@ -1,1 +1,0 @@
-TD3_amp0.05_pen0.5_sig0.2_jmp2.0
