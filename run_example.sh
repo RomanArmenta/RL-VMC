@@ -4,7 +4,7 @@
 # PIPELINE FOCALIZADO: N=10, g=20.0 (Con Búsqueda Independiente de Tau para TD3)
 # ==============================================================================
 
-BASE_DIR="results_example_N10_g20_4"
+BASE_DIR="results_example_N10_g20_7"
 mkdir -p "$BASE_DIR"
 
 GPUS=(0) 
@@ -29,11 +29,12 @@ CORR_MODEL="spin_rbf_jastrow"
 TAUS_MALA=(0.0001 0.0005 0.001 0.005)
 
 # TD3 buscará su propio Tau, pudiendo potencialmente usar uno mayor que MALA
-TAUS_TD3=(0.001 0.005 0.01) #0.0001 0.0005 0.001)
-AMPS=(0.005 0.01 0.02) # 0.02 0.05 0.10)
-PENS=(0.01 0.05 0.1) # 0.1 0.3 0.5)
-SIGS=(0.4 0.6 0.8) # 0.1 0.2 0.4)
-JMPS=(2.0 3.0 5.0)
+#TAUS_TD3=(0.001 0.005 0.01) #0.0001 0.0005 0.001)
+TAUS_TD3=(0.00005 0.0005 0.005 0.05 0.5)
+AMPS=(0.025 0.02 0.15 0.25 0.35 0.55) # 0.02 0.05 0.10)
+PENS=(0.015 0.055 0.15 0.0055 0.25 0.35) # 0.1 0.3 0.5)
+SIGS=(0.45 0.65 0.85 0.15 0.25 0.55 1.5) # 0.1 0.2 0.4)
+JMPS=(2.0 3.0 5.0 10.0 1.0 0.5)
 
 # Valores ancla iniciales para TD3
 DEF_AMP=0.05
