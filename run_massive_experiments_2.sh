@@ -4,17 +4,17 @@
 # PIPELINE MASIVO [VERSIÓN DIAGNÓSTICO PROFUNDO]: WIGNER CRYSTAL
 # ==============================================================================
 
-BASE_DIR="results_phase_diagram_1"
+BASE_DIR="results_phase_diagram_5"
 mkdir -p "$BASE_DIR"
 
 GPUS=(0 1 2) 
-export XLA_PYTHON_CLIENT_PREALLOCATE=false
+#export XLA_PYTHON_CLIENT_PREALLOCATE=false
 
 # ------------------------------------------------------------------------------
 # 1. RÉGIMENES FÍSICOS OBJETIVO
 # ------------------------------------------------------------------------------
-NS=(10 14 16 20)
-GS=(10.0 20.0 50.0) 
+NS=(10)
+GS=(0.1 1.0 10.0 20.0) 
 OMEGA=0.1
 SOFTENING=0.1
 
@@ -28,27 +28,27 @@ CORR_MODELS=("spin_rbf" "spin_rbf_jastrow")
 # ------------------------------------------------------------------------------
 # 3. ESPACIO DE BÚSQUEDA RL 
 # ------------------------------------------------------------------------------
-ACTOR_AMPLITUDES=(0.02 0.08)    
-PENALTY_FACTORS=(0.1 0.5)       
-SIGMA_SCALES=(0.1 0.3)          
-PHYS_JUMPS=(2.0 4.0)
+ACTOR_AMPLITUDES=(0.1 0.01 0.001)    
+PENALTY_FACTORS=(0.1 0.5 1.0)       
+SIGMA_SCALES=(0.01 0.1 0.5) # 0.5 1.0)          
+PHYS_JUMPS=(3.0)
 
 # ------------------------------------------------------------------------------
 # 4. HIPERPARÁMETROS ESTÁTICOS Y ESTABILIDAD NUMÉRICA
 # ------------------------------------------------------------------------------
-BATCH_SIZE=512
-TAUS_MALA=(0.0005 0.005 0.05) 
-LR_ANSATZ=1e-5
-LR_ACTOR=1e-5
+BATCH_SIZE=1024
+TAUS_MALA=(0.0005 0.005 0.05 0.0001 0.001 0.01) 
+LR_ANSATZ=1e-4
+LR_ACTOR=1e-4
 LR_CRITIC=1e-4
 
-TRAIN_STEPS=100000
-MEASURE_STEPS=5000
-N_TER_TRAIN=3000              
+TRAIN_STEPS=200000
+MEASURE_STEPS=20000
+N_TER_TRAIN=5000              
 
-COUPLED_CYCLES=8
-VMC_ITERS=12500
-RL_SWEEPS=2500
+COUPLED_CYCLES=20
+VMC_ITERS=10000
+RL_SWEEPS=5000
 RL_REPLAY_CAP=10000
 RL_GAMMA_TD3=0.99
 
@@ -144,7 +144,7 @@ for m in "${!ORB_MODELS[@]}"; do
                 FREE_GPU=$(get_free_gpu)
                 
                 echo "[$(date +'%H:%M:%S')] -> Asignando MALA (Tau=${tau}) a GPU ${FREE_GPU}..."
-                CUDA_VISIBLE_DEVICES="$FREE_GPU" nohup python3 -u scripts/run_experiment_1D_5.py \
+                CUDA_VISIBLE_DEVICES="$FREE_GPU" nohup python3 -u scripts/run_experiment_1D_6.py \
                     --method="MALA" --n_elec=$n --n_up=$N_UP --n_dn=$N_DN \
                     --omega=$OMEGA --interaction_strength=$g --softening=$SOFTENING \
                     --wf_model=$WF_M --orbital_model=$ORB_M --correlation_model=$CORR_M \
@@ -187,7 +187,7 @@ for m in "${!ORB_MODELS[@]}"; do
                             FREE_GPU=$(get_free_gpu)
                             
                             echo "[$(date +'%H:%M:%S')] -> Asignando TD3 ($EXP_NAME) a GPU ${FREE_GPU}..."
-                            CUDA_VISIBLE_DEVICES="$FREE_GPU" nohup python3 -u scripts/run_experiment_1D_5.py \
+                            CUDA_VISIBLE_DEVICES="$FREE_GPU" nohup python3 -u scripts/run_experiment_1D_6.py \
                                 --method="TD3" --n_elec=$n --n_up=$N_UP --n_dn=$N_DN \
                                 --omega=$OMEGA --interaction_strength=$g --softening=$SOFTENING \
                                 --wf_model=$WF_M --orbital_model=$ORB_M --correlation_model=$CORR_M \

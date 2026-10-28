@@ -1,0 +1,58 @@
+1. Loading CASSCF Ansatz from: /home/romanarmenta/Documents/projects/uhf_1d_ho_v270826_m-determinants/results_N4/g_4.0/cas_n4_g4_omega0.1_soft0.1_b32_c0-a4/casscf_state.npz
+-> Extrayendo la Densidad Analítica CASSCF Exacta...
+-> Densidad analítica cargada con éxito.
+2. Configuring Trainers...
+-> Thermalizing walkers for 2000 steps...
+
+--- Starting TD3 Training (20000 Sweeps) ---
+Sweep    0/20000 | Reward: -0.1740 | Accept: 0.790 | Disp: 0.344
+Sweep  500/20000 | Reward: -0.1128 | Accept: 0.780 | Disp: 0.389
+Sweep 1000/20000 | Reward: -0.0248 | Accept: 0.660 | Disp: 0.491
+Sweep 1500/20000 | Reward: 0.0291 | Accept: 0.530 | Disp: 0.559
+Sweep 2000/20000 | Reward: 0.0468 | Accept: 0.550 | Disp: 0.642
+Sweep 2500/20000 | Reward: 0.0684 | Accept: 0.570 | Disp: 0.634
+Sweep 3000/20000 | Reward: 0.0592 | Accept: 0.520 | Disp: 0.690
+Sweep 3500/20000 | Reward: 0.0584 | Accept: 0.590 | Disp: 0.632
+Sweep 4000/20000 | Reward: 0.0900 | Accept: 0.590 | Disp: 0.673
+Sweep 4500/20000 | Reward: 0.0897 | Accept: 0.570 | Disp: 0.689
+Sweep 5000/20000 | Reward: 0.0905 | Accept: 0.530 | Disp: 0.701
+Sweep 5500/20000 | Reward: 0.0937 | Accept: 0.590 | Disp: 0.719
+Sweep 6000/20000 | Reward: 0.0951 | Accept: 0.620 | Disp: 0.644
+Sweep 6500/20000 | Reward: 0.0888 | Accept: 0.620 | Disp: 0.689
+Sweep 7000/20000 | Reward: 0.0978 | Accept: 0.500 | Disp: 0.744
+Sweep 7500/20000 | Reward: 0.0955 | Accept: 0.530 | Disp: 0.705
+Sweep 8000/20000 | Reward: 0.0924 | Accept: 0.620 | Disp: 0.690
+Sweep 8500/20000 | Reward: 0.0921 | Accept: 0.450 | Disp: 0.707
+Sweep 9000/20000 | Reward: 0.0874 | Accept: 0.470 | Disp: 0.723
+Sweep 9500/20000 | Reward: 0.0882 | Accept: 0.530 | Disp: 0.691
+Sweep 10000/20000 | Reward: 0.0977 | Accept: 0.510 | Disp: 0.720
+Sweep 10500/20000 | Reward: 0.1062 | Accept: 0.560 | Disp: 0.741
+Sweep 11000/20000 | Reward: 0.1032 | Accept: 0.540 | Disp: 0.706
+Sweep 11500/20000 | Reward: 0.1063 | Accept: 0.650 | Disp: 0.695
+Sweep 12000/20000 | Reward: 0.0990 | Accept: 0.560 | Disp: 0.721
+Sweep 12500/20000 | Reward: 0.0895 | Accept: 0.420 | Disp: 0.743
+Sweep 13000/20000 | Reward: 0.1009 | Accept: 0.570 | Disp: 0.731
+Sweep 13500/20000 | Reward: 0.0883 | Accept: 0.500 | Disp: 0.723
+Sweep 14000/20000 | Reward: 0.0758 | Accept: 0.520 | Disp: 0.653
+Sweep 14500/20000 | Reward: 0.0968 | Accept: 0.600 | Disp: 0.740
+Sweep 15000/20000 | Reward: 0.0720 | Accept: 0.450 | Disp: 0.735
+Sweep 15500/20000 | Reward: 0.1065 | Accept: 0.480 | Disp: 0.791
+Sweep 16000/20000 | Reward: 0.0976 | Accept: 0.550 | Disp: 0.744
+Sweep 16500/20000 | Reward: 0.1106 | Accept: 0.580 | Disp: 0.756
+Sweep 17000/20000 | Reward: 0.1031 | Accept: 0.550 | Disp: 0.721
+Sweep 17500/20000 | Reward: 0.1156 | Accept: 0.560 | Disp: 0.745
+Sweep 18000/20000 | Reward: 0.1069 | Accept: 0.600 | Disp: 0.705
+Sweep 18500/20000 | Reward: 0.0995 | Accept: 0.530 | Disp: 0.743
+Sweep 19000/20000 | Reward: 0.1090 | Accept: 0.540 | Disp: 0.738
+Sweep 19500/20000 | Reward: 0.0997 | Accept: 0.640 | Disp: 0.685
+Sweep 19999/20000 | Reward: 0.0943 | Accept: 0.580 | Disp: 0.674
+--- Training Completed ---
+
+-> Parámetros del Actor guardados en results_sampling/RLMALA_tau0.05_amp0.15_pen0.1/actor_params.npz
+3. Executing MALA Evaluation (Baseline)...
+4. Executing RL-MALA Evaluation...
+-> Transfiriendo tensores masivos de GPU a CPU RAM...
+5. Generating paper figures and summary metrics...
+-> Calculando evolución de Divergencia KL resuelta por espín...
+-> Summary guardado en results_sampling/RLMALA_tau0.05_amp0.15_pen0.1/summary.csv
+All done. Figures and data saved successfully.
