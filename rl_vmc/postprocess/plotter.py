@@ -157,20 +157,37 @@ def plot_production_summary(
             label=f"{label} ($\\tau_{{\\mathrm{{int}},E}}={summary['tau_int_E']:.2f}$)",
         )
 
-        # 3. Histograma de energía por paso
-        axes[1, 0].hist(
-            e_series,
-            bins=35,
-            density=True,
-            color=color,
-            alpha=0.45,
-            label=label,
-        )
+        # 3. Histograma de energía por paso con filtrado robusto de divergencias
+        try:
+            e_finite = e_series[np.isfinite(e_series)]
+            if len(e_finite) > 1:
+                q01, q99 = np.percentile(e_finite, [1.0, 99.0])
+                if not (np.isfinite(q01) and np.isfinite(q99)) or q01 >= q99:
+                    q01, q99 = float(np.min(e_finite)), float(np.max(e_finite))
+                if q01 < q99 and (q99 - q01) < 1e10:
+                    e_clip = e_finite[(e_finite >= q01) & (e_finite <= q99)]
+                    if len(e_clip) > 5:
+                        n_bins = min(35, max(5, int(np.sqrt(len(e_clip)))))
+                        axes[1, 0].hist(
+                            e_clip,
+                            bins=n_bins,
+                            range=(q01, q99),
+                            density=True,
+                            color=color,
+                            alpha=0.45,
+                            label=label,
+                        )
+        except Exception:
+            pass
 
         # 4. Convergencia del Error Estándar SE(E) vs paso
-        tau_e = max(1.0, summary["tau_int_E"])
-        se_curve = np.std(e_series) * np.sqrt(tau_e / (steps + 1.0))
-        axes[1, 1].plot(steps + 1, se_curve, color=color, lw=2.0, label=label)
+        tau_raw = summary.get("tau_int_E", 1.0)
+        tau_e = max(1.0, float(tau_raw)) if np.isfinite(tau_raw) else 1.0
+        std_val = float(np.std(e_series)) if np.isfinite(np.std(e_series)) else 0.0
+        se_curve = std_val * np.sqrt(tau_e / (steps + 1.0))
+        valid_se = np.isfinite(se_curve) & (se_curve > 0)
+        if np.any(valid_se):
+            axes[1, 1].plot(steps[valid_se] + 1, se_curve[valid_se], color=color, lw=2.0, label=label)
 
     if casscf_ref is not None and np.isfinite(casscf_ref.get("energy", float("nan"))):
         e_cas = casscf_ref["energy"]
@@ -202,8 +219,11 @@ def plot_production_summary(
     axes[1, 0].set_xlabel("$\\langle E_L \\rangle_w$ (Ha)")
     axes[1, 0].set_ylabel("Densidad")
 
-    axes[1, 1].set_yscale("log")
-    axes[1, 1].set_xscale("log")
+    try:
+        axes[1, 1].set_yscale("log")
+        axes[1, 1].set_xscale("log")
+    except Exception:
+        pass
     axes[1, 1].set_title("Decaimiento del Error Estándar Correlacionado $\\mathrm{SE}(E)$")
     axes[1, 1].set_xlabel("Pasos de Producción $M$")
     axes[1, 1].set_ylabel("$\\mathrm{SE}(E)$ (Ha)")
@@ -719,27 +739,38 @@ def plot_walker_trace(
             else 15.0
         )
         bins = np.linspace(-x_max, x_max, 120)
-        w_flat = w_arr.squeeze(-1).reshape(-1, n_elec)
-        if n_up > 0:
-            ax_hist.hist(
-                w_flat[:, :n_up].reshape(-1),
-                bins=bins,
-                orientation="horizontal",
-                density=True,
-                color="#3498db",
-                alpha=0.45,
-                label=r"Sampled $\uparrow$",
-            )
-        if n_dn > 0:
-            ax_hist.hist(
-                w_flat[:, n_up : n_up + n_dn].reshape(-1),
-                bins=bins,
-                orientation="horizontal",
-                density=True,
-                color="#e74c3c",
-                alpha=0.45,
-                label=r"Sampled $\downarrow$",
-            )
+        try:
+            w_flat = w_arr.squeeze(-1).reshape(-1, n_elec)
+            if n_up > 0:
+                up_vals = w_flat[:, :n_up].reshape(-1)
+                up_vals = up_vals[np.isfinite(up_vals)]
+                up_vals = up_vals[(up_vals >= -x_max) & (up_vals <= x_max)]
+                if len(up_vals) > 0:
+                    ax_hist.hist(
+                        up_vals,
+                        bins=bins,
+                        orientation="horizontal",
+                        density=True,
+                        color="#3498db",
+                        alpha=0.45,
+                        label=r"Sampled $\uparrow$",
+                    )
+            if n_dn > 0:
+                dn_vals = w_flat[:, n_up : n_up + n_dn].reshape(-1)
+                dn_vals = dn_vals[np.isfinite(dn_vals)]
+                dn_vals = dn_vals[(dn_vals >= -x_max) & (dn_vals <= x_max)]
+                if len(dn_vals) > 0:
+                    ax_hist.hist(
+                        dn_vals,
+                        bins=bins,
+                        orientation="horizontal",
+                        density=True,
+                        color="#e74c3c",
+                        alpha=0.45,
+                        label=r"Sampled $\downarrow$",
+                    )
+        except Exception:
+            pass
 
         if casscf_ref is not None:
             x_ex = casscf_ref["x"]
@@ -1038,24 +1069,30 @@ def run_postprocessing_pipeline(cfg: PostProcessConfig) -> pd.DataFrame:
             json.dump(summary_rows, f, indent=2)
         print(f"[PostProcess] Tabla resumen guardada en: {csv_path}")
 
+    def _safe_run_plot(fn, *args, **kwargs):
+        try:
+            fn(*args, **kwargs)
+        except Exception as exc:
+            print(f"  [PostProcess Advertencia] No se pudo generar {fn.__name__}: {exc}")
+
     if cfg.plot_training_metrics:
-        plot_training_dashboard(bundles_info, cfg.out_dir, cfg, casscf_ref=casscf_ref)
+        _safe_run_plot(plot_training_dashboard, bundles_info, cfg.out_dir, cfg, casscf_ref=casscf_ref)
     if cfg.plot_production_summary:
-        plot_production_summary(bundles_info, cfg.out_dir, cfg, casscf_ref=casscf_ref)
+        _safe_run_plot(plot_production_summary, bundles_info, cfg.out_dir, cfg, casscf_ref=casscf_ref)
     if cfg.plot_observables_comparison:
-        plot_observables_comparison(bundles_info, cfg.out_dir, cfg, casscf_ref=casscf_ref)
-        plot_article_densities_comparison(
-            bundles_info, cfg.out_dir, cfg, casscf_ref=casscf_ref
+        _safe_run_plot(plot_observables_comparison, bundles_info, cfg.out_dir, cfg, casscf_ref=casscf_ref)
+        _safe_run_plot(
+            plot_article_densities_comparison, bundles_info, cfg.out_dir, cfg, casscf_ref=casscf_ref
         )
-        plot_article_kl_divergence(
-            bundles_info, cfg.out_dir, cfg, casscf_ref=casscf_ref
+        _safe_run_plot(
+            plot_article_kl_divergence, bundles_info, cfg.out_dir, cfg, casscf_ref=casscf_ref
         )
     if cfg.plot_efficiency_bars:
-        plot_efficiency_bars(bundles_info, cfg.out_dir, cfg)
+        _safe_run_plot(plot_efficiency_bars, bundles_info, cfg.out_dir, cfg)
     if cfg.plot_time_to_solution:
-        plot_time_to_solution(bundles_info, cfg.out_dir, cfg)
+        _safe_run_plot(plot_time_to_solution, bundles_info, cfg.out_dir, cfg)
     if cfg.plot_walker_trace:
-        plot_walker_trace(bundles_info, cfg.out_dir, cfg, casscf_ref=casscf_ref)
+        _safe_run_plot(plot_walker_trace, bundles_info, cfg.out_dir, cfg, casscf_ref=casscf_ref)
 
     print("\n" + "=" * 76)
     print("[PostProcess] Resumen Comparativo de Corridas:")

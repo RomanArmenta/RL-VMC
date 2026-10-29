@@ -182,6 +182,18 @@ def build_audit_argparser() -> argparse.ArgumentParser:
         choices=["pdf", "png", "both"],
         help="Formato de exportación para las figuras de post-producción.",
     )
+    p.add_argument(
+        "--resume",
+        action="store_true",
+        default=False,
+        help="Reutiliza evaluaciones MCMC previas si el archivo .h5 ya existe y contiene datos de producción.",
+    )
+    p.add_argument(
+        "--postprocess-only",
+        action="store_true",
+        default=False,
+        help="Omite el muestreo MCMC y ejecuta directamente el análisis estadístico y gráficas sobre los bundles .h5 ya evaluados.",
+    )
     return p
 
 
@@ -502,83 +514,161 @@ def evaluate_single_bundle(
     }
     total_wall_time = 0.0
 
-    for r_idx in range(n_runs):
-        k_init, k_burn, k_prod = jax.random.split(run_keys[r_idx], 3)
-        c_state = sampler.init_state(k_init, ansatz_params)
+    reuse = getattr(args, "resume", False) or getattr(args, "postprocess_only", False)
+    has_audited_prod = (
+        "production" in bundle
+        and "local_energy" in bundle["production"]
+        and bundle["production"]["local_energy"] is not None
+        and np.asarray(bundle["production"]["local_energy"]).size > 0
+    )
+    if getattr(args, "postprocess_only", False) and not has_audited_prod:
+        raise RuntimeError(
+            f"El bundle {h5_path} no contiene datos de producción y --postprocess-only está activo."
+        )
 
-        if n_burn > 0:
-            _, c_state = sampler.run_burn_in(
-                k_burn,
+    reused_production = False
+    if reuse and has_audited_prod:
+        prod_data = bundle["production"]
+        stored_eloc = np.asarray(prod_data["local_energy"])
+        if stored_eloc.ndim == 2:
+            stored_eloc = stored_eloc[None, ...]
+        n_runs = stored_eloc.shape[0]
+        n_steps = stored_eloc.shape[1]
+        batch_size = stored_eloc.shape[2] if stored_eloc.ndim >= 3 else 1
+        total_wall_time = float(prod_data.get("attrs", {}).get("wall_time_sec", 1.0))
+        dt = max(total_wall_time / max(1, n_runs), 1e-6)
+
+        for r_idx in range(n_runs):
+            eloc_all = stored_eloc[r_idx]
+            acf = compute_acf_1d(eloc_all, max_lag=min(args.max_lag, n_steps - 1))
+            tau_int = compute_iat_sokal(acf, c_sokal=args.sokal_c)
+            total_samples = float(eloc_all.size)
+            ess = total_samples / max(tau_int, 1.0)
+            ess_s = ess / dt
+            e_mean = float(np.mean(eloc_all))
+            e_var = float(np.var(eloc_all))
+            e_sem = float(np.sqrt(max(e_var, 0.0) / max(ess, 1.0)))
+
+            e_means.append(e_mean)
+            e_vars.append(e_var)
+            e_sems.append(e_sem)
+            iats.append(float(tau_int))
+            ess_vals.append(float(ess))
+            ess_per_secs.append(float(ess_s))
+            wall_times.append(float(dt))
+
+            s_stats = prod_data.get("sampler_stats", {})
+            if "acceptance" in s_stats and len(s_stats["acceptance"]) > 0:
+                acc_arr = np.asarray(s_stats["acceptance"])
+                acc_means.append(float(np.mean(acc_arr[r_idx] if acc_arr.ndim >= 2 else acc_arr)))
+            else:
+                acc_means.append(float("nan"))
+            if "esjd" in s_stats and len(s_stats["esjd"]) > 0:
+                esjd_arr = np.asarray(s_stats["esjd"])
+                esjd_means.append(float(np.mean(esjd_arr[r_idx] if esjd_arr.ndim >= 2 else esjd_arr)))
+            else:
+                esjd_means.append(float("nan"))
+            if "actor_drift_mag" in s_stats and len(s_stats["actor_drift_mag"]) > 0:
+                drift_arr = np.asarray(s_stats["actor_drift_mag"])
+                drift_means.append(float(np.mean(drift_arr[r_idx] if drift_arr.ndim >= 2 else drift_arr)))
+            else:
+                drift_means.append(float("nan"))
+            if "actor_sigma" in s_stats and len(s_stats["actor_sigma"]) > 0:
+                sig_arr = np.asarray(s_stats["actor_sigma"])
+                sigma_means.append(float(np.mean(sig_arr[r_idx] if sig_arr.ndim >= 2 else sig_arr)))
+            else:
+                sigma_means.append(float("nan"))
+
+        all_walkers_arr = np.asarray(prod_data.get("walkers")) if "walkers" in prod_data else None
+        if all_walkers_arr is not None and all_walkers_arr.ndim == 4:
+            all_walkers_arr = all_walkers_arr[None, ...]
+        reused_production = True
+    else:
+        for r_idx in range(n_runs):
+            k_init, k_burn, k_prod = jax.random.split(run_keys[r_idx], 3)
+            c_state = sampler.init_state(k_init, ansatz_params)
+
+            if n_burn > 0:
+                _, c_state = sampler.run_burn_in(
+                    k_burn,
+                    c_state,
+                    ansatz_params,
+                    actor_params,
+                    n_burn,
+                    use_actor=use_actor,
+                )
+
+            res = sampler.run_production_chain(
+                k_prod,
                 c_state,
                 ansatz_params,
                 actor_params,
-                n_burn,
+                hamiltonian,
+                measure_steps=n_steps,
+                thin=1,
+                jit_chunk_size=min(500, n_steps),
                 use_actor=use_actor,
             )
+            dt = max(float(res["wall_time_sec"]), 1e-6)
+            total_wall_time += dt
 
-        res = sampler.run_production_chain(
-            k_prod,
-            c_state,
-            ansatz_params,
-            actor_params,
-            hamiltonian,
-            measure_steps=n_steps,
-            thin=1,
-            jit_chunk_size=min(500, n_steps),
-            use_actor=use_actor,
-        )
-        dt = max(float(res["wall_time_sec"]), 1e-6)
-        total_wall_time += dt
+            eloc_all = np.asarray(res["local_energy"])  # shape (n_steps, batch_size)
+            acf = compute_acf_1d(eloc_all, max_lag=min(args.max_lag, n_steps - 1))
+            tau_int = compute_iat_sokal(acf, c_sokal=args.sokal_c)
 
-        eloc_all = np.asarray(res["local_energy"])  # shape (n_steps, batch_size)
-        acf = compute_acf_1d(eloc_all, max_lag=min(args.max_lag, n_steps - 1))
-        tau_int = compute_iat_sokal(acf, c_sokal=args.sokal_c)
+            total_samples = float(eloc_all.size)
+            ess = total_samples / max(tau_int, 1.0)
+            ess_s = ess / dt
 
-        total_samples = float(eloc_all.size)
-        ess = total_samples / max(tau_int, 1.0)
-        ess_s = ess / dt
+            e_mean = float(np.mean(eloc_all))
+            e_var = float(np.var(eloc_all))
+            e_sem = float(np.sqrt(max(e_var, 0.0) / max(ess, 1.0)))
 
-        e_mean = float(np.mean(eloc_all))
-        e_var = float(np.var(eloc_all))
-        e_sem = float(np.sqrt(max(e_var, 0.0) / max(ess, 1.0)))
+            e_means.append(e_mean)
+            e_vars.append(e_var)
+            e_sems.append(e_sem)
+            iats.append(float(tau_int))
+            ess_vals.append(float(ess))
+            ess_per_secs.append(float(ess_s))
+            wall_times.append(float(dt))
 
-        e_means.append(e_mean)
-        e_vars.append(e_var)
-        e_sems.append(e_sem)
-        iats.append(float(tau_int))
-        ess_vals.append(float(ess))
-        ess_per_secs.append(float(ess_s))
-        wall_times.append(float(dt))
+            acc_arr = np.asarray(res["sampler_stats"]["acceptance"])
+            esjd_arr = np.asarray(res["sampler_stats"]["esjd"])
+            drift_arr = np.asarray(res["sampler_stats"]["actor_drift_mag"])
+            sig_arr = np.asarray(res["sampler_stats"]["actor_sigma"])
 
-        acc_arr = np.asarray(res["sampler_stats"]["acceptance"])
-        esjd_arr = np.asarray(res["sampler_stats"]["esjd"])
-        drift_arr = np.asarray(res["sampler_stats"]["actor_drift_mag"])
-        sig_arr = np.asarray(res["sampler_stats"]["actor_sigma"])
+            acc_means.append(float(np.mean(acc_arr)))
+            esjd_means.append(float(np.mean(esjd_arr)))
+            drift_means.append(float(np.mean(drift_arr)))
+            sigma_means.append(float(np.mean(sig_arr)))
 
-        acc_means.append(float(np.mean(acc_arr)))
-        esjd_means.append(float(np.mean(esjd_arr)))
-        drift_means.append(float(np.mean(drift_arr)))
-        sigma_means.append(float(np.mean(sig_arr)))
+            chains_walkers.append(
+                np.asarray(res["walkers"][:, : max(1, int(args.max_walkers_save)), :, :])
+            )
+            chains_eloc.append(eloc_all)
+            chains_tloc.append(np.asarray(res["kinetic_energy"]))
+            chains_vloc.append(np.asarray(res["potential_energy"]))
+            for sk in chains_stats.keys():
+                chains_stats[sk].append(np.asarray(res["sampler_stats"][sk]))
 
-        chains_walkers.append(
-            np.asarray(res["walkers"][:, : max(1, int(args.max_walkers_save)), :, :])
-        )
-        chains_eloc.append(eloc_all)
-        chains_tloc.append(np.asarray(res["kinetic_energy"]))
-        chains_vloc.append(np.asarray(res["potential_energy"]))
-        for sk in chains_stats.keys():
-            chains_stats[sk].append(np.asarray(res["sampler_stats"][sk]))
-
-    all_walkers_arr = np.stack(chains_walkers, axis=0)  # (n_runs, n_steps, W_sub, N, 1)
+        all_walkers_arr = np.stack(chains_walkers, axis=0)  # (n_runs, n_steps, W_sub, N, 1)
 
     # Calcular observables físicos con media y desviación estándar entre las n_runs cadenas
-    obs = compute_1d_observables(
-        all_walkers_arr,
-        n_up=cfg.system.n_up,
-        n_down=cfg.system.n_dn,
-        n_bins=args.density_bins,
-        omega=cfg.system.omega,
-    )
+    if all_walkers_arr is not None and all_walkers_arr.size > 0:
+        obs = compute_1d_observables(
+            all_walkers_arr,
+            n_up=cfg.system.n_up,
+            n_down=cfg.system.n_dn,
+            n_bins=args.density_bins,
+            omega=cfg.system.omega,
+        )
+    else:
+        obs = {
+            "n_wigner_peaks": -1,
+            "rms_radius": float("nan"),
+            "mean_pair_dist": float("nan"),
+            "x_max": 15.0,
+        }
 
     # Buscar si el sistema físico (N_up, N_dn, omega, g) tiene baseline CASSCF pre-entrenada
     casscf_match = find_matching_casscf_baseline(
@@ -618,71 +708,74 @@ def evaluate_single_bundle(
 
         # Evaluar D_KL resuelta por espín en cada una de las n_runs corridas independientes
         run_kls_tot, run_kls_up, run_kls_dn = [], [], []
-        for r_i in range(n_runs):
-            kls = compute_spin_kl_divergences(
-                all_walkers_arr[r_i],
-                casscf_ref,
-                n_bins=args.density_bins,
-                x_max=float(obs["x_max"]),
-            )
-            run_kls_tot.append(kls["kl_total"])
-            run_kls_up.append(kls["kl_up"])
-            run_kls_dn.append(kls["kl_down"])
+        if all_walkers_arr is not None and all_walkers_arr.size > 0:
+            for r_i in range(min(n_runs, all_walkers_arr.shape[0])):
+                kls = compute_spin_kl_divergences(
+                    all_walkers_arr[r_i],
+                    casscf_ref,
+                    n_bins=args.density_bins,
+                    x_max=float(obs["x_max"]),
+                )
+                run_kls_tot.append(kls["kl_total"])
+                run_kls_up.append(kls["kl_up"])
+                run_kls_dn.append(kls["kl_down"])
 
-        kl_tot_mean = float(np.mean(run_kls_tot))
-        kl_tot_std = float(np.std(run_kls_tot))
-        kl_tot_sem = float(kl_tot_std / np.sqrt(max(1, n_runs)))
-        kl_up_mean = float(np.mean(run_kls_up))
-        kl_dn_mean = float(np.mean(run_kls_dn))
+        if run_kls_tot:
+            kl_tot_mean = float(np.mean(run_kls_tot))
+            kl_tot_std = float(np.std(run_kls_tot))
+            kl_tot_sem = float(kl_tot_std / np.sqrt(max(1, len(run_kls_tot))))
+            kl_up_mean = float(np.mean(run_kls_up))
+            kl_dn_mean = float(np.mean(run_kls_dn))
 
-    # Actualizar el HDF5 con las cadenas de producción multi-semilla
-    production_payload = {
-        "n_chains": n_runs,
-        "n_burn_in": n_burn,
-        "measure_steps": n_steps,
-        "thin": 1,
-        "wall_time_sec": float(total_wall_time),
-        "walkers": all_walkers_arr,
-        "local_energy": np.stack(chains_eloc, axis=0),
-        "kinetic_energy": np.stack(chains_tloc, axis=0),
-        "potential_energy": np.stack(chains_vloc, axis=0),
-        "sampler_stats": {
-            sk: np.stack(slist, axis=0) for sk, slist in chains_stats.items()
-        },
-    }
+    if not reused_production:
+        # Actualizar el HDF5 con las cadenas de producción multi-semilla
+        production_payload = {
+            "n_chains": n_runs,
+            "n_burn_in": n_burn,
+            "measure_steps": n_steps,
+            "thin": 1,
+            "wall_time_sec": float(total_wall_time),
+            "walkers": all_walkers_arr,
+            "local_energy": np.stack(chains_eloc, axis=0),
+            "kinetic_energy": np.stack(chains_tloc, axis=0),
+            "potential_energy": np.stack(chains_vloc, axis=0),
+            "sampler_stats": {
+                sk: np.stack(slist, axis=0) for sk, slist in chains_stats.items()
+            },
+        }
 
-    class _SaveAuditFlags:
-        save_config = True
-        save_ansatz_weights = True
-        save_actor_weights = True
-        save_critic_weights = True
-        save_training_history = True
-        save_production_walkers = True
-        save_walkers_max_batch = int(args.max_walkers_save)
-        save_production_energies = True
-        save_production_sampler_stats = True
+        class _SaveAuditFlags:
+            save_config = True
+            save_ansatz_weights = True
+            save_actor_weights = True
+            save_critic_weights = True
+            save_training_history = True
+            save_production_walkers = True
+            save_walkers_max_batch = int(args.max_walkers_save)
+            save_production_energies = True
+            save_production_sampler_stats = True
 
-    trn_df = bundle.get("training_df")
-    trn_records = trn_df.to_dict(orient="records") if trn_df is not None else None
+        trn_df = bundle.get("training_df")
+        trn_records = trn_df.to_dict(orient="records") if trn_df is not None else None
 
-    save_run_bundle_h5(
-        h5_path=h5_path,
-        config_dict=cfg.to_dict(),
-        io_flags=_SaveAuditFlags(),
-        ansatz_best=ansatz_params,
-        ansatz_final=ansatz_params,
-        actor_final=actor_params,
-        critic1_final=ckpts.get("critic1_final"),
-        critic2_final=ckpts.get("critic2_final"),
-        training_history=trn_records,
-        production_data=production_payload,
-        extra_metadata={
-            "audited_by": "cli/audit_results.py",
-            "suite": suite_name,
-            "has_casscf_baseline": has_casscf,
-            "casscf_npz_path": casscf_npz_path,
-        },
-    )
+        save_run_bundle_h5(
+            h5_path=h5_path,
+            config_dict=cfg.to_dict(),
+            io_flags=_SaveAuditFlags(),
+            ansatz_best=ansatz_params,
+            ansatz_final=ansatz_params,
+            actor_final=actor_params,
+            critic1_final=ckpts.get("critic1_final"),
+            critic2_final=ckpts.get("critic2_final"),
+            training_history=trn_records,
+            production_data=production_payload,
+            extra_metadata={
+                "audited_by": "cli/audit_results.py",
+                "suite": suite_name,
+                "has_casscf_baseline": has_casscf,
+                "casscf_npz_path": casscf_npz_path,
+            },
+        )
 
     energy_mean_across_runs = float(np.mean(e_means))
     energy_std_across_runs = float(np.std(e_means))
@@ -791,12 +884,15 @@ def plot_global_audit_dashboard(df: pd.DataFrame, out_dir: Path) -> None:
         )
         for cx, cy in zip(cas_x, cas_y):
             ax.hlines(cy, cx - 0.4, cx + 0.4, colors="black", linestyles=":", linewidth=2.2, zorder=4)
-    ax.set_xticks(x)
-    ax.set_xticklabels(labels, rotation=30, ha="right", fontsize=8)
     ax.set_ylabel(r"$\langle E_L \rangle$ (Ha)")
     ax.set_title("Ground-State Energy across Audited Models", fontweight="bold")
     ax.legend(fontsize=8.5)
     ax.grid(True, axis="y", alpha=0.3)
+    e_clean = df["energy_mean"][
+        np.isfinite(df["energy_mean"]) & (df["energy_mean"] > -50) & (df["energy_mean"] < 300)
+    ]
+    if len(e_clean) > 0:
+        ax.set_ylim(max(-25.0, float(np.min(e_clean)) - 2.0), min(300.0, float(np.max(e_clean)) + 5.0))
 
     # Panel 2: Sokal IAT (tau_int)
     ax = axes[0, 1]
@@ -809,11 +905,12 @@ def plot_global_audit_dashboard(df: pd.DataFrame, out_dir: Path) -> None:
         alpha=0.85,
         edgecolor="black",
     )
-    ax.set_xticks(x)
-    ax.set_xticklabels(labels, rotation=30, ha="right", fontsize=8)
     ax.set_ylabel(r"Integrated Autocorrelation Time $\tau_{\mathrm{int}}$")
     ax.set_title(r"Sokal $\tau_{\mathrm{int}}$ (Lower is Better)", fontweight="bold")
     ax.grid(True, axis="y", alpha=0.3)
+    iat_clean = df["iat_sokal"][np.isfinite(df["iat_sokal"])]
+    if len(iat_clean) > 0:
+        ax.set_ylim(0, min(1000.0, float(np.percentile(iat_clean, 98) * 1.4)))
 
     # Panel 3: Throughput ESS/s (o Divergencia KL contra CASSCF si hay baselines)
     ax = axes[1, 0]
@@ -826,11 +923,12 @@ def plot_global_audit_dashboard(df: pd.DataFrame, out_dir: Path) -> None:
         alpha=0.85,
         edgecolor="black",
     )
-    ax.set_xticks(x)
-    ax.set_xticklabels(labels, rotation=30, ha="right", fontsize=8)
     ax.set_ylabel("Effective Sample Size / sec (ESS/s)")
     ax.set_title("Wall-Clock Sampling Throughput (Higher is Better)", fontweight="bold")
     ax.grid(True, axis="y", alpha=0.3)
+    ess_clean = df["ess_per_sec"][np.isfinite(df["ess_per_sec"])]
+    if len(ess_clean) > 0:
+        ax.set_ylim(0, min(200000.0, float(np.percentile(ess_clean, 98) * 1.4)))
 
     # Panel 4: Ganancia Topológica G_RL vs MALA
     ax = axes[1, 1]
@@ -838,8 +936,6 @@ def plot_global_audit_dashboard(df: pd.DataFrame, out_dir: Path) -> None:
     ax.axhline(
         1.0, color="black", linestyle="--", linewidth=1.2, label="Best MALA Baseline (1.0x)"
     )
-    ax.set_xticks(x)
-    ax.set_xticklabels(labels, rotation=30, ha="right", fontsize=8)
     ax.set_ylabel(r"Topological Efficiency Gain $G_{\mathrm{RL}}$")
     ax.set_title(
         r"Efficiency Gain $G_{\mathrm{RL}} = \tau_{\mathrm{MALA}} / \tau_{\mathrm{Model}}$",
@@ -847,6 +943,32 @@ def plot_global_audit_dashboard(df: pd.DataFrame, out_dir: Path) -> None:
     )
     ax.legend(fontsize=8.5)
     ax.grid(True, axis="y", alpha=0.3)
+    grl_clean = df["G_RL_vs_best_MALA"][np.isfinite(df["G_RL_vs_best_MALA"])]
+    if len(grl_clean) > 0:
+        ax.set_ylim(0, min(150.0, max(2.5, float(np.percentile(grl_clean, 98) * 1.4))))
+
+    if len(df) > 40:
+        step = max(1, len(df) // 15)
+        tick_pos = x[::step]
+        tick_lbl = [f"#{i+1}" for i in tick_pos]
+        for a in axes.flat:
+            a.set_xticks(tick_pos)
+            a.set_xticklabels(tick_lbl, fontsize=8)
+            a.set_xlabel("Model Index (Sorted by N, ω, g, G_RL)", fontsize=9)
+    else:
+        for a in axes.flat:
+            a.set_xticks(x)
+            a.set_xticklabels(labels, rotation=30, ha="right", fontsize=8)
+
+    fig.suptitle(
+        "Exhaustive Statistical Post-Production Audit across `results*` Models",
+        fontsize=14,
+        fontweight="bold",
+    )
+    fig.tight_layout(rect=[0, 0, 1, 0.96])
+    fig.savefig(out_dir / "global_audit_dashboard.png", dpi=240)
+    fig.savefig(out_dir / "global_audit_dashboard.pdf")
+    plt.close(fig)
 
     fig.suptitle(
         "Exhaustive Statistical Post-Production Audit across `results*` Models",
@@ -906,12 +1028,18 @@ def main(argv: list[str] | None = None) -> None:
             safe_name = rel_id.replace("/", "__").replace("\\", "__")
             if item["type"] == "legacy_dir":
                 h5_dest = converted_h5_dir / f"{safe_name}.h5"
-                h5_path = convert_legacy_dir_to_h5(item["path"], output_h5_path=h5_dest)
+                if (args.resume or args.postprocess_only) and h5_dest.is_file():
+                    h5_path = h5_dest
+                else:
+                    h5_path = convert_legacy_dir_to_h5(item["path"], output_h5_path=h5_dest)
             elif item["type"] == "legacy_casscf_sampling_dir":
                 h5_dest = converted_h5_dir / f"{safe_name}.h5"
-                h5_path = _convert_legacy_casscf_sampling_dir_to_h5(
-                    item["path"], h5_dest, casscf_baselines
-                )
+                if (args.resume or args.postprocess_only) and h5_dest.is_file():
+                    h5_path = h5_dest
+                else:
+                    h5_path = _convert_legacy_casscf_sampling_dir_to_h5(
+                        item["path"], h5_dest, casscf_baselines
+                    )
             else:
                 h5_path = Path(item["path"])
 
@@ -978,32 +1106,7 @@ def main(argv: list[str] | None = None) -> None:
             )
             df.loc[row_idx, "best_MALA_reference"] = ref_name
 
-        # Generar las figuras detalladas de post-producción para este sistema físico
-        if args.generate_system_plots and len(grp) >= 1:
-            sys_plot_dir = out_dir / f"system_N{n_val}_up{n_up_val}_dn{n_dn_val}_g{g_val}_om{om_val}"
-            ref_idx = best_mala_idx if not mala_rows.empty else best_idx
-            ordered_indices = [ref_idx] + [i for i in grp.index if i != ref_idx]
-            bundle_list = [str(df.loc[i, "bundle_path"]) for i in ordered_indices]
-            label_list = [
-                f"{df.loc[i, 'method']}_tau{df.loc[i, 'tau']} ({Path(df.loc[i, 'rel_path']).name})"
-                for i in ordered_indices
-            ]
-            matched_npz = str(df.loc[ref_idx, "casscf_npz_path"]) if df.loc[ref_idx, "has_casscf_baseline"] else None
-            pp_cfg = PostProcessConfig(
-                inputs=bundle_list,
-                labels=label_list,
-                out_dir=str(sys_plot_dir),
-                casscf_npz_path=matched_npz if matched_npz else None,
-                uhf_search_root=str(uhf_root),
-                auto_casscf_baseline=True,
-                sokal_window_c=args.sokal_c,
-                max_acf_lag=args.max_lag,
-                n_density_bins=args.density_bins,
-                figure_format=args.figure_format,
-            )
-            run_postprocessing_pipeline(pp_cfg)
-
-    # Ordenar tabla maestra por (N_elec, omega, g, G_RL_vs_best_MALA descendente)
+    # Ordenar y guardar tabla maestra CSV y JSON de inmediato (blindado ante fallas en plots)
     df = df.sort_values(
         by=["N_elec", "omega", "g", "G_RL_vs_best_MALA"],
         ascending=[True, True, True, False],
@@ -1014,11 +1117,48 @@ def main(argv: list[str] | None = None) -> None:
     df.to_csv(csv_path, index=False)
     with json_path.open("w", encoding="utf-8") as f:
         json.dump(df.to_dict(orient="records"), f, indent=2)
+    print(f"\n[Audit] Tabla maestra CSV guardada en: {csv_path}")
+    print(f"[Audit] Tabla maestra JSON guardada en: {json_path}")
 
-    plot_global_audit_dashboard(df, out_dir)
+    # Generar las figuras detalladas de post-producción por cada sistema físico
+    if args.generate_system_plots:
+        for (n_val, n_up_val, n_dn_val, om_val, g_val), grp in df.groupby(group_cols):
+            if len(grp) < 1:
+                continue
+            try:
+                sys_plot_dir = out_dir / f"system_N{n_val}_up{n_up_val}_dn{n_dn_val}_g{g_val}_om{om_val}"
+                mala_rows = grp[~grp["is_rl"]]
+                ref_idx = mala_rows["ess_per_sec"].idxmax() if not mala_rows.empty else grp["ess_per_sec"].idxmax()
+                ordered_indices = [ref_idx] + [i for i in grp.index if i != ref_idx]
+                bundle_list = [str(df.loc[i, "bundle_path"]) for i in ordered_indices]
+                label_list = [
+                    f"{df.loc[i, 'method']}_tau{df.loc[i, 'tau']} ({Path(df.loc[i, 'rel_path']).name})"
+                    for i in ordered_indices
+                ]
+                matched_npz = str(df.loc[ref_idx, "casscf_npz_path"]) if df.loc[ref_idx, "has_casscf_baseline"] else None
+                pp_cfg = PostProcessConfig(
+                    inputs=bundle_list,
+                    labels=label_list,
+                    out_dir=str(sys_plot_dir),
+                    casscf_npz_path=matched_npz if matched_npz else None,
+                    uhf_search_root=str(uhf_root),
+                    auto_casscf_baseline=True,
+                    sokal_window_c=args.sokal_c,
+                    max_acf_lag=args.max_lag,
+                    n_density_bins=args.density_bins,
+                    figure_format=args.figure_format,
+                )
+                run_postprocessing_pipeline(pp_cfg)
+            except Exception as exc:
+                print(f"   -> [WARN] Error generando plots para sistema N={n_val}, g={g_val}: {exc}")
+
+    try:
+        plot_global_audit_dashboard(df, out_dir)
+    except Exception as exc:
+        print(f"   -> [WARN] Error generando dashboard global: {exc}")
 
     print("\n" + "=" * 88)
-    print(f"[Audit] Auditoría completada para {len(df)} modelos.")
+    print(f"[Audit] Auditoría completada exitosamente para {len(df)} modelos.")
     print(f"[Audit] Tabla maestra CSV : {csv_path}")
     print(f"[Audit] Tabla maestra JSON: {json_path}")
     print(f"[Audit] Dashboard global  : {out_dir / 'global_audit_dashboard.pdf'}")
