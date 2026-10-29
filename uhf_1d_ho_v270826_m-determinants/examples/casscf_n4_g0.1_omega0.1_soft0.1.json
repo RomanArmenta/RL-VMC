@@ -1,0 +1,13 @@
+{
+  "n_up": 2,
+  "n_down": 2,
+  "omega": 0.1,
+  "g": 0.1,
+  "softening": 0.1,
+  "n_basis": 32,
+  "quadrature_order": 80,
+  "n_core": 0,
+  "n_active_orbitals": 6,
+  "casscf_max_iter": 500,
+  "orbital_gradient_tol": 1e-5
+}

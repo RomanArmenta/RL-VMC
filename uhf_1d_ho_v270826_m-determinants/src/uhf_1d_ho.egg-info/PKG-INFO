@@ -1,0 +1,117 @@
+Metadata-Version: 2.4
+Name: uhf-1d-ho
+Version: 0.1.0
+Summary: UHF and CASSCF for electrons in a 1D harmonic trap
+Requires-Python: >=3.10
+Description-Content-Type: text/markdown
+Requires-Dist: numpy>=1.24
+Requires-Dist: scipy>=1.10
+Requires-Dist: matplotlib>=3.7
+Provides-Extra: test
+Requires-Dist: pytest>=7; extra == "test"
+
+# UHF and CASSCF for electrons in a 1D harmonic trap
+
+Standalone NumPy/SciPy implementation of spin-unrestricted Hartree–Fock and
+state-specific complete-active-space SCF for
+
+```text
+H = sum_i [-1/2 d²/dx_i² + 1/2 omega² x_i²]
+    + g sum_{i<j} 1/sqrt((x_i-x_j)² + a²).
+```
+
+It follows the referenced VQMC conventions: atomic units, particle ordering `up` then `down`, parameters `omega`, interaction strength `g`, and softening length `a` (`softening` in the CLI). It is deliberately separate and does not modify the VQMC code.
+
+## Method
+
+Each spin orbital is expanded in normalized 1D HO functions of the physical trap frequency,
+`psi_i^sigma(x) = sum_mu C[mu,i]^sigma phi_mu(x)`. The one-body matrix is diagonal,
+`h_mn = omega (n+1/2) delta_mn`. Soft-Coulomb electron-repulsion integrals are evaluated by tensor-product Gauss–Hermite quadrature. The spin Fock matrices are
+
+```text
+F^sigma = h + J[P_up + P_down] - K[P_sigma].
+```
+
+The reported energy decomposition is `E = E_one_body + E_Hartree + E_exchange_up + E_exchange_down`. SCF uses density damping plus separate Pulay DIIS histories for the two spin channels. Optional level shifting is available for difficult cases. Convergence requires both the energy change and density RMS thresholds. All final molecular orbitals are verified against the basis overlap matrix by the CLI.
+
+The finite quadrature and basis sizes are convergence parameters. Increase both and check energy stability for production calculations, particularly for small `a`.
+
+## CASSCF
+
+The CASSCF option partitions the optimized spatial orbitals into doubly occupied
+core, active, and unoccupied virtual spaces. If `n_core = c`, the active electron
+counts are `(N_up-c, N_down-c)`. Every determinant with those fixed spin counts
+in `n_active_orbitals` is included, so the CI treatment inside the active space is
+exact. The core contribution and effective active-space one-body integrals are
+
+```text
+E_core = 2 sum_i h_ii + sum_ij [2(ii|jj) - (ij|ji)]
+h_eff_uv = h_uv + sum_i [2(uv|ii) - (ui|iv)].
+```
+
+Core–active, core–virtual, and active–virtual rotations are optimized while
+redundant rotations within each subspace are omitted. At every orbital step the
+active-space Hamiltonian is rebuilt and diagonalized. The implementation is
+intended for transparent small-system calculations: the CI dimension is
+`choose(n_active_orbitals,n_active_up) * choose(n_active_orbitals,n_active_down)`
+and dense diagonalization scales steeply. `max_ci_dimension` prevents accidental
+oversized calculations.
+
+### Selecting the final determinants
+
+Set `n_final_determinants` (or `--n-final-determinants`) to retain the largest
+CI coefficients in the portable final wavefunction. `0`, the default, keeps the
+entire CAS expansion. Selection occurs **after** full-CAS orbital optimization:
+the selected coefficients are ordered by `|c_I|` and renormalized. The NPZ and
+summary report the original full-CI norm retained by the selection. This makes
+the compact export controllable without changing the optimized orbitals.
+
+The reported CASSCF energy is the full-CAS variational energy, not the energy of
+the truncated expansion. The latter should be evaluated by the downstream VMC
+code after the selected determinants are loaded.
+
+## Install and run
+
+```bash
+python -m pip install -e .
+uhf1d --n-up 2 --n-down 2 --omega 1 --g 1 --softening 0.25 \
+  --n-basis 12 --quadrature-order 80 --output-dir results/n4
+uhf1d --config examples/n4.json --output-dir results/from_json
+uhf1d --method casscf --config examples/casscf_n2.json --output-dir results/cas_n2
+uhf1d --method casscf --config examples/casscf_n2_compact.json --n-final-determinants 4 \
+  --output-dir results/cas_n2_top4
+python -m pytest
+```
+
+For a harder SCF calculation, try more damping and a level shift:
+
+```bash
+uhf1d --config examples/n4.json --mixing 0.2 --level-shift 0.5 --output-dir results/stabilized
+```
+
+## Outputs and later VMC loading
+
+`hf_state.npz` is portable and contains full and occupied coefficient matrices, Fock eigenvalues, density matrices, overlap, convergence history, and JSON metadata. Coefficients use `C[basis_index, orbital_index]`; electrons/orbitals are ordered by spin (`up` then `down`). A future VQMC adapter can evaluate the same HO basis and form `basis_values @ occupied_coefficients_{up,down}`.
+
+```python
+import json, numpy as np
+with np.load("results/n4/hf_state.npz") as state:
+    c_up = state["occupied_coefficients_up"]
+    c_down = state["occupied_coefficients_down"]
+    metadata = json.loads(str(state["metadata_json"]))
+```
+
+Plots: `orbitals.png`, `spin_densities.png`, `scf_convergence.png`, and `fock_spectrum.png`. `summary.json` is a human-readable run summary.
+
+For CASSCF, `casscf_state.npz` contains the optimized spatial-orbital matrix,
+separate core and active orbital slices, CI coefficients, determinant bitstrings,
+overlap, convergence history, and JSON metadata. Active determinants encode the
+up-spin bits first and down-spin bits second. The corresponding plots are
+`casscf_orbitals.png`, `casscf_convergence.png`, and `ci_weights.png`.
+`determinant_mosaic.png` shows every selected determinant in descending
+`|c_I|`; solid curves are occupied up-spin active orbitals, dashed curves are
+occupied down-spin active orbitals, and gray curves are doubly occupied core
+orbitals. Selections larger than 12 determinants are split across numbered
+mosaic pages.
+
+See `EXAMPLES.md` for a guided set of calculations and Python loading examples.

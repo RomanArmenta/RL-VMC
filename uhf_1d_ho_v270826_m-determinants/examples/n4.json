@@ -1,0 +1,12 @@
+{
+  "n_up": 2,
+  "n_down": 2,
+  "omega": 1.0,
+  "g": 1.0,
+  "softening": 0.25,
+  "n_basis": 12,
+  "quadrature_order": 80,
+  "mixing": 0.35,
+  "diis": true
+}
+

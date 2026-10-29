@@ -1,0 +1,44 @@
+{
+  "method": "CASSCF",
+  "system": {
+    "n_up": 2,
+    "n_down": 2,
+    "omega": 0.1,
+    "g": 4.0,
+    "a": 0.1,
+    "n_electrons": 4,
+    "oscillator_length": 3.162277660168379,
+    "lambda_coupling": 12.649110640673516,
+    "softening_dimensionless": 0.0316227766016838
+  },
+  "energy_total": null,
+  "classical_energy": 3.6982492654928265,
+  "classical_sites": [
+    -10.585642611398082,
+    -3.3476182764916267,
+    3.3476182765828244,
+    10.585642611388067
+  ],
+  "natural_occupations_up": [
+    0.9999999999999998,
+    0.5000000000000273,
+    0.49999999999997247
+  ],
+  "natural_occupations_down": [
+    0.9999999999999996,
+    0.5000000000000271,
+    0.4999999999999725
+  ],
+  "density_peak_count": 4,
+  "density_peak_positions": [
+    -9.399999999999999,
+    -3.299999999999997,
+    3.3000000000000043,
+    9.400000000000006
+  ],
+  "lindemann_like_ratio": 0.4353490073491348,
+  "rms_peak_to_classical_displacement": 2.11224558525209,
+  "mean_nearest_neighbor_spacing": 7.05709507426205,
+  "opposite_spin_small_r_cut": 3.528547537131025,
+  "opposite_spin_small_r_probability": 0.15001638474079385
+}

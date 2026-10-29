@@ -1,0 +1,29 @@
+{
+  "converged": true,
+  "iterations": 62,
+  "energies": {
+    "one_body": 1.7650446709600651,
+    "hartree_coulomb": 7.92212463685358,
+    "exchange_up": -1.713444928391698,
+    "exchange_down": -1.713444928391698,
+    "exchange": -3.426889856783396,
+    "total": 6.26027945103025
+  },
+  "config": {
+    "n_up": 2,
+    "n_down": 2,
+    "omega": 0.08,
+    "g": 4.0,
+    "softening": 0.25,
+    "n_basis": 24,
+    "quadrature_order": 80,
+    "max_iter": 200,
+    "energy_tol": 1e-10,
+    "density_tol": 1e-08,
+    "mixing": 0.35,
+    "diis": true,
+    "diis_start": 3,
+    "diis_size": 8,
+    "level_shift": 0.0
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "n_up": 5,
+  "n_down": 5,
+  "omega": 1.0,
+  "g": 1.0,
+  "softening": 0.25,
+  "n_basis": 16,
+  "quadrature_order": 80,
+  "n_core": 0,
+  "n_active_orbitals": 4,
+  "n_final_determinants": 16,
+  "casscf_max_iter": 40
+}
+

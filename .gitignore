@@ -18,3 +18,15 @@ params/
 /results*/
 /logs*/
 /params*/
+
+# macOS
+.DS_Store
+
+# Archivos de análisis temporal de postprocesamiento
+casscf_exact_analysis/
+log_dir
+master_pipeline_log_txt
+opt_vmc.log
+
+# Excepciones: Permitir CSVs analíticos de referencia dentro de CASSCF si se requieren
+!uhf_1d_ho_v270826_m-determinants/**/*.csv
