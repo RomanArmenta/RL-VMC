@@ -277,15 +277,68 @@ def convert_legacy_dir_to_h5(
     method: Optional[str] = None,
 ) -> Path:
     """Convierte una carpeta de resultados previa (params.json, *.pkl, *.csv) al formato unificado .h5."""
+    import re
     dir_path = Path(legacy_dir)
     if not dir_path.exists():
         raise FileNotFoundError(f"No existe la carpeta legacy: {dir_path}")
 
-    params_file = dir_path / "params.json"
+    # 1. Cargar configuración JSON desde params.json o run_config.json
     legacy_params = {}
-    if params_file.exists():
-        with params_file.open("r", encoding="utf-8") as f:
-            legacy_params = json.load(f)
+    config_candidates = [
+        dir_path / "params.json",
+        dir_path / "run_config.json",
+        dir_path / "config.json",
+    ]
+    for cpath in config_candidates:
+        if cpath.is_file():
+            try:
+                with cpath.open("r", encoding="utf-8") as f:
+                    legacy_params = json.load(f)
+                break
+            except Exception:
+                pass
+
+    # Si no se encontró en la carpeta, buscar en carpetas ascendentes (padre / abuelo)
+    if not legacy_params:
+        for ancestor in (dir_path.parent, dir_path.parent.parent):
+            if ancestor.is_dir():
+                for cpath in (ancestor / "params.json", ancestor / "run_config.json", ancestor / "config.json"):
+                    if cpath.is_file():
+                        try:
+                            with cpath.open("r", encoding="utf-8") as f:
+                                legacy_params = json.load(f)
+                            break
+                        except Exception:
+                            pass
+                if legacy_params:
+                    break
+
+    # 2. Inferir hiperparámetros físicos faltantes a partir del nombre y ruta del directorio
+    path_str = str(dir_path.resolve())
+    if "n_elec" not in legacy_params:
+        m_n = re.search(r"[Nn]e?(\d+)", path_str)
+        if m_n:
+            legacy_params["n_elec"] = int(m_n.group(1))
+    if "interaction_strength" not in legacy_params and "g" not in legacy_params:
+        m_g = re.search(r"[gG]_?([0-9]+(?:\.[0-9]+)?)", path_str)
+        if m_g:
+            legacy_params["interaction_strength"] = float(m_g.group(1))
+    if "omega" not in legacy_params:
+        m_om = re.search(r"[oO]m(?:ega)?_?([0-9]+(?:\.[0-9]+)?)", path_str)
+        if m_om:
+            legacy_params["omega"] = float(m_om.group(1))
+    if "tau" not in legacy_params:
+        m_tau = re.search(r"tau_?([0-9]+(?:\.[0-9]+)?)", path_str)
+        if m_tau:
+            legacy_params["tau"] = float(m_tau.group(1))
+    if "actor_amplitude" not in legacy_params:
+        m_amp = re.search(r"[Aa]mp(?:litude)?_?([0-9]+(?:\.[0-9]+)?)", path_str)
+        if m_amp:
+            legacy_params["actor_amplitude"] = float(m_amp.group(1))
+    if "penalty_factor" not in legacy_params:
+        m_pen = re.search(r"[Pp]en(?:alty)?_?([0-9]+(?:\.[0-9]+)?)", path_str)
+        if m_pen:
+            legacy_params["penalty_factor"] = float(m_pen.group(1))
 
     # Detectar método automáticamente si no fue especificado
     if method is None:
@@ -293,42 +346,102 @@ def convert_legacy_dir_to_h5(
             method = str(legacy_params["method"])
         elif "rl_method" in legacy_params:
             method = str(legacy_params["rl_method"])
-        elif (dir_path / "TD3_actor_weights.pkl").exists() or (dir_path / "RL-MALA_actor_weights.pkl").exists():
+        elif (dir_path / "TD3_actor_weights.pkl").exists() or (dir_path / "RL-MALA_actor_weights.pkl").exists() or (dir_path / "actor_params.npz").exists():
             method = "TD3"
         elif (dir_path / "REINFORCE_actor_weights.pkl").exists():
+            method = "REINFORCE"
+        elif "TD3" in dir_path.name.upper():
+            method = "TD3"
+        elif "REINFORCE" in dir_path.name.upper():
             method = "REINFORCE"
         else:
             method = "MALA"
 
     config_dict = _normalize_legacy_params_to_config(legacy_params, method)
 
-    # Cargar pesos .pkl disponibles
+    # 3. Cargar pesos de Ansatz (en dir_path, o fallback a parent o carpetas hermanas)
     ansatz_best = None
-    for candidate in (
+    ansatz_candidates = [
         f"{method}_ansatz_weights.pkl",
         "TD3_ansatz_weights.pkl",
         "REINFORCE_ansatz_weights.pkl",
         "RL-MALA_ansatz_weights.pkl",
         "MALA_ansatz_weights.pkl",
-    ):
+        "params_psi.pkl",
+    ]
+    for candidate in ansatz_candidates:
         cand_path = dir_path / candidate
-        if cand_path.exists():
-            with cand_path.open("rb") as f:
-                ansatz_best = pickle.load(f)
-            break
+        if cand_path.is_file():
+            try:
+                with cand_path.open("rb") as f:
+                    ansatz_best = pickle.load(f)
+                break
+            except Exception:
+                pass
 
+    # Si no se encontró en dir_path, buscar en parent y carpetas hermanas
+    if ansatz_best is None:
+        parent = dir_path.parent
+        # A. Checar en parent
+        for candidate in ansatz_candidates:
+            p_cand = parent / candidate
+            if p_cand.is_file():
+                try:
+                    with p_cand.open("rb") as f:
+                        ansatz_best = pickle.load(f)
+                    break
+                except Exception:
+                    pass
+        # B. Checar en carpetas hermanas (ej. MALA_tau*, TD3, MALA_Baselines)
+        if ansatz_best is None and parent.is_dir():
+            for sibling in parent.iterdir():
+                if sibling.is_dir() and sibling.resolve() != dir_path.resolve():
+                    for candidate in ansatz_candidates:
+                        s_cand = sibling / candidate
+                        if s_cand.is_file():
+                            try:
+                                with s_cand.open("rb") as f:
+                                    ansatz_best = pickle.load(f)
+                                break
+                            except Exception:
+                                pass
+                    if ansatz_best is not None:
+                        break
+
+    # Si aún no se encontró ningún archivo de pesos, inicializar ansatz por defecto para permitir evaluar
+    if ansatz_best is None:
+        from ..wavefunctions.builder import build_ansatz_1d
+        from ..config import Experiment1DConfig
+        tmp_cfg = Experiment1DConfig.from_dict(config_dict)
+        ansatz_model = build_ansatz_1d(tmp_cfg)
+        k_init = jax.random.PRNGKey(int(config_dict.get("train", {}).get("seed", 42)))
+        ansatz_best = ansatz_model.init(k_init, jnp.zeros((1, tmp_cfg.system.n_elec, 1)))
+
+    # 4. Cargar pesos de Actor si existen
     actor_final = None
-    for candidate in (
+    actor_candidates = [
         f"{method}_actor_weights.pkl",
         "TD3_actor_weights.pkl",
         "REINFORCE_actor_weights.pkl",
         "RL-MALA_actor_weights.pkl",
-    ):
+        "actor_params.npz",
+    ]
+    for candidate in actor_candidates:
         cand_path = dir_path / candidate
-        if cand_path.exists():
-            with cand_path.open("rb") as f:
-                actor_final = pickle.load(f)
-            break
+        if cand_path.is_file():
+            try:
+                if candidate.endswith(".npz"):
+                    with np.load(cand_path, allow_pickle=True) as adata:
+                        if "params" in adata:
+                            actor_final = {"params": adata["params"].item()}
+                        else:
+                            actor_final = {k: adata[k] for k in adata.files}
+                else:
+                    with cand_path.open("rb") as f:
+                        actor_final = pickle.load(f)
+                break
+            except Exception:
+                pass
 
     critic1_final, critic2_final = None, None
     c1_path = dir_path / "TD3_critic1_weights.pkl"

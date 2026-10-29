@@ -195,21 +195,37 @@ def _convert_legacy_casscf_sampling_dir_to_h5(
     (`summary.csv` + `actor_params.npz` + `casscf_exact_analysis/analysis_summary.json`)
     en un bundle unificado `.h5` evaluable por el pipeline modular.
     """
-    summary_df = pd.read_csv(model_dir / "summary.csv")
-    row = summary_df.iloc[0].to_dict()
+    import re
+    path_str = str(model_dir.resolve())
+    row = {}
+    if (model_dir / "summary.csv").is_file():
+        try:
+            summary_df = pd.read_csv(model_dir / "summary.csv")
+            if not summary_df.empty:
+                row = summary_df.iloc[0].to_dict()
+        except Exception:
+            pass
 
     analysis_json = model_dir / "casscf_exact_analysis" / "analysis_summary.json"
     sys_info = {}
     if analysis_json.exists():
-        with analysis_json.open("r", encoding="utf-8") as f:
-            sys_info = json.load(f).get("system", {})
+        try:
+            with analysis_json.open("r", encoding="utf-8") as f:
+                sys_info = json.load(f).get("system", {})
+        except Exception:
+            pass
 
-    n_up = int(sys_info.get("n_up", 2))
-    n_dn = int(sys_info.get("n_down", 2))
+    m_n = re.search(r"[Nn]e?(\d+)", path_str)
+    n_path = int(m_n.group(1)) if m_n else 4
+    m_g = re.search(r"[gG]_?([0-9]+(?:\.[0-9]+)?)", path_str)
+    g_path = float(m_g.group(1)) if m_g else 4.0
+
+    n_up = int(sys_info.get("n_up", row.get("n_up", n_path // 2)))
+    n_dn = int(sys_info.get("n_down", row.get("n_dn", n_path - n_up)))
     n_elec = n_up + n_dn
-    omega = float(sys_info.get("omega", 0.1))
-    g = float(sys_info.get("g", 4.0))
-    softening = float(sys_info.get("a", 0.1))
+    omega = float(sys_info.get("omega", row.get("omega", 0.1)))
+    g = float(sys_info.get("g", row.get("g", g_path)))
+    softening = float(sys_info.get("a", row.get("softening", 0.1)))
 
     match_b = find_matching_casscf_baseline(
         casscf_baselines, n_up=n_up, n_dn=n_dn, omega=omega, g=g, softening=softening
@@ -281,84 +297,122 @@ def discover_model_targets(
     search_root: Path, pattern: str, audit_out_dir: Path
 ) -> list[dict[str, Any]]:
     """
-    Busca recursivamente dentro de `search_root / pattern` todas las carpetas legacy
-    (`params.json` + `*_ansatz_weights.pkl`), carpetas de muestreo CASSCF
-    (`summary.csv` + `actor_params.npz`) y archivos `.h5` unificados.
-    Evita duplicados por enlaces simbólicos (`ln -sfn` creados por scripts bash).
+    Busca recursivamente dentro de `search_root` (usando `pattern` para las carpetas
+    raíz de resultados) todos los modelos entrenados y evaluables:
+    1. Archivos `.h5` unificados nativos o previamente convertidos.
+    2. Carpetas legacy de muestreo CASSCF (`summary.csv` + `actor_params.npz` o `casscf_exact_analysis`).
+    3. Carpetas legacy de entrenamiento/evaluación:
+       - Carpetas con pesos propios (`*_ansatz_weights.pkl`, `*_actor_weights.pkl`, `params_psi.pkl`, `*weights*.pkl`).
+       - Carpetas hijas/symlinks de suites de barrido (ej. `MALA_tau*`, `TD3*`, `Perm_*`).
+       - Resuelve symlinks de forma segura (`followlinks=True`) evitando ciclos y deduplicando por ruta canónica.
     """
-    root_matches = sorted(search_root.glob(pattern))
-    seen_real_dirs: set[Path] = set()
-    seen_real_h5: set[Path] = set()
+    import os
+    audit_real_str = str(audit_out_dir.resolve())
+    search_root_resolved = search_root.resolve()
+
+    # Identificar carpetas raíz candidatas según pattern
+    root_dirs: list[Path] = []
+    # 1. Matches directos en search_root
+    for p in sorted(search_root.glob(pattern)):
+        if p.is_dir() and str(p.resolve()) != audit_real_str:
+            root_dirs.append(p)
+
+    # 2. Si pattern no coincidió o search_root en sí misma es la carpeta objetivo
+    if not root_dirs and search_root.is_dir():
+        root_dirs.append(search_root)
+
+    visited_real_dirs: set[str] = set()
+    seen_model_dirs: set[str] = set()
+    seen_h5_files: set[str] = set()
     targets: list[dict[str, Any]] = []
-    audit_real = audit_out_dir.resolve()
 
-    for top_dir in root_matches:
-        if not top_dir.is_dir():
-            continue
-        if top_dir.resolve() == audit_real:
+    for top_dir in root_dirs:
+        top_real = str(top_dir.resolve())
+        if top_real == audit_real_str:
             continue
 
-        # 1. Buscar carpetas legacy con params.json y pesos *_ansatz_weights.pkl
-        for params_path in sorted(top_dir.rglob("params.json")):
-            model_dir = params_path.parent
-            if model_dir.is_symlink():
+        suite_name = top_dir.name
+
+        for root, dirs, files in os.walk(str(top_dir), followlinks=True):
+            real_root = os.path.realpath(root)
+
+            # Protección contra bucles cíclicos de symlinks
+            if real_root in visited_real_dirs:
+                dirs.clear()
                 continue
-            real_dir = model_dir.resolve()
-            if real_dir in seen_real_dirs or str(real_dir).startswith(str(audit_real)):
+            visited_real_dirs.add(real_root)
+
+            # Omitir la carpeta de salida del auditorio
+            if real_root.startswith(audit_real_str):
+                dirs.clear()
                 continue
 
-            pkl_candidates = list(model_dir.glob("*_ansatz_weights.pkl"))
-            if not pkl_candidates:
-                continue
+            # 1. Detectar archivos HDF5 unificados (*.h5)
+            for f in files:
+                if f.endswith(".h5") and not f.startswith("."):
+                    h5_path = Path(root) / f
+                    real_h5 = os.path.realpath(str(h5_path))
+                    if real_h5 not in seen_h5_files and not real_h5.startswith(audit_real_str):
+                        seen_h5_files.add(real_h5)
+                        targets.append(
+                            {
+                                "type": "h5_bundle",
+                                "path": h5_path,
+                                "suite": suite_name,
+                                "rel_path": os.path.relpath(real_h5, str(search_root_resolved)),
+                            }
+                        )
 
-            seen_real_dirs.add(real_dir)
-            targets.append(
-                {
-                    "type": "legacy_dir",
-                    "path": model_dir,
-                    "suite": top_dir.name,
-                    "rel_path": str(model_dir.relative_to(search_root)),
-                }
-            )
+            # 2. Detectar carpetas de muestreo CASSCF legacy (summary.csv + actor_params.npz o casscf_exact_analysis)
+            has_summary_csv = "summary.csv" in files
+            has_actor_npz = "actor_params.npz" in files
+            has_casscf_analysis = ("casscf_exact_analysis" in dirs) or ("analysis_summary.json" in files)
+            if (has_summary_csv or has_casscf_analysis) and (has_actor_npz or has_summary_csv):
+                if real_root not in seen_model_dirs:
+                    seen_model_dirs.add(real_root)
+                    targets.append(
+                        {
+                            "type": "legacy_casscf_sampling_dir",
+                            "path": Path(root),
+                            "suite": suite_name,
+                            "rel_path": os.path.relpath(real_root, str(search_root_resolved)),
+                        }
+                    )
+                    continue
 
-        # 2. Buscar carpetas legacy de muestreo CASSCF (summary.csv + actor_params.npz)
-        for sum_csv in sorted(top_dir.rglob("summary.csv")):
-            model_dir = sum_csv.parent
-            if model_dir.is_symlink():
-                continue
-            real_dir = model_dir.resolve()
-            if real_dir in seen_real_dirs or str(real_dir).startswith(str(audit_real)):
-                continue
-            if not (model_dir / "actor_params.npz").exists():
-                continue
-            seen_real_dirs.add(real_dir)
-            targets.append(
-                {
-                    "type": "legacy_casscf_sampling_dir",
-                    "path": model_dir,
-                    "suite": top_dir.name,
-                    "rel_path": str(model_dir.relative_to(search_root)),
-                }
-            )
+            # 3. Detectar carpetas legacy de entrenamiento y evaluación
+            ansatz_weights = [f for f in files if f.endswith("_ansatz_weights.pkl") or f == "params_psi.pkl"]
+            actor_weights = [f for f in files if f.endswith("_actor_weights.pkl") or f == "actor_params.npz"]
+            any_weights = [f for f in files if "weight" in f.lower() and f.endswith(".pkl")]
+            has_config = ("params.json" in files) or ("run_config.json" in files) or ("config.json" in files)
+            has_metrics = any("training_metrics" in f for f in files) or ("measurement_data.csv" in files)
 
-        # 3. Buscar bundles HDF5 nativos (*.h5) que no provengan de una carpeta legacy ya registrada
-        for h5_path in sorted(top_dir.rglob("*.h5")):
-            if h5_path.is_symlink():
-                continue
-            real_h5 = h5_path.resolve()
-            if real_h5 in seen_real_h5 or str(real_h5).startswith(str(audit_real)):
-                continue
-            if h5_path.parent.resolve() in seen_real_dirs:
-                continue
-            seen_real_h5.add(real_h5)
-            targets.append(
-                {
-                    "type": "h5_bundle",
-                    "path": h5_path,
-                    "suite": top_dir.name,
-                    "rel_path": str(h5_path.relative_to(search_root)),
-                }
-            )
+            is_legacy = False
+            if ansatz_weights:
+                is_legacy = True
+            elif actor_weights:
+                is_legacy = True
+            elif any_weights:
+                is_legacy = True
+            elif has_config and has_metrics:
+                # Comprobar si hay pesos en el padre o hermano (como ocurre en TD3 desacoplado)
+                p_path = Path(root).parent
+                if p_path.is_dir():
+                    for check_dir in [p_path, *p_path.glob("MALA*"), *p_path.glob("TD3*")]:
+                        if check_dir.is_dir() and any("weight" in f.name.lower() for f in check_dir.iterdir() if f.is_file()):
+                            is_legacy = True
+                            break
+
+            if is_legacy and real_root not in seen_model_dirs:
+                seen_model_dirs.add(real_root)
+                targets.append(
+                    {
+                        "type": "legacy_dir",
+                        "path": Path(root),
+                        "suite": suite_name,
+                        "rel_path": os.path.relpath(real_root, str(search_root_resolved)),
+                    }
+                )
 
     return targets
 
