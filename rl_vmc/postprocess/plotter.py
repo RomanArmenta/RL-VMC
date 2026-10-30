@@ -1021,6 +1021,12 @@ def run_postprocessing_pipeline(cfg: PostProcessConfig) -> pd.DataFrame:
         row = {
             "label": label,
             "h5_path": str(h5_path),
+            "N": int(n_up + n_dn),
+            "n_up": int(n_up),
+            "n_dn": int(n_dn),
+            "omega": float(omega),
+            "g": float(sys_cfg.get("interaction_strength", sys_cfg.get("g", 1.0))),
+            "softening": float(sys_cfg.get("softening", 0.1)),
             "n_chains": summary.get("n_chains", 0),
             "E_mean": e_mean_val,
             "SE_E": summary.get("SE_E", float("nan")),
@@ -1060,14 +1066,78 @@ def run_postprocessing_pipeline(cfg: PostProcessConfig) -> pd.DataFrame:
             }
         )
 
+    # Enriquecer cada summary.json individual de los modelos evaluados con métricas comparativas
+    baseline_ess_s = summary_rows[0]["ESS_per_sec"] if summary_rows else float("nan")
+    baseline_e = summary_rows[0]["E_mean"] if summary_rows else float("nan")
+    for r in summary_rows:
+        ess_s_val = r.get("ESS_per_sec", float("nan"))
+        r["ESS_speedup_vs_baseline"] = (
+            float(ess_s_val / baseline_ess_s)
+            if (np.isfinite(ess_s_val) and np.isfinite(baseline_ess_s) and baseline_ess_s > 0)
+            else 1.0
+        )
+        r["delta_E_vs_baseline"] = (
+            float(r["E_mean"] - baseline_e)
+            if (np.isfinite(r["E_mean"]) and np.isfinite(baseline_e))
+            else 0.0
+        )
+        try:
+            bundle_dir = os.path.dirname(os.path.abspath(r["h5_path"]))
+            indiv_summary_path = os.path.join(bundle_dir, "summary.json")
+            if os.path.exists(indiv_summary_path):
+                with open(indiv_summary_path, "r", encoding="utf-8") as f_in:
+                    indiv_data = json.load(f_in)
+                indiv_data["comparative_postprocess"] = {
+                    "G_RL_speedup": r["G_RL_speedup"],
+                    "ESS_speedup_vs_baseline": r["ESS_speedup_vs_baseline"],
+                    "delta_E_vs_baseline": r["delta_E_vs_baseline"],
+                    "postprocess_out_dir": str(cfg.out_dir),
+                }
+                with open(indiv_summary_path, "w", encoding="utf-8") as f_out:
+                    json.dump(indiv_data, f_out, indent=2)
+        except Exception:
+            pass
+
     df = pd.DataFrame(summary_rows)
     if cfg.save_summary_csv:
         csv_path = os.path.join(cfg.out_dir, "summary_metrics.csv")
         json_path = os.path.join(cfg.out_dir, "summary_metrics.json")
+        std_summary_json = os.path.join(cfg.out_dir, "summary.json")
         df.to_csv(csv_path, index=False)
         with open(json_path, "w", encoding="utf-8") as f:
             json.dump(summary_rows, f, indent=2)
+        with open(std_summary_json, "w", encoding="utf-8") as f:
+            json.dump(
+                {
+                    "out_dir": str(cfg.out_dir),
+                    "casscf_reference": {
+                        "has_casscf_baseline": bool(casscf_ref is not None),
+                        "npz_path": str(casscf_ref["npz_path"]) if casscf_ref is not None else None,
+                        "energy": float(casscf_ref["energy"]) if casscf_ref is not None else None,
+                    },
+                    "models": summary_rows,
+                },
+                f,
+                indent=2,
+            )
         print(f"[PostProcess] Tabla resumen guardada en: {csv_path}")
+
+    if getattr(cfg, "master_comparison_csv", None):
+        try:
+            import fcntl
+            m_csv = os.path.abspath(cfg.master_comparison_csv)
+            os.makedirs(os.path.dirname(m_csv) or ".", exist_ok=True)
+            lock_file = m_csv + ".lock"
+            with open(lock_file, "w") as f_lock:
+                fcntl.flock(f_lock, fcntl.LOCK_EX)
+                try:
+                    write_hdr = not os.path.exists(m_csv) or os.path.getsize(m_csv) == 0
+                    df.to_csv(m_csv, mode="a", header=write_hdr, index=False)
+                finally:
+                    fcntl.flock(f_lock, fcntl.LOCK_UN)
+            print(f"[PostProcess] Comparativa agregada en vivo a: {m_csv}")
+        except Exception as exc:
+            print(f"  [Aviso] No se pudo escribir en master_comparison_csv: {exc}")
 
     def _safe_run_plot(fn, *args, **kwargs):
         try:

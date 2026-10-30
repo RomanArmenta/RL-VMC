@@ -185,7 +185,7 @@ def run_casscf(cfg):
     def callback(x):
         counter["n"] += 1; energy = objective(x)
         history["iteration"].append(counter["n"]); history["energy"].append(energy)
-        print(f"iteration: {counter["n"]}, energy: {energy}")
+        print(f"iteration: {counter['n']}, energy: {energy}")
     x0 = np.zeros(len(pairs))
     if len(pairs):
         opt = minimize(objective, x0, method="BFGS", callback=callback,
