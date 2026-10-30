@@ -396,19 +396,47 @@ Cada carpeta de modelo (`MALA_FixedCASSCF`, `RL_TD3_FixedCASSCF`, `VMC_MALA_SJB`
 
 ## 6. Guía de Uso en los Servidores (`ayler` y `baker`)
 
-### 6.1. Ejecución Completa de los 3 Pipelines en Segundo Plano
+### 6.1. Política de Asignación de Recursos (CPU y Pool Dinámico de GPUs)
+
+El script [`run_production_benchmark_3pipelines.sh`](file:///Users/romanarmenta/Documents/Git-Projects/RL-VMC-main/run_production_benchmark_3pipelines.sh) implementa un gestor de concurrencia y telemetría de procesos de nivel de producción:
+
+1. **Pipeline 1 (CASSCF en CPU, Estrictamente Secuencial):**
+   - Todos los cálculos multiconfiguracionales CASSCF se ejecutan con `CUDA_VISIBLE_DEVICES=""`, aislándolos completamente de la memoria GPU.
+   - La ejecución es estrictamente **uno por uno**: el cálculo para el sistema $(N, g)$ debe converger y cerrarse al 100% antes de iniciar el siguiente $(N, g')$.
+   - Cada ejecución se registra en el log maestro con un banner que especifica el script lanzado, hora de inicio, hora de terminación, tiempo transcurrido (en segundos y formato `HHh MMm SSs`), y el PID del proceso Python.
+
+2. **Pipelines 2 y 3 (Pool Dinámico de GPUs):**
+   - El script detecta automáticamente todas las GPUs del servidor mediante `nvidia-smi` (o acepta una lista explícita en `GPU_LIST="0 1 ..."`).
+   - Un despachador atómico basado en slots (`wait_for_free_gpu_slot`) asigna cada sistema $(N, g)$ a la GPU que tenga menor carga y esté libre.
+   - En cuanto cualquier GPU termina una corrida (libera su slot), el planificador despacha inmediatamente el siguiente sistema de la cola hacia esa GPU.
+   - En el log maestro (`master_3pipelines.log`) y en los logs individuales de cada sistema (`logs/p2_sampling_*.log`, `logs/p3_training_*.log`), se detalla en tiempo real la asignación de GPU, PID del worker, hora de inicio, hora de terminación y duración total.
+
+### 6.2. Ejecución Completa de los 3 Pipelines en Segundo Plano
 ```bash
 git pull origin main
 chmod +x run_production_benchmark_3pipelines.sh
 nohup ./run_production_benchmark_3pipelines.sh > master_3pipelines.log 2>&1 &
 ```
 
-### 6.2. Ejecución Modular por Pipeline o Subconjunto de Sistemas
+### 6.3. Monitoreo en Tiempo Real del Log Maestro y las GPUs
+Para supervisar la cola dinámica de trabajos, los PIDs en ejecución y los tiempos de cómputo:
+```bash
+# Ver en vivo la asignación de trabajos por GPU, PIDs y duración de cada etapa:
+tail -f master_3pipelines.log
+
+# Monitorear uso de memoria y actividad de los procesos GPU:
+watch -n 1 nvidia-smi
+```
+
+### 6.4. Ejecución Modular por Pipeline o Subconjunto de Sistemas
 Puedes controlar qué pipelines o qué sistemas correr mediante variables de entorno sin editar el archivo `.sh`:
 
 ```bash
-# Correr únicamente el Pipeline 1 (CASSCF) para verificar todas las referencias en minutos:
+# Correr únicamente el Pipeline 1 (CASSCF uno por uno en CPU):
 PIPELINES_TO_RUN="1" ./run_production_benchmark_3pipelines.sh
+
+# Correr Pipelines 2 y 3 repartiendo trabajos dinámicamente entre GPUs 0 y 1:
+GPU_LIST="0 1" JOBS_PER_GPU="1" PIPELINES_TO_RUN="2 3" nohup ./run_production_benchmark_3pipelines.sh > master_p2_p3.log 2>&1 &
 
 # Correr los 3 pipelines para N=4 y N=10 en g=1.0, 5.0, 8.0:
 N_LIST="4 10" G_LIST="1.0 5.0 8.0" nohup ./run_production_benchmark_3pipelines.sh > run_N4_N10.log 2>&1 &
