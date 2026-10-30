@@ -47,6 +47,11 @@
 set -u
 
 export PYTHONUNBUFFERED=1
+export OMP_NUM_THREADS=1
+export MKL_NUM_THREADS=1
+export OPENBLAS_NUM_THREADS=1
+export VECLIB_MAXIMUM_THREADS=1
+export NUMEXPR_NUM_THREADS=1
 export XLA_PYTHON_CLIENT_PREALLOCATE=false
 export XLA_PYTHON_CLIENT_MEM_FRACTION=0.30
 export TF_FORCE_GPU_ALLOW_GROWTH=true
@@ -134,16 +139,7 @@ get_system_casscf_params() {
     if [ "$N" -eq 2 ]; then
         n_core=0; n_act=4; n_basis=24; quad=80; soft="0.1"
     elif [ "$N" -eq 4 ]; then
-        n_core=0
-        # Para g >= 4.0 el asesor utiliza 5 orbitales activos (100 determinantes)
-        local is_strong
-        is_strong=$(awk -v g="$G" 'BEGIN {print (g >= 4.0) ? 1 : 0}')
-        if [ "$is_strong" -eq 1 ]; then
-            n_act=5
-        else
-            n_act=4
-        fi
-        n_basis=32; quad=80; soft="0.1"
+        n_core=0; n_act=4; n_basis=32; quad=80; soft="0.1"
     elif [ "$N" -eq 6 ]; then
         n_core=1; n_act=4; n_basis=32; quad=80; soft="0.1"
     elif [ "$N" -eq 8 ]; then
