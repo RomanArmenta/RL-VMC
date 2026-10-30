@@ -46,6 +46,7 @@
 
 set -u
 
+export PYTHONUNBUFFERED=1
 export XLA_PYTHON_CLIENT_PREALLOCATE=false
 export XLA_PYTHON_CLIENT_MEM_FRACTION=0.30
 export TF_FORCE_GPU_ALLOW_GROWTH=true
@@ -194,7 +195,7 @@ run_pipeline_1() {
             fi
 
             echo "  -> [Pipeline 1] Ejecutando CASSCF para ${SYS_TAG} (n_core=${NCORE}, n_act=${NACT}, n_basis=${NBASIS}, a=${SOFT})..."
-            python3 cli/run_casscf_1d.py \
+            python3 -u cli/run_casscf_1d.py \
                 --n_elec "$N" \
                 --n_up "$N_UP" \
                 --n_dn "$N_DN" \
@@ -238,7 +239,7 @@ run_sistema_pipeline_2() {
 
     if [ ! -f "$CASSCF_NPZ" ]; then
         echo "  [Aviso Pipeline 2] No se encontró $CASSCF_NPZ para ${SYS_TAG}. Ejecutando Pipeline 1 primero..."
-        python3 cli/run_casscf_1d.py \
+        python3 -u cli/run_casscf_1d.py \
             --n_elec "$N" --n_up "$N_UP" --n_dn "$N_DN" \
             --omega "$OMEGA" --g "$G" --softening "$SOFT" \
             --n_core "$NCORE" --n_active_orbitals "$NACT" \
@@ -257,7 +258,7 @@ run_sistema_pipeline_2() {
 
     # 2A. Muestreo puro con MALA estándar sobre CASSCF congelado
     if [ "$FORCE_RERUN" -eq 1 ] || [ ! -f "${MALA_DIR}/run_bundle.h5" ]; then
-        CUDA_VISIBLE_DEVICES=$GPU_ID python3 cli/run_1d.py \
+        CUDA_VISIBLE_DEVICES=$GPU_ID python3 -u cli/run_1d.py \
             --run_name "P2_MALA_FixedCASSCF_${SYS_TAG}" \
             --pipeline_stage "pipeline2_pure_sampling" \
             --train_mode eval_only \
@@ -280,7 +281,7 @@ run_sistema_pipeline_2() {
 
     # 2B. Entrenamiento del Actor RL-MALA (TD3 DeepSet) sobre CASSCF congelado + Evaluación
     if [ "$FORCE_RERUN" -eq 1 ] || [ ! -f "${RL_DIR}/run_bundle.h5" ]; then
-        CUDA_VISIBLE_DEVICES=$GPU_ID python3 cli/run_1d.py \
+        CUDA_VISIBLE_DEVICES=$GPU_ID python3 -u cli/run_1d.py \
             --run_name "P2_RL_TD3_FixedCASSCF_${SYS_TAG}" \
             --pipeline_stage "pipeline2_pure_sampling" \
             --train_mode rl_only \
@@ -307,14 +308,14 @@ run_sistema_pipeline_2() {
 
     # 2C. Post-procesamiento inmediato por sistema (figuras + CSV comparativo en vivo)
     if [ -f "${MALA_DIR}/run_bundle.h5" ] && [ -f "${RL_DIR}/run_bundle.h5" ]; then
-        CUDA_VISIBLE_DEVICES="" python3 cli/postprocess.py \
+        CUDA_VISIBLE_DEVICES="" python3 -u cli/postprocess.py \
             --inputs "${MALA_DIR}/run_bundle.h5" "${RL_DIR}/run_bundle.h5" \
             --labels "MALA (Fixed CASSCF)" "RL-MALA TD3 (Fixed CASSCF)" \
             --casscf_npz_path "$CASSCF_NPZ" \
             --out_dir "$COMP_DIR" \
             --master_comparison_csv "$LIVE_CSV_P2_COMP"
 
-        CUDA_VISIBLE_DEVICES="" python3 cli/postprocess.py \
+        CUDA_VISIBLE_DEVICES="" python3 -u cli/postprocess.py \
             --inputs "${MALA_DIR}/run_bundle.h5" "${RL_DIR}/run_bundle.h5" \
             --labels "P2_MALA_FixedCASSCF_${SYS_TAG}" "P2_RL_TD3_FixedCASSCF_${SYS_TAG}" \
             --casscf_npz_path "$CASSCF_NPZ" \
@@ -373,7 +374,7 @@ run_sistema_pipeline_3() {
 
     # 3A. Entrenamiento VMC con MALA estándar (Slater-Jastrow + Backflow + Spin-RBF Jastrow)
     if [ "$FORCE_RERUN" -eq 1 ] || [ ! -f "${VMC_MALA_DIR}/run_bundle.h5" ]; then
-        CUDA_VISIBLE_DEVICES=$GPU_ID python3 cli/run_1d.py \
+        CUDA_VISIBLE_DEVICES=$GPU_ID python3 -u cli/run_1d.py \
             --run_name "P3_VMC_MALA_SJB_${SYS_TAG}" \
             --pipeline_stage "pipeline3_variational_training" \
             --train_mode vmc_only \
@@ -397,7 +398,7 @@ run_sistema_pipeline_3() {
 
     # 3B. Entrenamiento Acoplado VMC + RL-MALA (Coupled Trainer con TD3 DeepSet)
     if [ "$FORCE_RERUN" -eq 1 ] || [ ! -f "${COUPLED_RL_DIR}/run_bundle.h5" ]; then
-        CUDA_VISIBLE_DEVICES=$GPU_ID python3 cli/run_1d.py \
+        CUDA_VISIBLE_DEVICES=$GPU_ID python3 -u cli/run_1d.py \
             --run_name "P3_Coupled_RL_TD3_SJB_${SYS_TAG}" \
             --pipeline_stage "pipeline3_variational_training" \
             --train_mode coupled \
@@ -429,14 +430,14 @@ run_sistema_pipeline_3() {
             EXTRA_CASSCF_ARG="--casscf_npz_path $CASSCF_NPZ"
         fi
 
-        CUDA_VISIBLE_DEVICES="" python3 cli/postprocess.py \
+        CUDA_VISIBLE_DEVICES="" python3 -u cli/postprocess.py \
             --inputs "${VMC_MALA_DIR}/run_bundle.h5" "${COUPLED_RL_DIR}/run_bundle.h5" \
             --labels "VMC + MALA (SJB)" "Coupled VMC + RL-MALA TD3 (SJB)" \
             $EXTRA_CASSCF_ARG \
             --out_dir "$COMP_DIR" \
             --master_comparison_csv "$LIVE_CSV_P3_COMP"
 
-        CUDA_VISIBLE_DEVICES="" python3 cli/postprocess.py \
+        CUDA_VISIBLE_DEVICES="" python3 -u cli/postprocess.py \
             --inputs "${VMC_MALA_DIR}/run_bundle.h5" "${COUPLED_RL_DIR}/run_bundle.h5" \
             --labels "P3_VMC_MALA_SJB_${SYS_TAG}" "P3_Coupled_RL_TD3_SJB_${SYS_TAG}" \
             $EXTRA_CASSCF_ARG \
