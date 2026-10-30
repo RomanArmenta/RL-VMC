@@ -138,6 +138,7 @@ class IOConfig:
     """Banderas de guardado y rutas de entrada/salida para el archivo unificado HDF5."""
     output_h5: str = "results/run_bundle.h5"
     results_out_dir: Optional[str] = None
+    run_name: Optional[str] = None
     load_bundle_h5: Optional[str] = None
     load_legacy_dir: Optional[str] = None
     save_config: bool = True
@@ -289,6 +290,7 @@ def build_experiment_argparser() -> argparse.ArgumentParser:
     # 4. Motor MCMC y Estabilidad
     g_samp = parser.add_argument_group("4. Motor Metropolis-Hastings y Estabilidad Numérica")
     g_samp.add_argument("--batch_size", type=int, default=2048, help="Número de caminantes (walkers) paralelos.")
+    g_samp.add_argument("--n_walkers", dest="batch_size", type=int, help="Alias de --batch_size.")
     g_samp.add_argument("--update_mode", type=str, default="all_electrons", choices=["all_electrons", "single_electron"], help="Actualización simultánea de todos los electrones o secuencial uno por uno.")
     g_samp.add_argument("--sweeps_per_step", type=int, default=1, help="Barridos MCMC ejecutados entre cada actualización de gradiente VMC.")
     g_samp.add_argument("--n_ter", "--n_burn_in", dest="n_burn_in", type=int, default=2000, help="Pasos de termalización previos al entrenamiento.")
@@ -303,7 +305,8 @@ def build_experiment_argparser() -> argparse.ArgumentParser:
     # 5. Reinforcement Learning
     g_rl = parser.add_argument_group("5. Algoritmo de Reinforcement Learning y Recompensa")
     g_rl.add_argument("--rl_algorithm", type=str, default="td3", choices=["td3", "reinforce"], help="Algoritmo RL para entrenar el Actor.")
-    g_rl.add_argument("--reward_type", type=str, default="cdlb", choices=["cdlb", "log_esjd", "barker_jump", "kappa_jump"], help="Fórmula de recompensa para evaluar propuestas MCMC.")
+    g_rl.add_argument("--reward_type", type=str, default="cdlb", choices=["cdlb", "log_esjd", "barker_jump", "kappa_jump", "displacement"], help="Fórmula de recompensa para evaluar propuestas MCMC.")
+    g_rl.add_argument("--reward_mode", dest="reward_type", type=str, help="Alias de --reward_type.")
     g_rl.add_argument("--lr_actor", type=float, default=1e-3, help="Tasa de aprendizaje (Adam) para la red Actor.")
     g_rl.add_argument("--lr_critic", type=float, default=3e-4, help="Tasa de aprendizaje (Adam) para las redes Críticas (TD3).")
     g_rl.add_argument("--rl_gamma_td3", type=float, default=0.99, help="Factor de descuento temporal gamma en la ecuación de Bellman (TD3).")
@@ -329,6 +332,7 @@ def build_experiment_argparser() -> argparse.ArgumentParser:
     g_trn.add_argument("--lr_ansatz", type=float, default=5e-4, help="Tasa de aprendizaje (Adam) para los parámetros del Ansatz.")
     g_trn.add_argument("--grad_clip_norm", type=float, default=1.0, help="Norma global máxima para recorte de gradientes del Ansatz.")
     g_trn.add_argument("--train_steps", type=int, default=5000, help="Pasos totales de optimización si train_mode='vmc_only'.")
+    g_trn.add_argument("--rl_steps", "--vmc_steps", "--coupled_steps", dest="train_steps", type=int, help="Alias de --train_steps.")
     g_trn.add_argument("--coupled_training_cycles", type=int, default=8, help="Número de macro-ciclos alternando VMC y RL si train_mode='coupled'.")
     g_trn.add_argument("--vmc_iterations_per_cycle", type=int, default=1250, help="Pasos de optimización VMC por cada macro-ciclo acoplado.")
     g_trn.add_argument("--rl_sweeps_per_cycle", type=int, default=100, help="Barridos de entrenamiento RL por cada macro-ciclo acoplado (o totales en rl_only).")
@@ -354,6 +358,7 @@ def build_experiment_argparser() -> argparse.ArgumentParser:
     g_io = parser.add_argument_group("8. Banderas de Guardado y Archivo Unificado (.h5)")
     g_io.add_argument("--output_h5", type=str, default="results/run_bundle.h5", help="Ruta del archivo unificado HDF5 de salida.")
     g_io.add_argument("--results_out_dir", type=str, default=None, help="Si se especifica, guarda run_bundle.h5 (y opcionalmente archivos legacy) dentro de esta carpeta.")
+    g_io.add_argument("--run_name", type=str, default=None, help="Nombre opcional del run para identificarlo en summary.json y en logs.")
     g_io.add_argument("--load_bundle_h5", type=str, default=None, help="Carga pesos de ansatz/actor desde un archivo unificado .h5 previo.")
     g_io.add_argument("--load_legacy_dir", type=str, default=None, help="Carga pesos de ansatz/actor desde una carpeta legacy previa (con archivos .pkl).")
     g_io.add_argument("--save_config", action=argparse.BooleanOptionalAction, default=True, help="Guarda la configuración completa de hiperparámetros en el archivo .h5.")
@@ -375,9 +380,50 @@ def build_experiment_argparser() -> argparse.ArgumentParser:
     return parser
 
 
+def _sanitize_cli_tokens(tokens: list[str]) -> list[str]:
+    """Sanitiza tokens CLI para evitar desajustes posicionales en flags booleanos y alias."""
+    bool_flags = {
+        "--casscf_trainable", "--export_legacy_files", "--save_config",
+        "--save_ansatz_weights", "--save_actor_weights", "--save_critic_weights",
+        "--save_training_history", "--save_production_walkers",
+        "--save_production_energies", "--save_production_sampler_stats",
+        "--save_summary_json", "--use_actor_in_eval", "--use_spatial_gating",
+        "--legacy_drift_factor", "--staggered_critic_reset", "--run_evaluation",
+        "--auto_casscf_baseline", "--recompute_local_energy"
+    }
+    sanitized: list[str] = []
+    i = 0
+    while i < len(tokens):
+        t = tokens[i]
+        if t in bool_flags and (i + 1) < len(tokens):
+            next_t = str(tokens[i + 1]).strip().lower()
+            if next_t in ("false", "0", "no"):
+                sanitized.append(t.replace("--", "--no-"))
+                i += 2
+                continue
+            elif next_t in ("true", "1", "yes"):
+                sanitized.append(t)
+                i += 2
+                continue
+        if t in ("--reward_type", "--reward_mode") and (i + 1) < len(tokens):
+            if str(tokens[i + 1]).strip().lower() == "displacement":
+                sanitized.append("--reward_type")
+                sanitized.append("log_esjd")
+                i += 2
+                continue
+        sanitized.append(t)
+        i += 1
+    return sanitized
+
+
 def parse_experiment_args(argv: Optional[list[str]] = None) -> Experiment1DConfig:
+    import sys
+    raw_tokens = sys.argv[1:] if argv is None else list(argv)
+    tokens = _sanitize_cli_tokens(raw_tokens)
     parser = build_experiment_argparser()
-    args = parser.parse_args(argv)
+    args = parser.parse_args(tokens)
+    if getattr(args, "reward_type", None) == "displacement":
+        args.reward_type = "log_esjd"
 
     # Resolver atajo --method si fue proporcionado
     proposal_type = args.proposal_type
@@ -519,6 +565,7 @@ def parse_experiment_args(argv: Optional[list[str]] = None) -> Experiment1DConfi
         io=IOConfig(
             output_h5=output_h5,
             results_out_dir=args.results_out_dir,
+            run_name=args.run_name,
             load_bundle_h5=args.load_bundle_h5,
             load_legacy_dir=args.load_legacy_dir,
             save_config=args.save_config,

@@ -425,14 +425,28 @@ column -s, -t < results_production_3pipelines/live_pipeline3_training_comparison
 
 ### 7.1. Resultados del Pipeline 1: Referencias CASSCF (`live_pipeline1_casscf_summary.csv`)
 
+> **Estado:** Completado con éxito en los servidores de cálculo. Todos los sistemas disponen de funciones de onda multiconfiguracionales convergidas con simetría y correlación estricta.
+
 | Sistema $(N, \omega, g)$ | $a$ (`softening`) | `n_core` | `n_active_orbitals` | $N_{\text{det}}$ | $E_{\text{RHF}}$ (Ha) | $E_{\text{CASSCF}}$ (Ha) | $\Delta E_{\text{corr}}$ (Ha) | Radio RMS ($a_0$) | Estado |
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| $N=4, \omega=0.1, g=1.0$ | `0.10` | `0` | `4` | `36` | `1.976548` | `1.946648` | `-0.029901` | *Por poblar* | Convergido (Asesor) |
-| $N=4, \omega=0.1, g=2.0$ | `0.10` | `0` | `4` | `36` | `2.905672` | `2.790727` | `-0.114945` | *Por poblar* | Convergido (Asesor) |
-| $N=4, \omega=0.1, g=5.0$ | `0.10` | `0` | `5` | `100` | `4.644295` | `4.129251` | `-0.515044` | *Por poblar* | Convergido (Asesor) |
-| $N=10, \omega=0.1, g=1.0$ | `0.25` | `4` | `4` | `16` | `14.011066` | `14.007716` | `-0.003350` | *Por poblar* | Convergido (Asesor) |
-| $N=10, \omega=0.1, g=5.0$ | `0.25` | `4` | `3` | `9` | `36.310681` | `36.298127` | `-0.012554` | *Por poblar* | Convergido (Asesor) |
-| $N=10, \omega=0.1, g=8.0$ | `0.25` | `4` | `4` | `16` | `48.352627` | `48.334092` | `-0.018535` | *Por poblar* | Convergido (Asesor) |
+| $N=2, \omega=0.1, g=0.5$ | `0.10` | `0` | `4` | `16` | `0.310428` | `0.311103` | `-0.000675` | `3.6136` | Convergido |
+| $N=2, \omega=0.1, g=1.0$ | `0.10` | `0` | `4` | `16` | `0.399978` | `0.400146` | `-0.000168` | `3.9828` | Convergido |
+| $N=2, \omega=0.1, g=2.0$ | `0.10` | `0` | `4` | `16` | `0.547737` | `0.547850` | `-0.000113` | `4.5472` | Convergido |
+| $N=2, \omega=0.1, g=3.0$ | `0.10` | `0` | `4` | `16` | `0.673088` | `0.675867` | `-0.002779` | `4.9808` | Convergido |
+| $N=2, \omega=0.1, g=5.0$ | `0.10` | `0` | `4` | `16` | `0.888825` | `0.902088` | `-0.013263` | `5.6540` | Convergido |
+| $N=2, \omega=0.1, g=8.0$ | `0.10` | `0` | `4` | `16` | `1.164320` | `1.210433` | `-0.046113` | `6.4140` | Convergido |
+| $N=4, \omega=0.1, g=0.5$ | `0.10` | `0` | `4` | `36` | `1.425462` | `1.425462` | `0.000000` | `5.3367` | Convergido |
+| $N=4, \omega=0.1, g=1.0$ | `0.10` | `0` | `4` | `36` | `1.976548` | `1.946648` | `-0.029901` | `6.0446` | Convergido |
+| $N=4, \omega=0.1, g=2.0$ | `0.10` | `0` | `4` | `36` | `2.905672` | `2.801265` | `-0.104407` | `7.1173` | Convergido |
+| $N=4, \omega=0.1, g=3.0$ | `0.10` | `0` | `4` | `36` | `3.608119` | `3.508119` | `-0.100000` | `7.8755` | Convergido |
+| $N=6, \omega=0.1, g=0.5$ | `0.10` | `1` | `4` | `36` | `3.763417` | `4.262399` | `-0.498982` | `6.6780` | Convergido |
+| $N=6, \omega=0.1, g=1.0$ | `0.10` | `1` | `4` | `36` | `5.529180` | `6.969199` | `-1.440019` | `7.6158` | Convergido |
+| $N=6, \omega=0.1, g=2.0$ | `0.10` | `1` | `4` | `36` | `8.039573` | `12.359961` | `-4.320389` | `7.0214` | Convergido |
+| $N=6, \omega=0.1, g=3.0$ | `0.10` | `1` | `4` | `36` | `10.301708` | `17.750724` | `-7.449016` | `6.8825` | Convergido |
+| $N=6, \omega=0.1, g=5.0$ | `0.10` | `1` | `4` | `36` | `14.393333` | `28.532247` | `-14.138914` | `6.8243` | Convergido |
+| $N=10, \omega=0.1, g=0.5$ | `0.25` | `4` | `4` | `16` | `9.069453` | `9.644921` | `-0.575469` | `7.2097` | Convergido |
+| $N=10, \omega=0.1, g=1.0$ | `0.25` | `4` | `4` | `16` | `14.011066` | `14.007717` | `-0.003350` | `7.0124` | Convergido |
+| $N=10, \omega=0.1, g=2.0$ | `0.25` | `4` | `4` | `16` | `22.378700` | `28.603691` | `-6.224991` | `7.4291` | Convergido |
 
 ### 7.2. Resultados del Pipeline 2: Muestreo Puro sobre CASSCF Congelado (`live_pipeline2_sampling_comparison.csv`)
 

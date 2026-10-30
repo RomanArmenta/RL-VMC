@@ -397,15 +397,20 @@ def run_experiment_1d(cfg: Experiment1DConfig) -> str:
         )
 
     elif cfg.train.mode == "rl_only":
-        print(f"[Train] Modo rl_only ({cfg.train.rl_sweeps_per_cycle} barridos RL)...")
-        _run_rl_block(cfg.train.rl_sweeps_per_cycle, phase_label="RL")
+        rl_steps = max(cfg.train.train_steps, cfg.train.rl_sweeps_per_cycle)
+        print(f"[Train] Modo rl_only ({rl_steps} barridos RL)...")
+        _run_rl_block(rl_steps, phase_label="RL")
 
     elif cfg.train.mode == "coupled":
+        n_cycles = max(1, cfg.train.coupled_training_cycles)
+        vmc_per_cyc = cfg.train.vmc_iterations_per_cycle
+        if cfg.train.train_steps > 0 and cfg.train.train_steps != 5000:
+            vmc_per_cyc = max(1, cfg.train.train_steps // n_cycles)
         print(
-            f"[Train] Modo acoplado VMC + RL ({cfg.train.coupled_training_cycles} ciclos)..."
+            f"[Train] Modo acoplado VMC + RL ({n_cycles} ciclos, {vmc_per_cyc} VMC y {cfg.train.rl_sweeps_per_cycle} RL por ciclo)..."
         )
-        for cyc in range(1, cfg.train.coupled_training_cycles + 1):
-            print(f"\n--- Ciclo Acoplado {cyc}/{cfg.train.coupled_training_cycles} ---")
+        for cyc in range(1, n_cycles + 1):
+            print(f"\n--- Ciclo Acoplado {cyc}/{n_cycles} ---")
             if (
                 cfg.rl.staggered_critic_reset
                 and cyc > 1
@@ -420,7 +425,7 @@ def run_experiment_1d(cfg: Experiment1DConfig) -> str:
                 cfg.train.rl_sweeps_per_cycle, phase_label=f"C{cyc}-RL"
             )
             _run_vmc_block(
-                cfg.train.vmc_iterations_per_cycle,
+                vmc_per_cyc,
                 use_actor_flag=proposal.is_neural,
                 phase_label=f"C{cyc}-VMC",
             )

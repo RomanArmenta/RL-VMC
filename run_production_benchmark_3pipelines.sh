@@ -265,17 +265,17 @@ run_sistema_pipeline_2() {
             --omega "$OMEGA" --g "$G" --softening "$SOFT" \
             --ansatz_type casscf_npz \
             --casscf_npz_path "$CASSCF_NPZ" \
-            --casscf_trainable False \
+            --no-casscf_trainable \
             --proposal_type mala \
             --tau "$TAU" \
-            --n_walkers "$N_WALKERS" \
+            --batch_size "$N_WALKERS" \
             --n_eval_chains "$N_EVAL_CHAINS" \
             --eval_burn_in "$EVAL_BURN_IN" \
             --measure_steps "$MEASURE_STEPS" \
             --output_h5 "${MALA_DIR}/run_bundle.h5" \
             --reference_casscf_npz "$CASSCF_NPZ" \
             --master_csv "$LIVE_CSV_P2_RUNS" \
-            --export_legacy_files True
+            --export_legacy_files
     fi
 
     # 2B. Entrenamiento del Actor RL-MALA (TD3 DeepSet) sobre CASSCF congelado + Evaluación
@@ -288,20 +288,21 @@ run_sistema_pipeline_2() {
             --omega "$OMEGA" --g "$G" --softening "$SOFT" \
             --ansatz_type casscf_npz \
             --casscf_npz_path "$CASSCF_NPZ" \
-            --casscf_trainable False \
+            --no-casscf_trainable \
             --proposal_type neural_deepset \
             --rl_algorithm td3 \
-            --reward_mode displacement \
-            --rl_steps "$RL_ONLY_STEPS" \
+            --reward_type log_esjd \
+            --actor_amplitude 0.02 \
+            --train_steps "$RL_ONLY_STEPS" \
             --tau "$TAU" \
-            --n_walkers "$N_WALKERS" \
+            --batch_size "$N_WALKERS" \
             --n_eval_chains "$N_EVAL_CHAINS" \
             --eval_burn_in "$EVAL_BURN_IN" \
             --measure_steps "$MEASURE_STEPS" \
             --output_h5 "${RL_DIR}/run_bundle.h5" \
             --reference_casscf_npz "$CASSCF_NPZ" \
             --master_csv "$LIVE_CSV_P2_RUNS" \
-            --export_legacy_files True
+            --export_legacy_files
     fi
 
     # 2C. Post-procesamiento inmediato por sistema (figuras + CSV comparativo en vivo)
@@ -382,16 +383,16 @@ run_sistema_pipeline_3() {
             --orbital_model backflow_ho \
             --correlation_model spin_rbf_jastrow \
             --proposal_type mala \
-            --vmc_steps "$VMC_COUPLED_STEPS" \
+            --train_steps "$VMC_COUPLED_STEPS" \
             --tau "$TAU" \
-            --n_walkers "$N_WALKERS" \
+            --batch_size "$N_WALKERS" \
             --n_eval_chains "$N_EVAL_CHAINS" \
             --eval_burn_in "$EVAL_BURN_IN" \
             --measure_steps "$MEASURE_STEPS" \
             --output_h5 "${VMC_MALA_DIR}/run_bundle.h5" \
             --reference_casscf_npz "$CASSCF_NPZ" \
             --master_csv "$LIVE_CSV_P3_RUNS" \
-            --export_legacy_files True
+            --export_legacy_files
     fi
 
     # 3B. Entrenamiento Acoplado VMC + RL-MALA (Coupled Trainer con TD3 DeepSet)
@@ -407,17 +408,18 @@ run_sistema_pipeline_3() {
             --correlation_model spin_rbf_jastrow \
             --proposal_type neural_deepset \
             --rl_algorithm td3 \
-            --reward_mode displacement \
-            --coupled_steps "$VMC_COUPLED_STEPS" \
+            --reward_type log_esjd \
+            --actor_amplitude 0.02 \
+            --train_steps "$VMC_COUPLED_STEPS" \
             --tau "$TAU" \
-            --n_walkers "$N_WALKERS" \
+            --batch_size "$N_WALKERS" \
             --n_eval_chains "$N_EVAL_CHAINS" \
             --eval_burn_in "$EVAL_BURN_IN" \
             --measure_steps "$MEASURE_STEPS" \
             --output_h5 "${COUPLED_RL_DIR}/run_bundle.h5" \
             --reference_casscf_npz "$CASSCF_NPZ" \
             --master_csv "$LIVE_CSV_P3_RUNS" \
-            --export_legacy_files True
+            --export_legacy_files
     fi
 
     # 3C. Post-procesamiento inmediato por sistema (comparando VMC-MALA vs Coupled RL-MALA + Baseline CASSCF)
