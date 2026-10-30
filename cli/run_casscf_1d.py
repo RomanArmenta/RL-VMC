@@ -121,15 +121,17 @@ def get_advisor_safe_casscf_defaults(
         "n_core": int(n_core),
         "n_active_orbitals": int(n_active_orbitals),
         "n_final_determinants": 0,  # 0 = conservar todos los determinantes del espacio activo
-        "rhf_max_iter": 250,
-        "rhf_tol": 1e-9,
-        "rhf_mixing": 0.35,
-        "rhf_diis": True,
-        "rhf_diis_Start": 4,
-        "rhf_diis_space": 6,
+        "max_iter": 200,
+        "energy_tol": 1e-10,
+        "density_tol": 1e-8,
+        "mixing": 0.35,
+        "diis": True,
+        "diis_start": 3,
+        "diis_size": 8,
         "casscf_max_iter": 120,
-        "casscf_grad_tol": 1e-6,
-        "seed": 1234,
+        "casscf_energy_tol": 1e-4,
+        "orbital_gradient_tol": 1e-6,
+        "max_ci_dimension": 20000,
         "plot_xmax": float(plot_xmax),
         "plot_points": 500,
     }
@@ -275,15 +277,37 @@ def main() -> None:
 
     # 3. Ejecutar cálculo variacional CASSCF desde cero usando la paquetería del asesor
     if not reused:
+        import dataclasses
         from uhf1d.config import CASSCFConfig
         from uhf1d.casscf import run_casscf
         from uhf1d.plotting import make_casscf_plots
 
-        cfg = CASSCFConfig(**params)
+        valid_fields = {f.name for f in dataclasses.fields(CASSCFConfig)}
+        casscf_kwargs = {k: v for k, v in params.items() if k in valid_fields}
+        cfg = CASSCFConfig(**casscf_kwargs)
         result = run_casscf(cfg)
-        result.save_npz(npz_target)
-        make_casscf_plots(result, outdir)
-        summary_dict = result.to_summary_dict()
+        result.save(npz_target)
+        try:
+            make_casscf_plots(result, outdir)
+        except Exception as exc_p:
+            print(f"  [Aviso CASSCF Plots] No se pudieron generar algunas figuras: {exc_p}")
+
+        initial_energy = (
+            float(result.history["energy"][0])
+            if (result.history and "energy" in result.history and len(result.history["energy"]) > 0)
+            else float("nan")
+        )
+        summary_dict = {
+            "config": result.config.to_dict(),
+            "converged": bool(result.converged),
+            "iterations": int(result.iterations),
+            "energy": float(result.energy),
+            "core_energy": float(result.core_energy),
+            "active_energy": float(result.active_energy),
+            "initial_energy": initial_energy,
+            "optimizer_message": str(result.optimizer_message),
+            "n_determinants": int(len(result.ci_coefficients)),
+        }
     else:
         with summary_target.open("r", encoding="utf-8") as f:
             summary_dict = json.load(f)
@@ -324,15 +348,11 @@ def main() -> None:
     summary_dict["exact_density_csv"] = str(density_csv_path)
     summary_dict["observables"] = {
         "energy": float(summary_dict.get("energy", ref_density["energy"])),
-        "full_space_energy": float(
-            summary_dict.get("full_space_energy", summary_dict.get("energy", ref_density["energy"]))
-        ),
-        "rhf_energy": float(summary_dict.get("rhf_energy", float("nan"))),
+        "initial_energy": float(summary_dict.get("initial_energy", float("nan"))),
         "correlation_energy_gain": float(
             summary_dict.get("energy", ref_density["energy"])
-            - summary_dict.get("rhf_energy", float("nan"))
+            - summary_dict.get("initial_energy", float("nan"))
         ),
-        "virial_residual": float(summary_dict.get("virial_residual", float("nan"))),
         "rms_radius": rms_radius,
         "n_determinants": int(summary_dict.get("n_determinants", expected_n_dets)),
     }
@@ -343,7 +363,6 @@ def main() -> None:
     print(
         f"[Pipeline 1 - CASSCF] Completado en {wall_time:.2f}s | "
         f"E_CASSCF = {summary_dict['observables']['energy']:.8f} Ha | "
-        f"E_RHF = {summary_dict['observables']['rhf_energy']:.8f} Ha | "
         f"Guardado en: {outdir}"
     )
 
@@ -362,16 +381,12 @@ def main() -> None:
             "quadrature_order": int(params["quadrature_order"]),
             "n_determinants": int(summary_dict["observables"]["n_determinants"]),
             "converged": bool(summary_dict.get("converged", True)),
-            "n_macro_iter": int(summary_dict.get("n_macro_iter", 0)),
-            "rhf_energy": float(summary_dict["observables"]["rhf_energy"]),
+            "iterations": int(summary_dict.get("iterations", 0)),
             "casscf_energy": float(summary_dict["observables"]["energy"]),
+            "initial_energy": float(summary_dict["observables"]["initial_energy"]),
             "correlation_energy_gain": float(summary_dict["observables"]["correlation_energy_gain"]),
-            "kinetic_energy": float(summary_dict.get("components", {}).get("kinetic", float("nan"))),
-            "trap_energy": float(summary_dict.get("components", {}).get("trap", float("nan"))),
-            "interaction_energy": float(
-                summary_dict.get("components", {}).get("interaction", float("nan"))
-            ),
-            "virial_residual": float(summary_dict["observables"]["virial_residual"]),
+            "core_energy": float(summary_dict.get("core_energy", float("nan"))),
+            "active_energy": float(summary_dict.get("active_energy", float("nan"))),
             "rms_radius": rms_radius,
             "wall_time_sec": float(wall_time),
             "npz_path": str(npz_target),
