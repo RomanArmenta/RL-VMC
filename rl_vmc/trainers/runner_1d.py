@@ -71,8 +71,8 @@ def run_experiment_1d(cfg: Experiment1DConfig) -> str:
     h5_path = Path(cfg.io.output_h5)
     h5_path.parent.mkdir(parents=True, exist_ok=True)
 
+    jax.config.update("jax_enable_x64", True)
     if cfg.ansatz.ansatz_type in ("casscf_npz", "casscf_1d", "casscf"):
-        jax.config.update("jax_enable_x64", True)
         if cfg.ansatz.casscf_npz_path and os.path.exists(cfg.ansatz.casscf_npz_path):
             try:
                 import json as _json
@@ -653,20 +653,34 @@ def run_experiment_1d(cfg: Experiment1DConfig) -> str:
             )
 
             train_summary = {}
-            if training_history and len(training_history.get("energy_mean", [])) > 0:
-                tail = min(20, len(training_history["energy_mean"]))
+            sys_tag = f"N{cfg.system.n_elec}_w{cfg.system.omega}_g{cfg.system.interaction_strength}"
+            run_tag = cfg.io.run_name if cfg.io.run_name else f"{cfg.train.mode}_{sys_tag}"
+            safe_run_tag = "".join(c if c.isalnum() or c in ("_", "-", ".") else "_" for c in run_tag)
+
+            if training_history and isinstance(training_history, list) and len(training_history) > 0:
+                df_train_hist = pd.DataFrame(training_history)
+                tail = min(20, len(df_train_hist))
                 train_summary = {
-                    "n_recorded_steps": int(len(training_history["energy_mean"])),
-                    "final_train_energy_mean": float(np.nanmean(training_history["energy_mean"][-tail:])),
-                    "final_train_energy_std": float(np.nanmean(training_history["energy_std"][-tail:])),
-                    "final_train_acceptance": float(np.nanmean(training_history["acceptance"][-tail:])),
-                    "final_train_esjd": float(np.nanmean(training_history["esjd"][-tail:])),
-                    "final_actor_loss": float(training_history["actor_loss"][-1]),
-                    "final_critic_loss": float(training_history["critic_loss"][-1]),
+                    "n_recorded_steps": int(len(df_train_hist)),
+                    "final_train_energy_mean": float(df_train_hist["Energy_Mean"].tail(tail).mean()) if "Energy_Mean" in df_train_hist else float("nan"),
+                    "final_train_energy_var": float(df_train_hist["Energy_Var"].tail(tail).mean()) if "Energy_Var" in df_train_hist else float("nan"),
+                    "final_train_acceptance": float(df_train_hist["Acceptance"].tail(tail).mean()) if "Acceptance" in df_train_hist else float("nan"),
+                    "final_train_esjd": float(df_train_hist["ESJD"].tail(tail).mean()) if "ESJD" in df_train_hist else float("nan"),
+                    "final_actor_loss": float(df_train_hist["Actor_Loss"].iloc[-1]) if "Actor_Loss" in df_train_hist else float("nan"),
+                    "final_critic_loss": float(df_train_hist["Critic_Loss"].iloc[-1]) if "Critic_Loss" in df_train_hist else float("nan"),
                 }
+                if cfg.io.save_training_csv:
+                    train_csv_sys = saved_path.parent / f"training_history_{safe_run_tag}.csv"
+                    df_train_hist.to_csv(train_csv_sys, index=False)
+                    if getattr(cfg.io, "csv_collect_dir", ""):
+                        import shutil
+                        cdir = Path(cfg.io.csv_collect_dir)
+                        cdir.mkdir(parents=True, exist_ok=True)
+                        shutil.copy2(train_csv_sys, cdir / train_csv_sys.name)
 
             summary_payload = {
-                "run_name": cfg.io.run_name,
+                "run_name": run_tag,
+                "system_tag": sys_tag,
                 "pipeline_stage": cfg.io.pipeline_stage,
                 "output_h5": str(saved_path),
                 "system": asdict(cfg.system),
@@ -675,10 +689,10 @@ def run_experiment_1d(cfg: Experiment1DConfig) -> str:
                     "proposal": asdict(cfg.proposal),
                 },
                 "training_hyperparameters": {
-                    "train_mode": cfg.train.train_mode,
+                    "train_mode": cfg.train.mode,
                     "seed": cfg.train.seed,
                     "sampler": asdict(cfg.sampler),
-                    "vmc": asdict(cfg.vmc),
+                    "train": asdict(cfg.train),
                     "rl": asdict(cfg.rl),
                     "training_final_summary": train_summary,
                 },
@@ -718,66 +732,84 @@ def run_experiment_1d(cfg: Experiment1DConfig) -> str:
 
             if cfg.io.save_summary_json:
                 summary_json_path = saved_path.parent / "summary.json"
+                summary_sys_json_path = saved_path.parent / f"summary_{safe_run_tag}.json"
                 with summary_json_path.open("w", encoding="utf-8") as f_json:
                     json.dump(summary_payload, f_json, indent=2)
-                print(f"[IO] Resumen estructurado guardado en: {summary_json_path}")
+                with summary_sys_json_path.open("w", encoding="utf-8") as f_json_sys:
+                    json.dump(summary_payload, f_json_sys, indent=2)
+                print(f"[IO] Resumen estructurado guardado en: {summary_sys_json_path}")
+
+            flat_row = {
+                "run_name": run_tag,
+                "system_tag": sys_tag,
+                "pipeline_stage": cfg.io.pipeline_stage,
+                "train_mode": cfg.train.mode,
+                "ansatz_type": cfg.ansatz.ansatz_type,
+                "orbital_model": cfg.ansatz.orbital_model,
+                "correlation_model": cfg.ansatz.correlation_model,
+                "proposal_type": cfg.proposal.proposal_type,
+                "rl_algorithm": cfg.rl.algorithm if cfg.proposal.proposal_type == "neural_deepset" else "none",
+                "N": cfg.system.n_elec,
+                "n_up": cfg.system.n_up,
+                "n_dn": cfg.system.n_dn,
+                "omega": cfg.system.omega,
+                "g": cfg.system.interaction_strength,
+                "softening": cfg.system.softening,
+                "tau": cfg.proposal.tau,
+                "n_walkers": cfg.sampler.batch_size,
+                "n_eval_chains": int(d_sum.get("n_chains", 0)),
+                "E_mean": e_mean_val,
+                "SE_E": float(d_sum.get("SE_E", float("nan"))),
+                "E_var": float(d_sum.get("E_var", float("nan"))),
+                "T_mean": t_mean_val,
+                "V_mean": v_mean_val,
+                "acceptance": float(d_sum.get("acceptance", float("nan"))),
+                "ESJD": float(d_sum.get("ESJD", float("nan"))),
+                "tau_int_E": float(d_sum.get("tau_int_E", float("nan"))),
+                "tau_int_pos": float(d_sum.get("tau_int_pos", float("nan"))),
+                "ESS": float(d_sum.get("ESS", float("nan"))),
+                "ESS_per_sec": float(d_sum.get("ESS_per_sec", float("nan"))),
+                "wall_time_sec": float(d_sum.get("wall_time_sec", float("nan"))),
+                "time_to_solution_sec": float(d_sum.get("time_to_solution_sec", float("nan"))),
+                "n_wigner_peaks": int(obs["n_wigner_peaks"]) if obs else -1,
+                "rms_radius": float(obs["rms_radius"]) if obs else float("nan"),
+                "mean_pair_dist": float(obs["mean_pair_dist"]) if obs else float("nan"),
+                "has_casscf_baseline": bool(casscf_ref is not None),
+                "casscf_energy": cas_e_val,
+                "delta_E_vs_CASSCF": delta_e_cas,
+                "kl_casscf_total_mean": kl_tot_mean,
+                "kl_casscf_total_std": kl_tot_std,
+                "kl_casscf_up_mean": kl_up_mean,
+                "kl_casscf_down_mean": kl_dn_mean,
+                "output_h5": str(saved_path),
+            }
+            df_row = pd.DataFrame([flat_row])
+            indiv_csv_path = saved_path.parent / f"production_metrics_{safe_run_tag}.csv"
+            df_row.to_csv(indiv_csv_path, index=False)
 
             if cfg.io.master_csv_path:
                 csv_file = Path(cfg.io.master_csv_path)
                 csv_file.parent.mkdir(parents=True, exist_ok=True)
-                flat_row = {
-                    "run_name": cfg.io.run_name,
-                    "pipeline_stage": cfg.io.pipeline_stage,
-                    "train_mode": cfg.train.train_mode,
-                    "ansatz_type": cfg.ansatz.ansatz_type,
-                    "orbital_model": cfg.ansatz.orbital_model,
-                    "correlation_model": cfg.ansatz.correlation_model,
-                    "proposal_type": cfg.proposal.proposal_type,
-                    "rl_algorithm": cfg.rl.algorithm if cfg.proposal.proposal_type == "neural_deepset" else "none",
-                    "N": cfg.system.n_elec,
-                    "n_up": cfg.system.n_up,
-                    "n_dn": cfg.system.n_dn,
-                    "omega": cfg.system.omega,
-                    "g": cfg.system.interaction_strength,
-                    "softening": cfg.system.softening,
-                    "tau": cfg.sampler.tau,
-                    "n_walkers": cfg.sampler.n_walkers,
-                    "n_eval_chains": int(d_sum.get("n_chains", 0)),
-                    "E_mean": e_mean_val,
-                    "SE_E": float(d_sum.get("SE_E", float("nan"))),
-                    "E_var": float(d_sum.get("E_var", float("nan"))),
-                    "T_mean": t_mean_val,
-                    "V_mean": v_mean_val,
-                    "acceptance": float(d_sum.get("acceptance", float("nan"))),
-                    "ESJD": float(d_sum.get("ESJD", float("nan"))),
-                    "tau_int_E": float(d_sum.get("tau_int_E", float("nan"))),
-                    "tau_int_pos": float(d_sum.get("tau_int_pos", float("nan"))),
-                    "ESS": float(d_sum.get("ESS", float("nan"))),
-                    "ESS_per_sec": float(d_sum.get("ESS_per_sec", float("nan"))),
-                    "wall_time_sec": float(d_sum.get("wall_time_sec", float("nan"))),
-                    "time_to_solution_sec": float(d_sum.get("time_to_solution_sec", float("nan"))),
-                    "n_wigner_peaks": int(obs["n_wigner_peaks"]) if obs else -1,
-                    "rms_radius": float(obs["rms_radius"]) if obs else float("nan"),
-                    "mean_pair_dist": float(obs["mean_pair_dist"]) if obs else float("nan"),
-                    "has_casscf_baseline": bool(casscf_ref is not None),
-                    "casscf_energy": cas_e_val,
-                    "delta_E_vs_CASSCF": delta_e_cas,
-                    "kl_casscf_total_mean": kl_tot_mean,
-                    "kl_casscf_total_std": kl_tot_std,
-                    "kl_casscf_up_mean": kl_up_mean,
-                    "kl_casscf_down_mean": kl_dn_mean,
-                    "output_h5": str(saved_path),
-                }
                 lock_path = csv_file.with_suffix(".csv.lock")
                 with lock_path.open("w") as f_lock:
                     fcntl.flock(f_lock, fcntl.LOCK_EX)
                     try:
-                        df_row = pd.DataFrame([flat_row])
                         write_header = not csv_file.exists() or csv_file.stat().st_size == 0
                         df_row.to_csv(csv_file, mode="a", header=write_header, index=False)
+                        if getattr(cfg.io, "csv_collect_dir", ""):
+                            import shutil
+                            cdir = Path(cfg.io.csv_collect_dir)
+                            cdir.mkdir(parents=True, exist_ok=True)
+                            shutil.copy2(csv_file, cdir / csv_file.name)
+                            shutil.copy2(indiv_csv_path, cdir / indiv_csv_path.name)
                     finally:
                         fcntl.flock(f_lock, fcntl.LOCK_UN)
                 print(f"[IO] Fila agregada en vivo a tabla maestra: {csv_file}")
+            elif getattr(cfg.io, "csv_collect_dir", ""):
+                import shutil
+                cdir = Path(cfg.io.csv_collect_dir)
+                cdir.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(indiv_csv_path, cdir / indiv_csv_path.name)
         except Exception as exc:
             print(f"[Aviso IO] No se pudo completar exportación de summary.json / master_csv: {exc}")
 

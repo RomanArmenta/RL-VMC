@@ -71,9 +71,8 @@ def get_advisor_safe_casscf_defaults(
         default_softening = 0.1
     elif n_elec == 4:
         n_core = 0
-        # En N=4, el asesor utilizó n_active_orbitals=4 (36 dets) para g<=2
-        # y n_active_orbitals=5 (100 dets) para g>=5.
-        n_active_orbitals = 5 if g >= 4.0 else 4
+        # 4 orbitales activos (36 determinantes) garantiza convergencia rápida sin bloqueos
+        n_active_orbitals = 4
         n_basis = 32
         quadrature_order = 80
         default_softening = 0.1
@@ -88,15 +87,14 @@ def get_advisor_safe_casscf_defaults(
         # En N=8 (4 up, 4 down), congelar n_core=2 deja 2 up y 2 down activos -> 36 dets
         n_core = 2
         n_active_orbitals = 4
-        n_basis = 28
+        n_basis = 32
         quadrature_order = 80
         default_softening = 0.1
     elif n_elec == 10:
-        # En N=10 (5 up, 5 down), el asesor utilizó n_core=4, n_active_orbitals=4 (16 dets)
-        # y n_basis=24 con quadrature_order=80.
+        # En N=10 (5 up, 5 down), n_core=4, n_active_orbitals=4 (16 dets), n_basis=32, quad=80
         n_core = 4
         n_active_orbitals = 4
-        n_basis = 24
+        n_basis = 32
         quadrature_order = 80
         default_softening = 0.25
     else:
@@ -128,8 +126,8 @@ def get_advisor_safe_casscf_defaults(
         "diis": True,
         "diis_start": 3,
         "diis_size": 8,
-        "casscf_max_iter": 120,
-        "casscf_energy_tol": 1e-4,
+        "casscf_max_iter": 1000,
+        "casscf_energy_tol": 1e-8,
         "orbital_gradient_tol": 1e-6,
         "max_ci_dimension": 20000,
         "plot_xmax": float(plot_xmax),
@@ -176,14 +174,21 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Truncamiento final de determinantes (0 = conservar todos los del espacio activo).",
     )
-    p.add_argument("--casscf_max_iter", type=int, default=120, help="Máximo de iteraciones BFGS de CASSCF.")
+    p.add_argument("--casscf_max_iter", type=int, default=1000, help="Máximo de iteraciones BFGS de CASSCF.")
     p.add_argument("--casscf_grad_tol", type=float, default=1e-6, help="Tolerancia de gradiente BFGS.")
+    p.add_argument("--casscf_energy_tol", type=float, default=1e-8, help="Tolerancia de energía entre pasos BFGS.")
     p.add_argument("--outdir", type=str, required=True, help="Carpeta de salida para este sistema CASSCF.")
     p.add_argument(
         "--master_csv",
         type=str,
         default=None,
         help="Ruta opcional a la tabla CSV maestra donde agregar los resultados conforme terminan.",
+    )
+    p.add_argument(
+        "--csv_collect_dir",
+        type=str,
+        default="results_csv",
+        help="Carpeta central ligera donde se copian todos los archivos CSV con referencia al sistema.",
     )
     p.add_argument(
         "--reuse_existing",
@@ -222,13 +227,20 @@ def main() -> None:
     if args.n_final_determinants is not None:
         params["n_final_determinants"] = int(args.n_final_determinants)
     params["casscf_max_iter"] = int(args.casscf_max_iter)
-    params["casscf_grad_tol"] = float(args.casscf_grad_tol)
+    params["orbital_gradient_tol"] = float(args.casscf_grad_tol)
+    params["casscf_energy_tol"] = float(args.casscf_energy_tol)
     params["outdir"] = str(args.outdir)
 
+    sys_tag = f"N{n_elec}_w{params['omega']}_g{params['g']}"
     outdir = Path(args.outdir)
     outdir.mkdir(parents=True, exist_ok=True)
     npz_target = outdir / "casscf_state.npz"
+    npz_tagged = outdir / f"casscf_state_{sys_tag}.npz"
     summary_target = outdir / "summary.json"
+    summary_tagged = outdir / f"summary_casscf_{sys_tag}.json"
+    csv_collect_dir = Path(args.csv_collect_dir) if args.csv_collect_dir else None
+    if csv_collect_dir is not None:
+        csv_collect_dir.mkdir(parents=True, exist_ok=True)
 
     n_act_up = params["n_up"] - params["n_core"]
     n_act_dn = params["n_down"] - params["n_core"]
@@ -238,25 +250,41 @@ def main() -> None:
 
     print("=" * 78)
     print(
-        f"[Pipeline 1 - CASSCF] Sistema: N={n_elec} (up={n_up}, dn={n_dn}) | "
+        f"[Pipeline 1 - CASSCF] Sistema: {sys_tag} (up={n_up}, dn={n_dn}) | "
         f"omega={params['omega']} | g={params['g']} | a={params['softening']}"
     )
     print(
         f"[Pipeline 1 - CASSCF] Espacio Activo: n_core={params['n_core']}, "
         f"n_active_orbitals={params['n_active_orbitals']} -> {expected_n_dets} determinantes CI | "
-        f"n_basis={params['n_basis']}, quad={params['quadrature_order']}"
+        f"n_basis={params['n_basis']}, quad={params['quadrature_order']}, max_iter={params['casscf_max_iter']}"
     )
     print("=" * 78)
 
     t0 = time.perf_counter()
     reused = False
 
-    # 1. Reutilizar si ya existe en outdir y se solicitó --reuse_existing
+    # 1. Reutilizar si ya existe en outdir, se solicitó --reuse_existing y convergió genuinamente
     if args.reuse_existing and npz_target.exists() and summary_target.exists():
-        print(f"[Pipeline 1 - CASSCF] Reutilizando estado existente en: {npz_target}")
-        reused = True
+        try:
+            with summary_target.open("r", encoding="utf-8") as f_chk:
+                prev_sum = json.load(f_chk)
+            prev_conv = bool(prev_sum.get("converged", False))
+            prev_it = int(prev_sum.get("iterations", 0))
+            prev_msg = str(prev_sum.get("optimizer_message", ""))
+            prev_max_it = int(prev_sum.get("config", {}).get("casscf_max_iter", prev_it))
+            hit_old_cap = (prev_it >= 120 and prev_max_it <= 120) or ("Maximum number of iterations" in prev_msg and prev_max_it < params["casscf_max_iter"])
+            if prev_conv and not hit_old_cap:
+                print(f"[Pipeline 1 - CASSCF] Reutilizando estado convergido ({prev_it} iters) en: {npz_target}")
+                reused = True
+            else:
+                print(
+                    f"[Pipeline 1 - CASSCF] Estado previo en {outdir} alcanzó límite de iteraciones "
+                    f"(it={prev_it}/{prev_max_it}, conv={prev_conv}). Recalculando con max_iter={params['casscf_max_iter']}..."
+                )
+        except Exception:
+            pass
 
-    # 2. Copiar de uhf_1d_ho_v270826_m-determinants/results_* si se solicitó y coincide exactamente
+    # 2. Copiar de uhf_1d_ho_v270826_m-determinants/results_* si se solicitó, coincide exactamente y convergió
     if not reused and args.copy_from_advisor_if_available:
         baselines = discover_casscf_baselines(search_root=ROOT_DIR)
         match = find_matching_casscf_baseline(
@@ -269,11 +297,25 @@ def main() -> None:
         )
         if match is not None and os.path.abspath(match["npz_path"]) != os.path.abspath(npz_target):
             src_dir = Path(match["npz_path"]).parent
-            print(f"[Pipeline 1 - CASSCF] Copiando referencia ya convergida desde: {src_dir}")
-            for item in src_dir.iterdir():
-                if item.is_file():
-                    shutil.copy2(item, outdir / item.name)
-            reused = True
+            src_sum_file = src_dir / "summary.json"
+            ok_to_copy = True
+            if src_sum_file.exists():
+                try:
+                    with src_sum_file.open("r", encoding="utf-8") as fs:
+                        s_meta = json.load(fs)
+                    s_it = int(s_meta.get("iterations", 0))
+                    s_max = int(s_meta.get("config", {}).get("casscf_max_iter", 500))
+                    s_conv = bool(s_meta.get("converged", True))
+                    if not s_conv or (s_it >= 120 and s_max <= 120):
+                        ok_to_copy = False
+                except Exception:
+                    pass
+            if ok_to_copy:
+                print(f"[Pipeline 1 - CASSCF] Copiando referencia ya convergida desde: {src_dir}")
+                for item in src_dir.iterdir():
+                    if item.is_file():
+                        shutil.copy2(item, outdir / item.name)
+                reused = True
 
     # 3. Ejecutar cálculo variacional CASSCF desde cero usando la paquetería del asesor
     if not reused:
@@ -292,12 +334,26 @@ def main() -> None:
         except Exception as exc_p:
             print(f"  [Aviso CASSCF Plots] No se pudieron generar algunas figuras: {exc_p}")
 
+        if result.history and "energy" in result.history and len(result.history["energy"]) > 0:
+            hist_df = pd.DataFrame(
+                {
+                    "system": sys_tag,
+                    "iteration": result.history.get("iteration", list(range(1, len(result.history["energy"]) + 1))),
+                    "energy": result.history["energy"],
+                }
+            )
+            hist_csv = outdir / f"casscf_convergence_history_{sys_tag}.csv"
+            hist_df.to_csv(hist_csv, index=False)
+            if csv_collect_dir is not None:
+                shutil.copy2(hist_csv, csv_collect_dir / hist_csv.name)
+
         initial_energy = (
             float(result.history["energy"][0])
             if (result.history and "energy" in result.history and len(result.history["energy"]) > 0)
             else float("nan")
         )
         summary_dict = {
+            "system_tag": sys_tag,
             "config": result.config.to_dict(),
             "converged": bool(result.converged),
             "iterations": int(result.iterations),
@@ -311,10 +367,19 @@ def main() -> None:
     else:
         with summary_target.open("r", encoding="utf-8") as f:
             summary_dict = json.load(f)
+        summary_dict["system_tag"] = sys_tag
 
     wall_time = time.perf_counter() - t0
 
-    # Evaluar densidad exacta de 1 cuerpo en malla uniforme y exportar CSV
+    # Copiar archivo .npz y figuras con nombre referenciado al sistema
+    if npz_target.exists():
+        shutil.copy2(npz_target, npz_tagged)
+    for fig_stem in ("densities", "ci_weights", "natural_occupations", "orbital_4panel", "energy_history"):
+        src_fig = outdir / f"{fig_stem}.png"
+        if src_fig.exists():
+            shutil.copy2(src_fig, outdir / f"{fig_stem}_{sys_tag}.png")
+
+    # Evaluar densidad exacta de 1 cuerpo en malla uniforme y exportar CSV con referencia al sistema
     ref_density = compute_exact_casscf_1body_density(
         npz_target,
         x_min=-params["plot_xmax"],
@@ -322,8 +387,10 @@ def main() -> None:
         n_grid=params["plot_points"],
     )
     density_csv_path = outdir / "casscf_exact_density.csv"
-    pd.DataFrame(
+    density_csv_tagged = outdir / f"casscf_exact_density_{sys_tag}.csv"
+    df_dens = pd.DataFrame(
         {
+            "system": sys_tag,
             "x": ref_density["x"],
             "rho_total": ref_density["rho_total"],
             "rho_up": ref_density["rho_up"],
@@ -332,20 +399,24 @@ def main() -> None:
             "p_up": ref_density["p_up"],
             "p_down": ref_density["p_down"],
         }
-    ).to_csv(density_csv_path, index=False)
+    )
+    df_dens.to_csv(density_csv_path, index=False)
+    df_dens.to_csv(density_csv_tagged, index=False)
+    if csv_collect_dir is not None:
+        df_dens.to_csv(csv_collect_dir / f"casscf_exact_density_{sys_tag}.csv", index=False)
 
-    # Calcular radio RMS analítico e identificación de picos de Wigner sobre la densidad exacta
+    # Calcular radio RMS analítico sobre la densidad exacta
     x_grid = ref_density["x"]
     p_tot = ref_density["p_total"]
     dx = float(x_grid[1] - x_grid[0])
     rms_radius = float(np.sqrt(np.sum((x_grid**2) * p_tot) * dx))
 
-    # Guardar summary.json enriquecido en la carpeta del modelo
+    # Guardar summary.json y summary_casscf_{sys_tag}.json enriquecidos en la carpeta del modelo
     summary_dict["pipeline_stage"] = "pipeline1_casscf_reference"
     summary_dict["wall_time_sec"] = float(wall_time)
     summary_dict["reused_existing"] = bool(reused)
-    summary_dict["npz_path"] = str(npz_target)
-    summary_dict["exact_density_csv"] = str(density_csv_path)
+    summary_dict["npz_path"] = str(npz_tagged)
+    summary_dict["exact_density_csv"] = str(density_csv_tagged)
     summary_dict["observables"] = {
         "energy": float(summary_dict.get("energy", ref_density["energy"])),
         "initial_energy": float(summary_dict.get("initial_energy", float("nan"))),
@@ -359,41 +430,48 @@ def main() -> None:
 
     with summary_target.open("w", encoding="utf-8") as f:
         json.dump(summary_dict, f, indent=2)
+    with summary_tagged.open("w", encoding="utf-8") as f:
+        json.dump(summary_dict, f, indent=2)
 
     print(
         f"[Pipeline 1 - CASSCF] Completado en {wall_time:.2f}s | "
         f"E_CASSCF = {summary_dict['observables']['energy']:.8f} Ha | "
-        f"Guardado en: {outdir}"
+        f"Guardado en: {outdir} ({sys_tag})"
     )
 
+    row = {
+        "system_tag": sys_tag,
+        "pipeline_stage": "pipeline1_casscf_reference",
+        "N": int(n_elec),
+        "n_up": int(n_up),
+        "n_dn": int(n_dn),
+        "omega": float(params["omega"]),
+        "g": float(params["g"]),
+        "softening": float(params["softening"]),
+        "n_core": int(params["n_core"]),
+        "n_active_orbitals": int(params["n_active_orbitals"]),
+        "n_basis": int(params["n_basis"]),
+        "quadrature_order": int(params["quadrature_order"]),
+        "n_determinants": int(summary_dict["observables"]["n_determinants"]),
+        "converged": bool(summary_dict.get("converged", True)),
+        "iterations": int(summary_dict.get("iterations", 0)),
+        "casscf_energy": float(summary_dict["observables"]["energy"]),
+        "initial_energy": float(summary_dict["observables"]["initial_energy"]),
+        "correlation_energy_gain": float(summary_dict["observables"]["correlation_energy_gain"]),
+        "core_energy": float(summary_dict.get("core_energy", float("nan"))),
+        "active_energy": float(summary_dict.get("active_energy", float("nan"))),
+        "rms_radius": rms_radius,
+        "wall_time_sec": float(wall_time),
+        "npz_path": str(npz_tagged),
+        "outdir": str(outdir),
+    }
     if args.master_csv:
-        row = {
-            "pipeline_stage": "pipeline1_casscf_reference",
-            "N": int(n_elec),
-            "n_up": int(n_up),
-            "n_dn": int(n_dn),
-            "omega": float(params["omega"]),
-            "g": float(params["g"]),
-            "softening": float(params["softening"]),
-            "n_core": int(params["n_core"]),
-            "n_active_orbitals": int(params["n_active_orbitals"]),
-            "n_basis": int(params["n_basis"]),
-            "quadrature_order": int(params["quadrature_order"]),
-            "n_determinants": int(summary_dict["observables"]["n_determinants"]),
-            "converged": bool(summary_dict.get("converged", True)),
-            "iterations": int(summary_dict.get("iterations", 0)),
-            "casscf_energy": float(summary_dict["observables"]["energy"]),
-            "initial_energy": float(summary_dict["observables"]["initial_energy"]),
-            "correlation_energy_gain": float(summary_dict["observables"]["correlation_energy_gain"]),
-            "core_energy": float(summary_dict.get("core_energy", float("nan"))),
-            "active_energy": float(summary_dict.get("active_energy", float("nan"))),
-            "rms_radius": rms_radius,
-            "wall_time_sec": float(wall_time),
-            "npz_path": str(npz_target),
-            "outdir": str(outdir),
-        }
         _append_master_csv(args.master_csv, row)
         print(f"[Pipeline 1 - CASSCF] Fila agregada en vivo a: {args.master_csv}")
+    if csv_collect_dir is not None:
+        central_p1_csv = csv_collect_dir / "live_pipeline1_casscf_summary.csv"
+        if not args.master_csv or os.path.abspath(args.master_csv) != os.path.abspath(central_p1_csv):
+            _append_master_csv(central_p1_csv, row)
 
 
 if __name__ == "__main__":

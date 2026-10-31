@@ -210,7 +210,10 @@ def _physical_orbital_params(params: dict, cfg: _Orbital1DSpec) -> tuple[dict, s
     if eff_model == "ho_fixed":
         return {"alpha": jnp.asarray(cfg.alpha_init)}, eff_model
     if eff_model == "ho_variational":
-        return {"alpha": jax.nn.softplus(params["raw_orbital_alpha"]) + eps}, eff_model
+        alpha_raw = jax.nn.softplus(params["raw_orbital_alpha"]) + eps
+        alpha_bounded = cfg.alpha_init * (0.25 + 2.25 * jax.nn.sigmoid(params["raw_orbital_alpha"] - _softplus_inverse(max(cfg.alpha_init - eps, eps))))
+        alpha_val = jnp.clip(alpha_raw, 0.20 * cfg.alpha_init, 3.0 * cfg.alpha_init)
+        return {"alpha": alpha_val}, eff_model
     if eff_model == "gaussian_basis":
         width = (
             jax.nn.softplus(params["raw_gaussian_width"]) + eps
@@ -221,10 +224,12 @@ def _physical_orbital_params(params: dict, cfg: _Orbital1DSpec) -> tuple[dict, s
         coeff = coeff / jnp.sqrt(jnp.sum(coeff**2, axis=1, keepdims=True) + 1e-12)
         return {"coeff": coeff, "centers": _gaussian_centers(cfg), "width": width}, eff_model
     if eff_model == "backflow_ho":
+        alpha_raw = jax.nn.softplus(params["raw_orbital_alpha"]) + eps
+        alpha_val = jnp.clip(alpha_raw, 0.20 * cfg.alpha_init, 3.0 * cfg.alpha_init)
         return {
-            "alpha": jax.nn.softplus(params["raw_orbital_alpha"]) + eps,
-            "backflow_coeff_same": params["backflow_coeff_same"],
-            "backflow_coeff_opposite": params["backflow_coeff_opposite"],
+            "alpha": alpha_val,
+            "backflow_coeff_same": 0.25 * jnp.tanh(params["backflow_coeff_same"]),
+            "backflow_coeff_opposite": 0.25 * jnp.tanh(params["backflow_coeff_opposite"]),
         }, eff_model
     raise ValueError(f"Unknown orbital model: {eff_model}")
 
@@ -357,20 +362,21 @@ def log_correlation_factor(
     total = jnp.asarray(0.0, dtype=x.dtype)
 
     if eff_model in ("jastrow", "spin_rbf_jastrow"):
-        c_same = jax.nn.softplus(params["raw_c_same"]) + eps
-        c_opp = jax.nn.softplus(params["raw_c_opposite"]) + eps
-        b_same = jax.nn.softplus(params["raw_beta_same"]) + eps
-        b_opp = jax.nn.softplus(params["raw_beta_opposite"]) + eps
-        rho = jnp.sqrt(r**2 + cfg.pair_smoothing**2)
+        c_same = jnp.clip(jax.nn.softplus(params["raw_c_same"]) + eps, eps, 2.5)
+        c_opp = jnp.clip(jax.nn.softplus(params["raw_c_opposite"]) + eps, eps, 2.5)
+        b_same = jnp.clip(jax.nn.softplus(params["raw_beta_same"]) + eps, 0.05, 5.0)
+        b_opp = jnp.clip(jax.nn.softplus(params["raw_beta_opposite"]) + eps, 0.05, 5.0)
+        smooth_a = max(float(system_cfg.softening), float(cfg.pair_smoothing), 0.05)
+        rho = jnp.sqrt(r**2 + smooth_a**2)
         u_same = c_same * rho / (1.0 + b_same * rho)
         u_opp = c_opp * rho / (1.0 + b_opp * rho)
         total = total + jnp.sum(jnp.where(same, u_same, u_opp), axis=-1)
 
     if eff_model in ("spin_rbf", "spin_rbf_jastrow", "spin_rbf_threebody"):
-        pc_same = jax.nn.softplus(params["raw_pair_coeff_same"]) + eps
-        pc_opp = jax.nn.softplus(params["raw_pair_coeff_opposite"]) + eps
-        pw_same = jax.nn.softplus(params["raw_pair_width_same"]) + eps
-        pw_opp = jax.nn.softplus(params["raw_pair_width_opposite"]) + eps
+        pc_same = jnp.clip(jax.nn.softplus(params["raw_pair_coeff_same"]) + eps, eps, 1.5)
+        pc_opp = jnp.clip(jax.nn.softplus(params["raw_pair_coeff_opposite"]) + eps, eps, 1.5)
+        pw_same = jnp.clip(jax.nn.softplus(params["raw_pair_width_same"]) + eps, 0.25, 10.0)
+        pw_opp = jnp.clip(jax.nn.softplus(params["raw_pair_width_opposite"]) + eps, 0.25, 10.0)
         n_rbf = int(pc_same.shape[0])
         centers = jnp.linspace(0.0, cfg.rbf_r_max, n_rbf)
         r_exp = jnp.asarray(r)[..., None]
@@ -468,15 +474,21 @@ class SlaterJastrow1DAnsatz(BaseAnsatz1D):
             interaction_strength=cfg.system.interaction_strength,
             softening=cfg.system.softening,
         )
+        length_scale = 1.0 / math.sqrt(max(float(cfg.system.omega), 1e-4))
+        scale_mult = max(1.0, length_scale / 1.5)
         self.orbital_cfg = _Orbital1DSpec(
             model=cfg.ansatz.orbital_model,
+            alpha_init=float(cfg.system.omega),
             backflow_components=cfg.ansatz.backflow_components,
-            backflow_r_max=cfg.ansatz.backflow_r_max,
-            backflow_width=cfg.ansatz.backflow_width,
-            backflow_envelope_length=cfg.ansatz.backflow_envelope_length,
+            backflow_r_max=float(cfg.ansatz.backflow_r_max) * scale_mult,
+            backflow_width=float(cfg.ansatz.backflow_width) * scale_mult,
+            backflow_envelope_length=float(cfg.ansatz.backflow_envelope_length) * scale_mult,
         )
         self.correlation_cfg = _Correlation1DSpec(
             model=cfg.ansatz.correlation_model,
+            pair_smoothing=max(float(cfg.system.softening), 0.1),
+            rbf_r_max=5.0 * scale_mult,
+            rbf_width_init=0.6 * scale_mult,
         )
 
     def init(self, key: jax.Array, walkers: jax.Array) -> dict:
@@ -586,17 +598,16 @@ class CASSCF1DAnsatz(BaseAnsatz1D):
             basis_dn = _build_ho_basis_jax(x_dn, n_basis, omega)
 
             def eval_det(idx_up, idx_dn, c_i):
-                mat_up = basis_up @ orbitals[:, idx_up] + jnp.eye(n_up) * 1e-12
-                mat_dn = basis_dn @ orbitals[:, idx_dn] + jnp.eye(n_dn) * 1e-12
-                s_u, l_u = jnp.linalg.slogdet(mat_up)
-                s_d, l_d = jnp.linalg.slogdet(mat_dn)
-                return c_i * s_u * s_d, l_u + l_d
+                mat_up = basis_up @ orbitals[:, idx_up]
+                mat_dn = basis_dn @ orbitals[:, idx_dn]
+                det_u = jnp.linalg.det(mat_up) if n_up > 1 else jnp.squeeze(mat_up)
+                det_d = jnp.linalg.det(mat_dn) if n_dn > 1 else jnp.squeeze(mat_dn)
+                return c_i * det_u * det_d
 
-            c_vals, log_mags = jax.vmap(eval_det)(occ_up_idx, occ_dn_idx, ci_coeffs)
-            max_log = jnp.max(log_mags)
-            psi_val = jnp.sum(c_vals * jnp.exp(log_mags - max_log))
+            psi_terms = jax.vmap(eval_det)(occ_up_idx, occ_dn_idx, ci_coeffs)
+            psi_val = jnp.sum(psi_terms)
             return jnp.clip(
-                max_log + jnp.log(jnp.abs(psi_val) + 1e-15), -1000.0, 1000.0
+                0.5 * jnp.log(jnp.square(psi_val) + 1e-60), -1000.0, 1000.0
             )
 
         return jax.vmap(evaluate_single)(x_1d)

@@ -56,6 +56,7 @@ export XLA_PYTHON_CLIENT_MEM_FRACTION=0.30
 export TF_FORCE_GPU_ALLOW_GROWTH=true
 
 BASE_OUT_DIR="${BASE_OUT_DIR:-results_production_3pipelines}"
+CSV_COLLECT_DIR="${CSV_COLLECT_DIR:-results_csv}"
 PIPELINES_TO_RUN="${PIPELINES_TO_RUN:-1 2 3}"
 N_LIST="${N_LIST:-2 4 6 10}"
 G_LIST="${G_LIST:-0.5 1.0 2.0 3.0 5.0 8.0}"
@@ -66,13 +67,18 @@ MAX_PARALLEL_JOBS="${MAX_PARALLEL_JOBS:-auto}"
 COPY_ADVISOR_CASSCF="${COPY_ADVISOR_CASSCF:-1}"
 FORCE_RERUN="${FORCE_RERUN:-0}"
 
+# Hiperparámetros de CASSCF (Benchmark 2: corridas largas para convergencia completa)
+CASSCF_MAX_ITER="${CASSCF_MAX_ITER:-1000}"
+CASSCF_ENERGY_TOL="${CASSCF_ENERGY_TOL:-1e-8}"
+CASSCF_GRAD_TOL="${CASSCF_GRAD_TOL:-1e-4}"
+
 # Hiperparámetros de muestreo y entrenamiento
 N_WALKERS="${N_WALKERS:-256}"
 RL_ONLY_STEPS="${RL_ONLY_STEPS:-10000}"
 VMC_COUPLED_STEPS="${VMC_COUPLED_STEPS:-15000}"
 N_EVAL_CHAINS="${N_EVAL_CHAINS:-5}"
-EVAL_BURN_IN="${EVAL_BURN_IN:-1000}"
-MEASURE_STEPS="${MEASURE_STEPS:-6000}"
+EVAL_BURN_IN="${EVAL_BURN_IN:-2500}"
+MEASURE_STEPS="${MEASURE_STEPS:-8000}"
 
 # Estructura de carpetas de salida y tablas CSV en vivo
 P1_DIR="${BASE_OUT_DIR}/pipeline1_casscf"
@@ -87,7 +93,7 @@ LIVE_CSV_P3_RUNS="${BASE_OUT_DIR}/live_pipeline3_training_runs.csv"
 LIVE_CSV_P3_COMP="${BASE_OUT_DIR}/live_pipeline3_training_comparison.csv"
 LIVE_CSV_ALL="${BASE_OUT_DIR}/live_all_models_master.csv"
 
-mkdir -p "$P1_DIR" "$P2_DIR" "$P3_DIR" "$LOG_DIR"
+mkdir -p "$P1_DIR" "$P2_DIR" "$P3_DIR" "$LOG_DIR" "$CSV_COLLECT_DIR"
 
 MASTER_START_EPOCH=$(date +%s)
 MASTER_START_TIME=$(date "+%Y-%m-%d %H:%M:%S")
@@ -397,12 +403,12 @@ get_system_casscf_params() {
     elif [ "$N" -eq 8 ]; then
         n_core=2; n_act=4; n_basis=28; quad=80; soft="0.1"
     elif [ "$N" -eq 10 ]; then
-        # En los summary.json de N=10 del asesor: n_core=4, n_active_orbitals=4, n_basis=24, softening=0.25
-        n_core=4; n_act=4; n_basis=24; quad=80; soft="0.25"
+        # n_core=4, n_active_orbitals=4, n_basis=32 (expandido para convergencia a g>=3.0), softening=0.25
+        n_core=4; n_act=4; n_basis=32; quad=80; soft="0.25"
     else
         n_core=$(( (N / 2) - 2 ))
         if [ "$n_core" -lt 0 ]; then n_core=0; fi
-        n_act=4; n_basis=24; quad=80; soft="0.1"
+        n_act=4; n_basis=32; quad=80; soft="0.1"
     fi
     echo "$n_core $n_act $n_basis $quad $soft"
 }
@@ -424,7 +430,8 @@ run_pipeline_1() {
     echo "=============================================================================="
     echo " [PIPELINE 1] Generando referencias CASSCF 1D con paquetería uhf1d..."
     echo " Modo de ejecución : Secuencial, uno por uno en CPU (CUDA_VISIBLE_DEVICES=\"\")"
-    echo " Tabla CSV en vivo : $LIVE_CSV_P1"
+    echo " Iteraciones máx   : $CASSCF_MAX_ITER (tol_E=$CASSCF_ENERGY_TOL, tol_grad=$CASSCF_GRAD_TOL)"
+    echo " Tabla CSV en vivo : $LIVE_CSV_P1 (espejada en $CSV_COLLECT_DIR)"
     echo "=============================================================================="
 
     for N in $N_LIST; do
@@ -459,8 +466,12 @@ run_pipeline_1() {
                     --n_active_orbitals "$NACT" \
                     --n_basis "$NBASIS" \
                     --quadrature_order "$QUAD" \
+                    --casscf_max_iter "$CASSCF_MAX_ITER" \
+                    --casscf_energy_tol "$CASSCF_ENERGY_TOL" \
+                    --casscf_grad_tol "$CASSCF_GRAD_TOL" \
                     --outdir "$OUT_CASSCF" \
                     --master_csv "$LIVE_CSV_P1" \
+                    --csv_collect_dir "$CSV_COLLECT_DIR" \
                     $EXTRA_FLAGS
         done
     done
@@ -487,6 +498,8 @@ run_sistema_pipeline_2() {
     local MALA_DIR="${SYS_OUT}/MALA_FixedCASSCF"
     local RL_DIR="${SYS_OUT}/RL_TD3_FixedCASSCF"
     local COMP_DIR="${SYS_OUT}/postprocess_comparison"
+    local MALA_H5="${MALA_DIR}/run_bundle_P2_MALA_FixedCASSCF_${SYS_TAG}.h5"
+    local RL_H5="${RL_DIR}/run_bundle_P2_RL_TD3_FixedCASSCF_${SYS_TAG}.h5"
 
     mkdir -p "$MALA_DIR" "$RL_DIR" "$COMP_DIR"
 
@@ -498,8 +511,12 @@ run_sistema_pipeline_2() {
                 --omega "$OMEGA" --g "$G" --softening "$SOFT" \
                 --n_core "$NCORE" --n_active_orbitals "$NACT" \
                 --n_basis "$NBASIS" --quadrature_order "$QUAD" \
+                --casscf_max_iter "$CASSCF_MAX_ITER" \
+                --casscf_energy_tol "$CASSCF_ENERGY_TOL" \
+                --casscf_grad_tol "$CASSCF_GRAD_TOL" \
                 --outdir "${P1_DIR}/${SYS_TAG}" \
                 --master_csv "$LIVE_CSV_P1" \
+                --csv_collect_dir "$CSV_COLLECT_DIR" \
                 --reuse_existing --copy_from_advisor_if_available
     fi
 
@@ -509,7 +526,7 @@ run_sistema_pipeline_2() {
     fi
 
     # 2A. Muestreo puro con MALA estándar sobre CASSCF congelado
-    if [ "$FORCE_RERUN" -eq 1 ] || [ ! -f "${MALA_DIR}/run_bundle.h5" ]; then
+    if [ "$FORCE_RERUN" -eq 1 ] || { [ ! -f "$MALA_H5" ] && [ ! -f "${MALA_DIR}/run_bundle.h5" ]; }; then
         run_logged_step "[Pipeline 2 | MALA | ${SYS_TAG} | GPU ${GPU_ID}]" \
             env CUDA_VISIBLE_DEVICES="$GPU_ID" python3 -u cli/run_1d.py \
                 --run_name "P2_MALA_FixedCASSCF_${SYS_TAG}" \
@@ -526,14 +543,20 @@ run_sistema_pipeline_2() {
                 --n_eval_chains "$N_EVAL_CHAINS" \
                 --eval_burn_in "$EVAL_BURN_IN" \
                 --measure_steps "$MEASURE_STEPS" \
-                --output_h5 "${MALA_DIR}/run_bundle.h5" \
+                --output_h5 "$MALA_H5" \
                 --reference_casscf_npz "$CASSCF_NPZ" \
                 --master_csv "$LIVE_CSV_P2_RUNS" \
+                --csv_collect_dir "$CSV_COLLECT_DIR" \
                 --export_legacy_files
+        if [ -f "$MALA_H5" ]; then
+            ln -sf "$(basename "$MALA_H5")" "${MALA_DIR}/run_bundle.h5" 2>/dev/null || cp -f "$MALA_H5" "${MALA_DIR}/run_bundle.h5"
+        fi
+    elif [ -f "${MALA_DIR}/run_bundle.h5" ] && [ ! -f "$MALA_H5" ]; then
+        MALA_H5="${MALA_DIR}/run_bundle.h5"
     fi
 
     # 2B. Entrenamiento del Actor RL-MALA (TD3 DeepSet) sobre CASSCF congelado + Evaluación
-    if [ "$FORCE_RERUN" -eq 1 ] || [ ! -f "${RL_DIR}/run_bundle.h5" ]; then
+    if [ "$FORCE_RERUN" -eq 1 ] || { [ ! -f "$RL_H5" ] && [ ! -f "${RL_DIR}/run_bundle.h5" ]; }; then
         run_logged_step "[Pipeline 2 | RL-TD3 | ${SYS_TAG} | GPU ${GPU_ID}]" \
             env CUDA_VISIBLE_DEVICES="$GPU_ID" python3 -u cli/run_1d.py \
                 --run_name "P2_RL_TD3_FixedCASSCF_${SYS_TAG}" \
@@ -554,29 +577,39 @@ run_sistema_pipeline_2() {
                 --n_eval_chains "$N_EVAL_CHAINS" \
                 --eval_burn_in "$EVAL_BURN_IN" \
                 --measure_steps "$MEASURE_STEPS" \
-                --output_h5 "${RL_DIR}/run_bundle.h5" \
+                --output_h5 "$RL_H5" \
                 --reference_casscf_npz "$CASSCF_NPZ" \
                 --master_csv "$LIVE_CSV_P2_RUNS" \
+                --csv_collect_dir "$CSV_COLLECT_DIR" \
                 --export_legacy_files
+        if [ -f "$RL_H5" ]; then
+            ln -sf "$(basename "$RL_H5")" "${RL_DIR}/run_bundle.h5" 2>/dev/null || cp -f "$RL_H5" "${RL_DIR}/run_bundle.h5"
+        fi
+    elif [ -f "${RL_DIR}/run_bundle.h5" ] && [ ! -f "$RL_H5" ]; then
+        RL_H5="${RL_DIR}/run_bundle.h5"
     fi
 
     # 2C. Post-procesamiento inmediato por sistema (figuras + CSV comparativo en vivo)
-    if [ -f "${MALA_DIR}/run_bundle.h5" ] && [ -f "${RL_DIR}/run_bundle.h5" ]; then
+    if [ -f "$MALA_H5" ] && [ -f "$RL_H5" ]; then
         run_logged_step "[Pipeline 2 | Postprocess | ${SYS_TAG}]" \
             env CUDA_VISIBLE_DEVICES="" python3 -u cli/postprocess.py \
-                --inputs "${MALA_DIR}/run_bundle.h5" "${RL_DIR}/run_bundle.h5" \
+                --inputs "$MALA_H5" "$RL_H5" \
                 --labels "MALA (Fixed CASSCF)" "RL-MALA TD3 (Fixed CASSCF)" \
                 --casscf_npz_path "$CASSCF_NPZ" \
                 --out_dir "$COMP_DIR" \
-                --master_comparison_csv "$LIVE_CSV_P2_COMP"
+                --system_tag "P2_${SYS_TAG}" \
+                --master_comparison_csv "$LIVE_CSV_P2_COMP" \
+                --csv_collect_dir "$CSV_COLLECT_DIR"
 
         run_logged_step "[Pipeline 2 | Postprocess Master | ${SYS_TAG}]" \
             env CUDA_VISIBLE_DEVICES="" python3 -u cli/postprocess.py \
-                --inputs "${MALA_DIR}/run_bundle.h5" "${RL_DIR}/run_bundle.h5" \
+                --inputs "$MALA_H5" "$RL_H5" \
                 --labels "P2_MALA_FixedCASSCF_${SYS_TAG}" "P2_RL_TD3_FixedCASSCF_${SYS_TAG}" \
                 --casscf_npz_path "$CASSCF_NPZ" \
                 --out_dir "$COMP_DIR" \
-                --master_comparison_csv "$LIVE_CSV_ALL"
+                --system_tag "P2_${SYS_TAG}" \
+                --master_comparison_csv "$LIVE_CSV_ALL" \
+                --csv_collect_dir "$CSV_COLLECT_DIR"
         echo "  <- [Pipeline 2 | GPU ${GPU_ID}] Finalizado ${SYS_TAG}. Gráficas y summary.json en: ${COMP_DIR}"
     else
         echo "  [Aviso Pipeline 2] No se encontraron ambos run_bundle.h5 para ${SYS_TAG}. Post-procesamiento omitido."
@@ -652,11 +685,13 @@ run_sistema_pipeline_3() {
     local VMC_MALA_DIR="${SYS_OUT}/VMC_MALA_SJB"
     local COUPLED_RL_DIR="${SYS_OUT}/Coupled_RL_TD3_SJB"
     local COMP_DIR="${SYS_OUT}/postprocess_comparison"
+    local VMC_MALA_H5="${VMC_MALA_DIR}/run_bundle_P3_VMC_MALA_SJB_${SYS_TAG}.h5"
+    local COUPLED_RL_H5="${COUPLED_RL_DIR}/run_bundle_P3_Coupled_RL_TD3_SJB_${SYS_TAG}.h5"
 
     mkdir -p "$VMC_MALA_DIR" "$COUPLED_RL_DIR" "$COMP_DIR"
 
     # 3A. Entrenamiento VMC con MALA estándar (Slater-Jastrow + Backflow + Spin-RBF Jastrow)
-    if [ "$FORCE_RERUN" -eq 1 ] || [ ! -f "${VMC_MALA_DIR}/run_bundle.h5" ]; then
+    if [ "$FORCE_RERUN" -eq 1 ] || { [ ! -f "$VMC_MALA_H5" ] && [ ! -f "${VMC_MALA_DIR}/run_bundle.h5" ]; }; then
         run_logged_step "[Pipeline 3 | VMC-MALA | ${SYS_TAG} | GPU ${GPU_ID}]" \
             env CUDA_VISIBLE_DEVICES="$GPU_ID" python3 -u cli/run_1d.py \
                 --run_name "P3_VMC_MALA_SJB_${SYS_TAG}" \
@@ -674,14 +709,20 @@ run_sistema_pipeline_3() {
                 --n_eval_chains "$N_EVAL_CHAINS" \
                 --eval_burn_in "$EVAL_BURN_IN" \
                 --measure_steps "$MEASURE_STEPS" \
-                --output_h5 "${VMC_MALA_DIR}/run_bundle.h5" \
+                --output_h5 "$VMC_MALA_H5" \
                 --reference_casscf_npz "$CASSCF_NPZ" \
                 --master_csv "$LIVE_CSV_P3_RUNS" \
+                --csv_collect_dir "$CSV_COLLECT_DIR" \
                 --export_legacy_files
+        if [ -f "$VMC_MALA_H5" ]; then
+            ln -sf "$(basename "$VMC_MALA_H5")" "${VMC_MALA_DIR}/run_bundle.h5" 2>/dev/null || cp -f "$VMC_MALA_H5" "${VMC_MALA_DIR}/run_bundle.h5"
+        fi
+    elif [ -f "${VMC_MALA_DIR}/run_bundle.h5" ] && [ ! -f "$VMC_MALA_H5" ]; then
+        VMC_MALA_H5="${VMC_MALA_DIR}/run_bundle.h5"
     fi
 
     # 3B. Entrenamiento Acoplado VMC + RL-MALA (Coupled Trainer con TD3 DeepSet)
-    if [ "$FORCE_RERUN" -eq 1 ] || [ ! -f "${COUPLED_RL_DIR}/run_bundle.h5" ]; then
+    if [ "$FORCE_RERUN" -eq 1 ] || { [ ! -f "$COUPLED_RL_H5" ] && [ ! -f "${COUPLED_RL_DIR}/run_bundle.h5" ]; }; then
         run_logged_step "[Pipeline 3 | Coupled VMC+RL | ${SYS_TAG} | GPU ${GPU_ID}]" \
             env CUDA_VISIBLE_DEVICES="$GPU_ID" python3 -u cli/run_1d.py \
                 --run_name "P3_Coupled_RL_TD3_SJB_${SYS_TAG}" \
@@ -702,14 +743,20 @@ run_sistema_pipeline_3() {
                 --n_eval_chains "$N_EVAL_CHAINS" \
                 --eval_burn_in "$EVAL_BURN_IN" \
                 --measure_steps "$MEASURE_STEPS" \
-                --output_h5 "${COUPLED_RL_DIR}/run_bundle.h5" \
+                --output_h5 "$COUPLED_RL_H5" \
                 --reference_casscf_npz "$CASSCF_NPZ" \
                 --master_csv "$LIVE_CSV_P3_RUNS" \
+                --csv_collect_dir "$CSV_COLLECT_DIR" \
                 --export_legacy_files
+        if [ -f "$COUPLED_RL_H5" ]; then
+            ln -sf "$(basename "$COUPLED_RL_H5")" "${COUPLED_RL_DIR}/run_bundle.h5" 2>/dev/null || cp -f "$COUPLED_RL_H5" "${COUPLED_RL_DIR}/run_bundle.h5"
+        fi
+    elif [ -f "${COUPLED_RL_DIR}/run_bundle.h5" ] && [ ! -f "$COUPLED_RL_H5" ]; then
+        COUPLED_RL_H5="${COUPLED_RL_DIR}/run_bundle.h5"
     fi
 
     # 3C. Post-procesamiento inmediato por sistema
-    if [ -f "${VMC_MALA_DIR}/run_bundle.h5" ] && [ -f "${COUPLED_RL_DIR}/run_bundle.h5" ]; then
+    if [ -f "$VMC_MALA_H5" ] && [ -f "$COUPLED_RL_H5" ]; then
         local EXTRA_CASSCF_FLAG=""
         if [ -f "$CASSCF_NPZ" ]; then
             EXTRA_CASSCF_FLAG="--casscf_npz_path $CASSCF_NPZ"
@@ -717,19 +764,23 @@ run_sistema_pipeline_3() {
 
         run_logged_step "[Pipeline 3 | Postprocess | ${SYS_TAG}]" \
             env CUDA_VISIBLE_DEVICES="" python3 -u cli/postprocess.py \
-                --inputs "${VMC_MALA_DIR}/run_bundle.h5" "${COUPLED_RL_DIR}/run_bundle.h5" \
+                --inputs "$VMC_MALA_H5" "$COUPLED_RL_H5" \
                 --labels "VMC + MALA (SJB)" "Coupled VMC + RL-MALA TD3 (SJB)" \
                 $EXTRA_CASSCF_FLAG \
                 --out_dir "$COMP_DIR" \
-                --master_comparison_csv "$LIVE_CSV_P3_COMP"
+                --system_tag "P3_${SYS_TAG}" \
+                --master_comparison_csv "$LIVE_CSV_P3_COMP" \
+                --csv_collect_dir "$CSV_COLLECT_DIR"
 
         run_logged_step "[Pipeline 3 | Postprocess Master | ${SYS_TAG}]" \
             env CUDA_VISIBLE_DEVICES="" python3 -u cli/postprocess.py \
-                --inputs "${VMC_MALA_DIR}/run_bundle.h5" "${COUPLED_RL_DIR}/run_bundle.h5" \
+                --inputs "$VMC_MALA_H5" "$COUPLED_RL_H5" \
                 --labels "P3_VMC_MALA_SJB_${SYS_TAG}" "P3_Coupled_RL_TD3_SJB_${SYS_TAG}" \
                 $EXTRA_CASSCF_FLAG \
                 --out_dir "$COMP_DIR" \
-                --master_comparison_csv "$LIVE_CSV_ALL"
+                --system_tag "P3_${SYS_TAG}" \
+                --master_comparison_csv "$LIVE_CSV_ALL" \
+                --csv_collect_dir "$CSV_COLLECT_DIR"
         echo "  <- [Pipeline 3 | GPU ${GPU_ID}] Finalizado ${SYS_TAG}. Gráficas y summary.json en: ${COMP_DIR}"
     else
         echo "  [Aviso Pipeline 3] No se encontraron ambos run_bundle.h5 para ${SYS_TAG}. Post-procesamiento omitido."

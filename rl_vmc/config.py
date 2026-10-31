@@ -153,6 +153,7 @@ class IOConfig:
     export_legacy_files: bool = False
     save_summary_json: bool = True
     master_csv_path: Optional[str] = None
+    csv_collect_dir: Optional[str] = "results_csv"
     reference_casscf_npz: Optional[str] = None
     uhf_search_root: str = "."
     pipeline_stage: str = "general"
@@ -207,6 +208,8 @@ class PostProcessConfig:
     uhf_search_root: Optional[str] = "."
     auto_casscf_baseline: bool = True
     master_comparison_csv: Optional[str] = None
+    csv_collect_dir: Optional[str] = "results_csv"
+    system_tag: Optional[str] = None
     recompute_local_energy: bool = False
     sokal_window_c: float = 5.0
     max_acf_lag: int = 2000
@@ -373,6 +376,7 @@ def build_experiment_argparser() -> argparse.ArgumentParser:
     g_io.add_argument("--export_legacy_files", action=argparse.BooleanOptionalAction, default=False, help="Exporta adicionalmente params.json, *.pkl y *.csv en el formato antiguo.")
     g_io.add_argument("--save_summary_json", action=argparse.BooleanOptionalAction, default=True, help="Guarda summary.json en la carpeta del modelo con datos del sistema, hiperparámetros y observables finales.")
     g_io.add_argument("--master_csv", dest="master_csv_path", type=str, default=None, help="Ruta a tabla CSV incremental donde se anexa una fila en vivo al finalizar la corrida.")
+    g_io.add_argument("--csv_collect_dir", type=str, default="results_csv", help="Carpeta central ligera donde se copian todos los archivos CSV generados con referencia al sistema.")
     g_io.add_argument("--reference_casscf_npz", type=str, default=None, help="Ruta explícita a casscf_state.npz de referencia para calcular ΔE y D_KL en summary.json.")
     g_io.add_argument("--uhf_search_root", type=str, default=".", help="Directorio raíz donde buscar carpetas uhf* con baselines CASSCF.")
     g_io.add_argument("--pipeline_stage", type=str, default="general", help="Identificador de etapa del pipeline (ej. 'pipeline2_sampling' o 'pipeline3_training').")
@@ -580,6 +584,7 @@ def parse_experiment_args(argv: Optional[list[str]] = None) -> Experiment1DConfi
             export_legacy_files=args.export_legacy_files,
             save_summary_json=args.save_summary_json,
             master_csv_path=args.master_csv_path,
+            csv_collect_dir=args.csv_collect_dir,
             reference_casscf_npz=args.reference_casscf_npz,
             uhf_search_root=args.uhf_search_root,
             pipeline_stage=args.pipeline_stage,
@@ -601,6 +606,8 @@ def build_postprocess_argparser() -> argparse.ArgumentParser:
     g_in.add_argument("--uhf_search_root", type=str, default=".", help="Directorio raíz donde buscar carpetas uhf* con baselines CASSCF pre-entrenadas.")
     g_in.add_argument("--auto_casscf_baseline", action=argparse.BooleanOptionalAction, default=True, help="Si existe una baseline CASSCF pre-entrenada para el sistema físico (N, omega, g), superponerla automáticamente en las gráficas.")
     g_in.add_argument("--master_comparison_csv", type=str, default=None, help="Ruta a tabla CSV incremental donde se anexan las filas comparativas del sistema (incluyendo G_RL_speedup).")
+    g_in.add_argument("--csv_collect_dir", type=str, default="results_csv", help="Carpeta central ligera donde se copian todos los archivos CSV generados con referencia al sistema.")
+    g_in.add_argument("--system_tag", type=str, default=None, help="Etiqueta del sistema físico (ej. 'P2_N4_w0.1_g1.0') para nombrar archivos individuales.")
 
     g_calc = parser.add_argument_group("2. Parámetros de Cálculo de Observables y Diagnósticos")
     g_calc.add_argument("--recompute_local_energy", action=argparse.BooleanOptionalAction, default=False, help="Recalcula la energía local a partir de los caminantes y el ansatz guardado en el .h5.")

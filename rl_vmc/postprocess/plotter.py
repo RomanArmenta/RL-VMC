@@ -46,11 +46,16 @@ def _save_fig(
     stem: str,
     fmt: str = "pdf",
     dpi: int = 300,
+    sys_tag: str = "",
 ) -> None:
-    if fmt in ("png", "both"):
-        fig.savefig(os.path.join(out_dir, f"{stem}.png"), dpi=dpi, bbox_inches="tight")
-    if fmt in ("pdf", "both"):
-        fig.savefig(os.path.join(out_dir, f"{stem}.pdf"), bbox_inches="tight")
+    stems = [stem]
+    if sys_tag and not stem.endswith(f"_{sys_tag}"):
+        stems.append(f"{stem}_{sys_tag}")
+    for st in stems:
+        if fmt in ("png", "both"):
+            fig.savefig(os.path.join(out_dir, f"{st}.png"), dpi=dpi, bbox_inches="tight")
+        if fmt in ("pdf", "both"):
+            fig.savefig(os.path.join(out_dir, f"{st}.pdf"), bbox_inches="tight")
     plt.close(fig)
 
 
@@ -110,7 +115,14 @@ def plot_training_dashboard(
         ax.legend(frameon=True, fontsize=8.5)
 
     fig.tight_layout()
-    _save_fig(fig, out_dir, "fig1_training_dashboard", fmt=cfg.figure_format, dpi=cfg.dpi)
+    _save_fig(
+        fig,
+        out_dir,
+        "fig1_training_dashboard",
+        fmt=cfg.figure_format,
+        dpi=cfg.dpi,
+        sys_tag=getattr(cfg, "system_tag", ""),
+    )
 
 
 def plot_production_summary(
@@ -233,7 +245,14 @@ def plot_production_summary(
         ax.legend(frameon=True, fontsize=8.5)
 
     fig.tight_layout()
-    _save_fig(fig, out_dir, "fig2_production_summary", fmt=cfg.figure_format, dpi=cfg.dpi)
+    _save_fig(
+        fig,
+        out_dir,
+        "fig2_production_summary",
+        fmt=cfg.figure_format,
+        dpi=cfg.dpi,
+        sys_tag=getattr(cfg, "system_tag", ""),
+    )
 
 
 def plot_observables_comparison(
@@ -332,7 +351,12 @@ def plot_observables_comparison(
 
     fig.tight_layout()
     _save_fig(
-        fig, out_dir, "fig3_observables_comparison", fmt=cfg.figure_format, dpi=cfg.dpi
+        fig,
+        out_dir,
+        "fig3_observables_comparison",
+        fmt=cfg.figure_format,
+        dpi=cfg.dpi,
+        sys_tag=getattr(cfg, "system_tag", ""),
     )
 
 
@@ -455,6 +479,7 @@ def plot_article_densities_comparison(
         "fig7_article_densities_comparison",
         fmt=cfg.figure_format,
         dpi=cfg.dpi,
+        sys_tag=getattr(cfg, "system_tag", ""),
     )
 
 
@@ -569,18 +594,27 @@ def plot_article_kl_divergence(
         fontsize=11,
     )
     fig.tight_layout()
+    sys_tag = getattr(cfg, "system_tag", "")
     _save_fig(
         fig,
         out_dir,
         "fig8_article_kl_divergence",
         fmt=cfg.figure_format,
         dpi=cfg.dpi,
+        sys_tag=sys_tag,
     )
 
     if kl_records and cfg.save_observables_csv:
-        pd.DataFrame(kl_records).to_csv(
-            os.path.join(out_dir, "kl_convergence_vs_casscf.csv"), index=False
-        )
+        df_kl = pd.DataFrame(kl_records)
+        kl_csv_std = os.path.join(out_dir, "kl_convergence_vs_casscf.csv")
+        df_kl.to_csv(kl_csv_std, index=False)
+        if sys_tag:
+            kl_csv_sys = os.path.join(out_dir, f"kl_convergence_vs_casscf_{sys_tag}.csv")
+            df_kl.to_csv(kl_csv_sys, index=False)
+            if getattr(cfg, "csv_collect_dir", ""):
+                import shutil
+                os.makedirs(cfg.csv_collect_dir, exist_ok=True)
+                shutil.copy2(kl_csv_sys, os.path.join(cfg.csv_collect_dir, os.path.basename(kl_csv_sys)))
 
 
 def plot_efficiency_bars(
@@ -615,7 +649,14 @@ def plot_efficiency_bars(
         ax.grid(True, axis="y", alpha=0.25)
 
     fig.tight_layout()
-    _save_fig(fig, out_dir, "fig4_efficiency_bars", fmt=cfg.figure_format, dpi=cfg.dpi)
+    _save_fig(
+        fig,
+        out_dir,
+        "fig4_efficiency_bars",
+        fmt=cfg.figure_format,
+        dpi=cfg.dpi,
+        sys_tag=getattr(cfg, "system_tag", ""),
+    )
 
 
 def plot_time_to_solution(
@@ -662,7 +703,14 @@ def plot_time_to_solution(
     ax.set_title("Time-to-Solution: Error Estándar vs Tiempo de Cómputo")
     ax.grid(True, alpha=0.25)
     ax.legend(frameon=True)
-    _save_fig(fig, out_dir, "fig5_time_to_solution", fmt=cfg.figure_format, dpi=cfg.dpi)
+    _save_fig(
+        fig,
+        out_dir,
+        "fig5_time_to_solution",
+        fmt=cfg.figure_format,
+        dpi=cfg.dpi,
+        sys_tag=getattr(cfg, "system_tag", ""),
+    )
 
 
 def plot_walker_trace(
@@ -800,7 +848,14 @@ def plot_walker_trace(
         ax_hist.grid(True, alpha=0.3)
         ax_hist.legend(loc="upper right", fontsize=8.0)
 
-    _save_fig(fig, out_dir, "fig6_walker_traces", fmt=cfg.figure_format, dpi=cfg.dpi)
+    _save_fig(
+        fig,
+        out_dir,
+        "fig6_walker_traces",
+        fmt=cfg.figure_format,
+        dpi=cfg.dpi,
+        sys_tag=getattr(cfg, "system_tag", ""),
+    )
 
 
 def _resolve_casscf_reference_for_bundle(
@@ -889,6 +944,15 @@ def run_postprocessing_pipeline(cfg: PostProcessConfig) -> pd.DataFrame:
         n_up = int(sys_cfg.get("n_up", 2))
         n_dn = int(sys_cfg.get("n_dn", sys_cfg.get("n_down", 2)))
         omega = float(sys_cfg.get("omega", 0.1))
+        g_val = float(sys_cfg.get("interaction_strength", sys_cfg.get("g", 1.0)))
+        if not getattr(cfg, "system_tag", ""):
+            prefix = ""
+            if "pipeline2" in cfg.out_dir:
+                prefix = "P2_"
+            elif "pipeline3" in cfg.out_dir:
+                prefix = "P3_"
+            cfg.system_tag = f"{prefix}N{n_up + n_dn}_w{omega}_g{g_val}"
+        sys_tag = cfg.system_tag
 
         diag = (
             summarize_bundle_diagnostics(bundle, cfg)
@@ -930,10 +994,17 @@ def run_postprocessing_pipeline(cfg: PostProcessConfig) -> pd.DataFrame:
                         "g_pair_opp": obs["g_pair_opp"],
                     }
                 )
-                df_obs.to_csv(
-                    os.path.join(cfg.out_dir, f"observables_{safe_lbl}.csv"),
-                    index=False,
-                )
+                obs_csv_std = os.path.join(cfg.out_dir, f"observables_{safe_lbl}.csv")
+                df_obs.to_csv(obs_csv_std, index=False)
+                if sys_tag and not safe_lbl.endswith(sys_tag):
+                    obs_csv_sys = os.path.join(cfg.out_dir, f"observables_{safe_lbl}_{sys_tag}.csv")
+                    df_obs.to_csv(obs_csv_sys, index=False)
+                else:
+                    obs_csv_sys = obs_csv_std
+                if getattr(cfg, "csv_collect_dir", ""):
+                    import shutil
+                    os.makedirs(cfg.csv_collect_dir, exist_ok=True)
+                    shutil.copy2(obs_csv_sys, os.path.join(cfg.csv_collect_dir, os.path.basename(obs_csv_sys)))
 
             if cfg.plot_kl_divergence and (n_up + n_dn) == 2:
                 ckpts = bundle.get("checkpoints", {})
@@ -959,7 +1030,7 @@ def run_postprocessing_pipeline(cfg: PostProcessConfig) -> pd.DataFrame:
                     f"(E={casscf_ref['energy']:.6f} Ha) -> {casscf_ref['npz_path']}"
                 )
                 if cfg.save_observables_csv:
-                    pd.DataFrame(
+                    df_cas_ex = pd.DataFrame(
                         {
                             "x": casscf_ref["x"],
                             "rho_total": casscf_ref["rho_total"],
@@ -969,10 +1040,16 @@ def run_postprocessing_pipeline(cfg: PostProcessConfig) -> pd.DataFrame:
                             "p_up": casscf_ref["p_up"],
                             "p_down": casscf_ref["p_down"],
                         }
-                    ).to_csv(
-                        os.path.join(cfg.out_dir, "casscf_exact_density.csv"),
-                        index=False,
                     )
+                    cas_csv_std = os.path.join(cfg.out_dir, "casscf_exact_density.csv")
+                    df_cas_ex.to_csv(cas_csv_std, index=False)
+                    if sys_tag:
+                        cas_csv_sys = os.path.join(cfg.out_dir, f"casscf_exact_density_{sys_tag}.csv")
+                        df_cas_ex.to_csv(cas_csv_sys, index=False)
+                        if getattr(cfg, "csv_collect_dir", ""):
+                            import shutil
+                            os.makedirs(cfg.csv_collect_dir, exist_ok=True)
+                            shutil.copy2(cas_csv_sys, os.path.join(cfg.csv_collect_dir, os.path.basename(cas_csv_sys)))
             else:
                 print(
                     f"[PostProcess] Sin baseline CASSCF pre-entrenada para "
@@ -1099,27 +1176,36 @@ def run_postprocessing_pipeline(cfg: PostProcessConfig) -> pd.DataFrame:
             pass
 
     df = pd.DataFrame(summary_rows)
+    sys_tag = getattr(cfg, "system_tag", "")
     if cfg.save_summary_csv:
         csv_path = os.path.join(cfg.out_dir, "summary_metrics.csv")
         json_path = os.path.join(cfg.out_dir, "summary_metrics.json")
         std_summary_json = os.path.join(cfg.out_dir, "summary.json")
         df.to_csv(csv_path, index=False)
+        summary_dict_payload = {
+            "system_tag": sys_tag,
+            "out_dir": str(cfg.out_dir),
+            "casscf_reference": {
+                "has_casscf_baseline": bool(casscf_ref is not None),
+                "npz_path": str(casscf_ref["npz_path"]) if casscf_ref is not None else None,
+                "energy": float(casscf_ref["energy"]) if casscf_ref is not None else None,
+            },
+            "models": summary_rows,
+        }
         with open(json_path, "w", encoding="utf-8") as f:
             json.dump(summary_rows, f, indent=2)
         with open(std_summary_json, "w", encoding="utf-8") as f:
-            json.dump(
-                {
-                    "out_dir": str(cfg.out_dir),
-                    "casscf_reference": {
-                        "has_casscf_baseline": bool(casscf_ref is not None),
-                        "npz_path": str(casscf_ref["npz_path"]) if casscf_ref is not None else None,
-                        "energy": float(casscf_ref["energy"]) if casscf_ref is not None else None,
-                    },
-                    "models": summary_rows,
-                },
-                f,
-                indent=2,
-            )
+            json.dump(summary_dict_payload, f, indent=2)
+        if sys_tag:
+            csv_sys_path = os.path.join(cfg.out_dir, f"summary_metrics_{sys_tag}.csv")
+            json_sys_path = os.path.join(cfg.out_dir, f"summary_{sys_tag}.json")
+            df.to_csv(csv_sys_path, index=False)
+            with open(json_sys_path, "w", encoding="utf-8") as f:
+                json.dump(summary_dict_payload, f, indent=2)
+            if getattr(cfg, "csv_collect_dir", ""):
+                import shutil
+                os.makedirs(cfg.csv_collect_dir, exist_ok=True)
+                shutil.copy2(csv_sys_path, os.path.join(cfg.csv_collect_dir, os.path.basename(csv_sys_path)))
         print(f"[PostProcess] Tabla resumen guardada en: {csv_path}")
 
     if getattr(cfg, "master_comparison_csv", None):
@@ -1133,6 +1219,10 @@ def run_postprocessing_pipeline(cfg: PostProcessConfig) -> pd.DataFrame:
                 try:
                     write_hdr = not os.path.exists(m_csv) or os.path.getsize(m_csv) == 0
                     df.to_csv(m_csv, mode="a", header=write_hdr, index=False)
+                    if getattr(cfg, "csv_collect_dir", ""):
+                        import shutil
+                        os.makedirs(cfg.csv_collect_dir, exist_ok=True)
+                        shutil.copy2(m_csv, os.path.join(cfg.csv_collect_dir, os.path.basename(m_csv)))
                 finally:
                     fcntl.flock(f_lock, fcntl.LOCK_UN)
             print(f"[PostProcess] Comparativa agregada en vivo a: {m_csv}")

@@ -30,3 +30,7 @@ opt_vmc.log
 
 # Excepciones: Permitir CSVs analíticos de referencia dentro de CASSCF si se requieren
 !uhf_1d_ho_v270826_m-determinants/**/*.csv
+
+# Repositorio central ligero de resultados para análisis y contexto
+!results_csv/
+!results_csv/**
