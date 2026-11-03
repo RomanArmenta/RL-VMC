@@ -72,7 +72,7 @@ def run_experiment_1d(cfg: Experiment1DConfig) -> str:
     h5_path.parent.mkdir(parents=True, exist_ok=True)
 
     jax.config.update("jax_enable_x64", True)
-    if cfg.ansatz.ansatz_type in ("casscf_npz", "casscf_1d", "casscf"):
+    if cfg.ansatz.ansatz_type in ("casscf_npz", "casscf_1d", "casscf", "multi_sjb", "multi_slater_jastrow", "casscf_jastrow"):
         if cfg.ansatz.casscf_npz_path and os.path.exists(cfg.ansatz.casscf_npz_path):
             try:
                 import json as _json
@@ -586,7 +586,7 @@ def run_experiment_1d(cfg: Experiment1DConfig) -> str:
 
             # Resolver referencia CASSCF (explícita o descubierta automáticamente)
             ref_npz = cfg.io.reference_casscf_npz
-            if not ref_npz and cfg.ansatz.ansatz_type in ("casscf_npz", "casscf_1d", "casscf"):
+            if not ref_npz and cfg.ansatz.ansatz_type in ("casscf_npz", "casscf_1d", "casscf", "multi_sjb", "multi_slater_jastrow"):
                 ref_npz = cfg.ansatz.casscf_npz_path
 
             casscf_ref = None

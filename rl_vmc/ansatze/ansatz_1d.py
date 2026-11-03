@@ -406,17 +406,20 @@ def log_correlation_factor(
 
 
 def _build_ho_basis_jax(r: jax.Array, n_basis: int, omega: float) -> jax.Array:
-    """Evalúa las autofunciones del oscilador armónico 1D hasta n_basis-1 en las posiciones r."""
+    """
+    Evalúa las autofunciones normalizadas del oscilador armónico 1D hasta n_basis-1 en r.
+    Utiliza la recurrencia normalizada de 3 términos:
+        psi_n(z) = sqrt(2/n)*z*psi_{n-1}(z) - sqrt((n-1)/n)*psi_{n-2}(z)
+    que es incondicionalmente estable y previene desbordamientos de 2^n y n! para n_basis grandes (e.g. 256).
+    """
     z = jnp.sqrt(omega) * r
-    H = [jnp.ones_like(z), 2.0 * z]
-    for n in range(2, n_basis):
-        H.append(2.0 * z * H[n - 1] - 2.0 * (n - 1) * H[n - 2])
-    H_stack = jnp.stack(H[:n_basis], axis=0)
-    ns = jnp.arange(n_basis)
-    fact = jnp.exp(gammaln(ns + 1.0))
-    norm = jnp.sqrt(2.0 ** ns * fact)
     pref = (omega / jnp.pi) ** 0.25 * jnp.exp(-0.5 * z ** 2)
-    return (pref * (H_stack / norm[:, None])).T
+    psi = [pref]
+    if n_basis > 1:
+        psi.append(jnp.sqrt(2.0) * z * pref)
+    for n in range(2, n_basis):
+        psi.append(jnp.sqrt(2.0 / n) * z * psi[n - 1] - jnp.sqrt((n - 1.0) / n) * psi[n - 2])
+    return jnp.stack(psi[:n_basis], axis=-1)
 
 
 class BaseAnsatz1D:
@@ -607,8 +610,148 @@ class CASSCF1DAnsatz(BaseAnsatz1D):
             psi_terms = jax.vmap(eval_det)(occ_up_idx, occ_dn_idx, ci_coeffs)
             psi_val = jnp.sum(psi_terms)
             return jnp.clip(
-                0.5 * jnp.log(jnp.square(psi_val) + 1e-60), -1000.0, 1000.0
+                jnp.log(jnp.abs(psi_val) + 1e-15), -1000.0, 1000.0
             )
+
+        return jax.vmap(evaluate_single)(x_1d)
+
+
+class MultiSlaterJastrow1DAnsatz(BaseAnsatz1D):
+    """
+    Ansatz Multi-Determinante Slater-Jastrow-Backflow (Multi-SJB).
+    Combina la expansión multiconfiguracional exacta de CASSCF (K determinantes)
+    con un factor de correlación neuronal continua de Jastrow y coordenadas
+    efectivas de Backflow.
+    """
+
+    def __init__(self, cfg: Experiment1DConfig):
+        self.cfg = cfg
+        self.trainable = True
+        npz_path = cfg.ansatz.casscf_npz_path
+        if not npz_path:
+            raise ValueError("MultiSlaterJastrow1DAnsatz requiere especificar `--casscf_npz_path`.")
+
+        data = np.load(npz_path, allow_pickle=True)
+        meta = json.loads(str(data["metadata_json"]))
+        m_cfg = meta["config"]
+
+        self.omega = float(m_cfg.get("omega", cfg.system.omega))
+        self.n_up = int(m_cfg.get("n_up", cfg.system.n_up))
+        self.n_dn = int(m_cfg.get("n_down", cfg.system.n_dn))
+        self.n_basis = int(m_cfg.get("n_basis", 256))
+
+        match = re.search(r"c(\d+)-a(\d+)", npz_path)
+        fallback_core = int(match.group(1)) if match else 0
+        fallback_active = int(match.group(2)) if match else 2
+        self.n_core = int(m_cfg.get("n_core", m_cfg.get("n_core_orbitals", fallback_core)))
+        self.n_active = int(
+            m_cfg.get("n_active_orbitals", m_cfg.get("n_active", fallback_active))
+        )
+
+        self.orbitals_init = jnp.array(data["orbital_coefficients"])
+        self.ci_coeffs_init = jnp.array(data["selected_ci_coefficients"])
+        dets = data["selected_ci_determinants"]
+
+        occ_up_list, occ_dn_list = [], []
+        for d_str in dets:
+            val = int(d_str)
+            act_up = [i for i in range(self.n_active) if val & (1 << i)]
+            act_dn = [
+                i for i in range(self.n_active) if val & (1 << (self.n_active + i))
+            ]
+            occ_up_list.append(
+                list(range(self.n_core)) + [self.n_core + i for i in act_up]
+            )
+            occ_dn_list.append(
+                list(range(self.n_core)) + [self.n_core + i for i in act_dn]
+            )
+
+        self.occ_up_idx = jnp.array(occ_up_list)
+        self.occ_dn_idx = jnp.array(occ_dn_list)
+        self.sys_cfg = _System1DSpec(
+            n_electrons=self.n_up + self.n_dn,
+            n_up=self.n_up,
+            omega=self.omega,
+            interaction_strength=float(m_cfg.get("g", cfg.system.interaction_strength)),
+            softening=float(m_cfg.get("softening", cfg.system.softening)),
+        )
+        length_scale = 1.0 / math.sqrt(max(float(self.omega), 1e-4))
+        scale_mult = max(1.0, length_scale / 1.5)
+        self.orbital_cfg = _Orbital1DSpec(
+            model=cfg.ansatz.orbital_model,
+            alpha_init=float(self.omega),
+            backflow_components=cfg.ansatz.backflow_components,
+            backflow_r_max=float(cfg.ansatz.backflow_r_max) * scale_mult,
+            backflow_width=float(cfg.ansatz.backflow_width) * scale_mult,
+            backflow_envelope_length=float(cfg.ansatz.backflow_envelope_length) * scale_mult,
+        )
+        self.correlation_cfg = _Correlation1DSpec(
+            model=cfg.ansatz.correlation_model,
+            pair_smoothing=max(float(self.sys_cfg.softening), 0.1),
+            rbf_r_max=5.0 * scale_mult,
+            rbf_width_init=0.6 * scale_mult,
+        )
+
+    def init(self, key: jax.Array, walkers: jax.Array) -> dict:
+        k1, k2 = jax.random.split(key)
+        return {
+            "orbitals": self.orbitals_init,
+            "ci_coeffs": self.ci_coeffs_init,
+            "correlation": init_correlation_params(k1, self.correlation_cfg),
+            "backflow": init_orbital_params(k2, self.sys_cfg, self.orbital_cfg),
+        }
+
+    def apply(self, params: dict, walkers: jax.Array) -> jax.Array:
+        orbitals = params.get("orbitals", self.orbitals_init)
+        ci_coeffs = params.get("ci_coeffs", self.ci_coeffs_init)
+        corr_params = params.get("correlation", {})
+        bf_params = params.get("backflow", {})
+
+        x_1d = walkers[..., 0] if walkers.ndim == 3 else walkers
+        if x_1d.ndim == 1:
+            x_1d = x_1d[None, :]
+
+        n_up = self.n_up
+        n_dn = self.n_dn
+        n_basis = self.n_basis
+        omega = self.omega
+        occ_up_idx = self.occ_up_idx
+        occ_dn_idx = self.occ_dn_idx
+
+        def evaluate_single(x_single: jax.Array) -> jax.Array:
+            # 1. Deformación de coordenadas por Backflow
+            if self.orbital_cfg.model == "backflow_ho" and "backflow_coeff_same" in bf_params:
+                x_bf = x_single + _backflow_displacement(
+                    x_single, self.sys_cfg, self.orbital_cfg, bf_params
+                )
+            else:
+                x_bf = x_single
+
+            x_up, x_dn = x_bf[:n_up], x_bf[n_up:]
+            basis_up = _build_ho_basis_jax(x_up, n_basis, omega)
+            basis_dn = _build_ho_basis_jax(x_dn, n_basis, omega)
+
+            def eval_det(idx_up, idx_dn, c_i):
+                mat_up = basis_up @ orbitals[:, idx_up]
+                mat_dn = basis_dn @ orbitals[:, idx_dn]
+                det_u = jnp.linalg.det(mat_up) if n_up > 1 else jnp.squeeze(mat_up)
+                det_d = jnp.linalg.det(mat_dn) if n_dn > 1 else jnp.squeeze(mat_dn)
+                return c_i * det_u * det_d
+
+            psi_terms = jax.vmap(eval_det)(occ_up_idx, occ_dn_idx, ci_coeffs)
+            psi_val = jnp.sum(psi_terms)
+            log_det = jnp.clip(
+                jnp.log(jnp.abs(psi_val) + 1e-15), -1000.0, 1000.0
+            )
+
+            # 2. Factor de correlación continuo de Jastrow
+            log_corr = log_correlation_factor(
+                corr_params,
+                x_single,
+                self.sys_cfg,
+                self.correlation_cfg,
+            )
+            return log_det + log_corr
 
         return jax.vmap(evaluate_single)(x_1d)
 
@@ -618,5 +761,7 @@ def build_ansatz_1d(cfg: Experiment1DConfig) -> BaseAnsatz1D:
         return SlaterJastrow1DAnsatz(cfg)
     elif cfg.ansatz.ansatz_type in ("casscf_npz", "casscf_1d", "casscf"):
         return CASSCF1DAnsatz(cfg)
+    elif cfg.ansatz.ansatz_type in ("multi_slater_jastrow", "multi_sjb", "casscf_jastrow"):
+        return MultiSlaterJastrow1DAnsatz(cfg)
     else:
         raise ValueError(f"Tipo de ansatz no soportado: {cfg.ansatz.ansatz_type}")

@@ -20,7 +20,7 @@ class System1DConfig:
 @dataclass
 class Ansatz1DConfig:
     """Parámetros de la función de onda (Ansatz) 1D."""
-    ansatz_type: Literal["slater_jastrow_1d", "casscf_npz"] = "slater_jastrow_1d"
+    ansatz_type: Literal["slater_jastrow_1d", "casscf_npz", "multi_sjb", "multi_slater_jastrow"] = "slater_jastrow_1d"
     wf_model: str = "slater_jastrow"
     orbital_model: Literal["ho_fixed", "ho_variational", "gaussian_basis", "backflow_ho"] = "backflow_ho"
     correlation_model: Literal["none", "jastrow", "spin_rbf", "spin_rbf_jastrow", "spin_rbf_threebody"] = "spin_rbf_jastrow"
@@ -258,7 +258,7 @@ def build_experiment_argparser() -> argparse.ArgumentParser:
 
     # 2. Ansatz
     g_ans = parser.add_argument_group("2. Arquitectura del Ansatz (Función de Onda)")
-    g_ans.add_argument("--ansatz_type", type=str, default="slater_jastrow_1d", choices=["slater_jastrow_1d", "casscf_npz"], help="Familia del ansatz a utilizar.")
+    g_ans.add_argument("--ansatz_type", type=str, default="slater_jastrow_1d", choices=["slater_jastrow_1d", "casscf_npz", "multi_sjb", "multi_slater_jastrow"], help="Familia del ansatz a utilizar.")
     g_ans.add_argument("--wf_model", type=str, default="slater_jastrow", help="Nombre de jerarquía del ansatz 1D.")
     g_ans.add_argument("--orbital_model", type=str, default="backflow_ho", choices=["ho_fixed", "ho_variational", "gaussian_basis", "backflow_ho"], help="Modelo de orbitales espaciales.")
     g_ans.add_argument("--correlation_model", type=str, default="spin_rbf_jastrow", choices=["none", "jastrow", "spin_rbf", "spin_rbf_jastrow", "spin_rbf_threebody"], help="Modelo del factor de correlación Jastrow/RBF.")
