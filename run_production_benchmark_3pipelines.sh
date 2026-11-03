@@ -55,8 +55,8 @@ export XLA_PYTHON_CLIENT_PREALLOCATE=false
 export XLA_PYTHON_CLIENT_MEM_FRACTION=0.30
 export TF_FORCE_GPU_ALLOW_GROWTH=true
 
-BASE_OUT_DIR="${BASE_OUT_DIR:-results_production_3pipelines}"
-CSV_COLLECT_DIR="${CSV_COLLECT_DIR:-results_csv}"
+BASE_OUT_DIR="${BASE_OUT_DIR:-results_production_3pipelines_b2}"
+CSV_COLLECT_DIR="${CSV_COLLECT_DIR:-results_csv_b2}"
 PIPELINES_TO_RUN="${PIPELINES_TO_RUN:-1 2 3}"
 N_LIST="${N_LIST:-2 4 6 10}"
 G_LIST="${G_LIST:-0.5 1.0 2.0 3.0 5.0 8.0}"

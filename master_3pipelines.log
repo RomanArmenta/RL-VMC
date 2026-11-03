@@ -1,0 +1,1275 @@
+nohup: ignoring input
+==============================================================================
+ INICIANDO BENCHMARK DE PRODUCCIÓN EN 3 PIPELINES
+ Fecha y Hora        : 2026-10-30 11:56:44
+ PID del Master      : 1613042
+ Directorio raíz     : results_production_3pipelines
+ Pipelines activos   : 1 2 3
+ Sistemas N          : 2 4 6 10
+ Acoplamientos g     : 0.5 1.0 2.0 3.0 5.0 8.0
+ Frecuencia omega    : 0.1
+ GPUs en Pool        : 0 1 2
+ Trabajos por GPU    : 1
+ Concurrencia total  : 3 trabajos simultáneos
+==============================================================================
+
+==============================================================================
+ [PIPELINE 1] Generando referencias CASSCF 1D con paquetería uhf1d...
+ Modo de ejecución : Secuencial, uno por uno en CPU (CUDA_VISIBLE_DEVICES="")
+ Tabla CSV en vivo : results_production_3pipelines/live_pipeline1_casscf_summary.csv
+==============================================================================
+==============================================================================
+>> [PIPELINE 1 | CASSCF | N2_w0.1_g0.5] INICIANDO
+   PID                : 1613059
+   Hora de Inicio     : 2026-10-30 11:56:44
+   Comando / Script   : env CUDA_VISIBLE_DEVICES= python3 -u cli/run_casscf_1d.py --n_elec 2 --n_up 1 --n_dn 1 --omega 0.1 --g 0.5 --softening 0.1 --n_core 0 --n_active_orbitals 4 --n_basis 24 --quadrature_order 80 --outdir results_production_3pipelines/pipeline1_casscf/N2_w0.1_g0.5 --master_csv results_production_3pipelines/live_pipeline1_casscf_summary.csv --reuse_existing --copy_from_advisor_if_available
+   Archivo de Log     : results_production_3pipelines/logs/p1_casscf_N2_w0.1_g0.5.log
+==============================================================================
+------------------------------------------------------------------------------
+<< [PIPELINE 1 | CASSCF | N2_w0.1_g0.5] TERMINADO (Código de salida: 0)
+   PID                : 1613059
+   Hora de Inicio     : 2026-10-30 11:56:44
+   Hora de Terminación: 2026-10-30 11:56:45
+   Tiempo transcurrido: 1s (00h 00m 01s)
+   Archivo de Log     : results_production_3pipelines/logs/p1_casscf_N2_w0.1_g0.5.log
+==============================================================================
+==============================================================================
+>> [PIPELINE 1 | CASSCF | N2_w0.1_g1.0] INICIANDO
+   PID                : 1613081
+   Hora de Inicio     : 2026-10-30 11:56:45
+   Comando / Script   : env CUDA_VISIBLE_DEVICES= python3 -u cli/run_casscf_1d.py --n_elec 2 --n_up 1 --n_dn 1 --omega 0.1 --g 1.0 --softening 0.1 --n_core 0 --n_active_orbitals 4 --n_basis 24 --quadrature_order 80 --outdir results_production_3pipelines/pipeline1_casscf/N2_w0.1_g1.0 --master_csv results_production_3pipelines/live_pipeline1_casscf_summary.csv --reuse_existing --copy_from_advisor_if_available
+   Archivo de Log     : results_production_3pipelines/logs/p1_casscf_N2_w0.1_g1.0.log
+==============================================================================
+------------------------------------------------------------------------------
+<< [PIPELINE 1 | CASSCF | N2_w0.1_g1.0] TERMINADO (Código de salida: 0)
+   PID                : 1613081
+   Hora de Inicio     : 2026-10-30 11:56:45
+   Hora de Terminación: 2026-10-30 11:56:47
+   Tiempo transcurrido: 2s (00h 00m 02s)
+   Archivo de Log     : results_production_3pipelines/logs/p1_casscf_N2_w0.1_g1.0.log
+==============================================================================
+==============================================================================
+>> [PIPELINE 1 | CASSCF | N2_w0.1_g2.0] INICIANDO
+   PID                : 1613106
+   Hora de Inicio     : 2026-10-30 11:56:47
+   Comando / Script   : env CUDA_VISIBLE_DEVICES= python3 -u cli/run_casscf_1d.py --n_elec 2 --n_up 1 --n_dn 1 --omega 0.1 --g 2.0 --softening 0.1 --n_core 0 --n_active_orbitals 4 --n_basis 24 --quadrature_order 80 --outdir results_production_3pipelines/pipeline1_casscf/N2_w0.1_g2.0 --master_csv results_production_3pipelines/live_pipeline1_casscf_summary.csv --reuse_existing --copy_from_advisor_if_available
+   Archivo de Log     : results_production_3pipelines/logs/p1_casscf_N2_w0.1_g2.0.log
+==============================================================================
+------------------------------------------------------------------------------
+<< [PIPELINE 1 | CASSCF | N2_w0.1_g2.0] TERMINADO (Código de salida: 0)
+   PID                : 1613106
+   Hora de Inicio     : 2026-10-30 11:56:47
+   Hora de Terminación: 2026-10-30 11:56:48
+   Tiempo transcurrido: 1s (00h 00m 01s)
+   Archivo de Log     : results_production_3pipelines/logs/p1_casscf_N2_w0.1_g2.0.log
+==============================================================================
+==============================================================================
+>> [PIPELINE 1 | CASSCF | N2_w0.1_g3.0] INICIANDO
+   PID                : 1613116
+   Hora de Inicio     : 2026-10-30 11:56:48
+   Comando / Script   : env CUDA_VISIBLE_DEVICES= python3 -u cli/run_casscf_1d.py --n_elec 2 --n_up 1 --n_dn 1 --omega 0.1 --g 3.0 --softening 0.1 --n_core 0 --n_active_orbitals 4 --n_basis 24 --quadrature_order 80 --outdir results_production_3pipelines/pipeline1_casscf/N2_w0.1_g3.0 --master_csv results_production_3pipelines/live_pipeline1_casscf_summary.csv --reuse_existing --copy_from_advisor_if_available
+   Archivo de Log     : results_production_3pipelines/logs/p1_casscf_N2_w0.1_g3.0.log
+==============================================================================
+------------------------------------------------------------------------------
+<< [PIPELINE 1 | CASSCF | N2_w0.1_g3.0] TERMINADO (Código de salida: 0)
+   PID                : 1613116
+   Hora de Inicio     : 2026-10-30 11:56:48
+   Hora de Terminación: 2026-10-30 11:56:49
+   Tiempo transcurrido: 1s (00h 00m 01s)
+   Archivo de Log     : results_production_3pipelines/logs/p1_casscf_N2_w0.1_g3.0.log
+==============================================================================
+==============================================================================
+>> [PIPELINE 1 | CASSCF | N2_w0.1_g5.0] INICIANDO
+   PID                : 1613130
+   Hora de Inicio     : 2026-10-30 11:56:49
+   Comando / Script   : env CUDA_VISIBLE_DEVICES= python3 -u cli/run_casscf_1d.py --n_elec 2 --n_up 1 --n_dn 1 --omega 0.1 --g 5.0 --softening 0.1 --n_core 0 --n_active_orbitals 4 --n_basis 24 --quadrature_order 80 --outdir results_production_3pipelines/pipeline1_casscf/N2_w0.1_g5.0 --master_csv results_production_3pipelines/live_pipeline1_casscf_summary.csv --reuse_existing --copy_from_advisor_if_available
+   Archivo de Log     : results_production_3pipelines/logs/p1_casscf_N2_w0.1_g5.0.log
+==============================================================================
+------------------------------------------------------------------------------
+<< [PIPELINE 1 | CASSCF | N2_w0.1_g5.0] TERMINADO (Código de salida: 0)
+   PID                : 1613130
+   Hora de Inicio     : 2026-10-30 11:56:49
+   Hora de Terminación: 2026-10-30 11:56:51
+   Tiempo transcurrido: 2s (00h 00m 02s)
+   Archivo de Log     : results_production_3pipelines/logs/p1_casscf_N2_w0.1_g5.0.log
+==============================================================================
+==============================================================================
+>> [PIPELINE 1 | CASSCF | N2_w0.1_g8.0] INICIANDO
+   PID                : 1613148
+   Hora de Inicio     : 2026-10-30 11:56:51
+   Comando / Script   : env CUDA_VISIBLE_DEVICES= python3 -u cli/run_casscf_1d.py --n_elec 2 --n_up 1 --n_dn 1 --omega 0.1 --g 8.0 --softening 0.1 --n_core 0 --n_active_orbitals 4 --n_basis 24 --quadrature_order 80 --outdir results_production_3pipelines/pipeline1_casscf/N2_w0.1_g8.0 --master_csv results_production_3pipelines/live_pipeline1_casscf_summary.csv --reuse_existing --copy_from_advisor_if_available
+   Archivo de Log     : results_production_3pipelines/logs/p1_casscf_N2_w0.1_g8.0.log
+==============================================================================
+------------------------------------------------------------------------------
+<< [PIPELINE 1 | CASSCF | N2_w0.1_g8.0] TERMINADO (Código de salida: 0)
+   PID                : 1613148
+   Hora de Inicio     : 2026-10-30 11:56:51
+   Hora de Terminación: 2026-10-30 11:56:52
+   Tiempo transcurrido: 1s (00h 00m 01s)
+   Archivo de Log     : results_production_3pipelines/logs/p1_casscf_N2_w0.1_g8.0.log
+==============================================================================
+==============================================================================
+>> [PIPELINE 1 | CASSCF | N4_w0.1_g0.5] INICIANDO
+   PID                : 1613158
+   Hora de Inicio     : 2026-10-30 11:56:52
+   Comando / Script   : env CUDA_VISIBLE_DEVICES= python3 -u cli/run_casscf_1d.py --n_elec 4 --n_up 2 --n_dn 2 --omega 0.1 --g 0.5 --softening 0.1 --n_core 0 --n_active_orbitals 4 --n_basis 32 --quadrature_order 80 --outdir results_production_3pipelines/pipeline1_casscf/N4_w0.1_g0.5 --master_csv results_production_3pipelines/live_pipeline1_casscf_summary.csv --reuse_existing --copy_from_advisor_if_available
+   Archivo de Log     : results_production_3pipelines/logs/p1_casscf_N4_w0.1_g0.5.log
+==============================================================================
+------------------------------------------------------------------------------
+<< [PIPELINE 1 | CASSCF | N4_w0.1_g0.5] TERMINADO (Código de salida: 0)
+   PID                : 1613158
+   Hora de Inicio     : 2026-10-30 11:56:52
+   Hora de Terminación: 2026-10-30 11:56:54
+   Tiempo transcurrido: 2s (00h 00m 02s)
+   Archivo de Log     : results_production_3pipelines/logs/p1_casscf_N4_w0.1_g0.5.log
+==============================================================================
+==============================================================================
+>> [PIPELINE 1 | CASSCF | N4_w0.1_g1.0] INICIANDO
+   PID                : 1613172
+   Hora de Inicio     : 2026-10-30 11:56:54
+   Comando / Script   : env CUDA_VISIBLE_DEVICES= python3 -u cli/run_casscf_1d.py --n_elec 4 --n_up 2 --n_dn 2 --omega 0.1 --g 1.0 --softening 0.1 --n_core 0 --n_active_orbitals 4 --n_basis 32 --quadrature_order 80 --outdir results_production_3pipelines/pipeline1_casscf/N4_w0.1_g1.0 --master_csv results_production_3pipelines/live_pipeline1_casscf_summary.csv --reuse_existing --copy_from_advisor_if_available
+   Archivo de Log     : results_production_3pipelines/logs/p1_casscf_N4_w0.1_g1.0.log
+==============================================================================
+------------------------------------------------------------------------------
+<< [PIPELINE 1 | CASSCF | N4_w0.1_g1.0] TERMINADO (Código de salida: 0)
+   PID                : 1613172
+   Hora de Inicio     : 2026-10-30 11:56:54
+   Hora de Terminación: 2026-10-30 11:56:55
+   Tiempo transcurrido: 1s (00h 00m 01s)
+   Archivo de Log     : results_production_3pipelines/logs/p1_casscf_N4_w0.1_g1.0.log
+==============================================================================
+==============================================================================
+>> [PIPELINE 1 | CASSCF | N4_w0.1_g2.0] INICIANDO
+   PID                : 1613186
+   Hora de Inicio     : 2026-10-30 11:56:55
+   Comando / Script   : env CUDA_VISIBLE_DEVICES= python3 -u cli/run_casscf_1d.py --n_elec 4 --n_up 2 --n_dn 2 --omega 0.1 --g 2.0 --softening 0.1 --n_core 0 --n_active_orbitals 4 --n_basis 32 --quadrature_order 80 --outdir results_production_3pipelines/pipeline1_casscf/N4_w0.1_g2.0 --master_csv results_production_3pipelines/live_pipeline1_casscf_summary.csv --reuse_existing --copy_from_advisor_if_available
+   Archivo de Log     : results_production_3pipelines/logs/p1_casscf_N4_w0.1_g2.0.log
+==============================================================================
+------------------------------------------------------------------------------
+<< [PIPELINE 1 | CASSCF | N4_w0.1_g2.0] TERMINADO (Código de salida: 0)
+   PID                : 1613186
+   Hora de Inicio     : 2026-10-30 11:56:55
+   Hora de Terminación: 2026-10-30 11:56:56
+   Tiempo transcurrido: 1s (00h 00m 01s)
+   Archivo de Log     : results_production_3pipelines/logs/p1_casscf_N4_w0.1_g2.0.log
+==============================================================================
+==============================================================================
+>> [PIPELINE 1 | CASSCF | N4_w0.1_g3.0] INICIANDO
+   PID                : 1613200
+   Hora de Inicio     : 2026-10-30 11:56:56
+   Comando / Script   : env CUDA_VISIBLE_DEVICES= python3 -u cli/run_casscf_1d.py --n_elec 4 --n_up 2 --n_dn 2 --omega 0.1 --g 3.0 --softening 0.1 --n_core 0 --n_active_orbitals 4 --n_basis 32 --quadrature_order 80 --outdir results_production_3pipelines/pipeline1_casscf/N4_w0.1_g3.0 --master_csv results_production_3pipelines/live_pipeline1_casscf_summary.csv --reuse_existing --copy_from_advisor_if_available
+   Archivo de Log     : results_production_3pipelines/logs/p1_casscf_N4_w0.1_g3.0.log
+==============================================================================
+------------------------------------------------------------------------------
+<< [PIPELINE 1 | CASSCF | N4_w0.1_g3.0] TERMINADO (Código de salida: 0)
+   PID                : 1613200
+   Hora de Inicio     : 2026-10-30 11:56:56
+   Hora de Terminación: 2026-10-30 11:56:58
+   Tiempo transcurrido: 2s (00h 00m 02s)
+   Archivo de Log     : results_production_3pipelines/logs/p1_casscf_N4_w0.1_g3.0.log
+==============================================================================
+==============================================================================
+>> [PIPELINE 1 | CASSCF | N4_w0.1_g5.0] INICIANDO
+   PID                : 1613214
+   Hora de Inicio     : 2026-10-30 11:56:58
+   Comando / Script   : env CUDA_VISIBLE_DEVICES= python3 -u cli/run_casscf_1d.py --n_elec 4 --n_up 2 --n_dn 2 --omega 0.1 --g 5.0 --softening 0.1 --n_core 0 --n_active_orbitals 4 --n_basis 32 --quadrature_order 80 --outdir results_production_3pipelines/pipeline1_casscf/N4_w0.1_g5.0 --master_csv results_production_3pipelines/live_pipeline1_casscf_summary.csv --reuse_existing --copy_from_advisor_if_available
+   Archivo de Log     : results_production_3pipelines/logs/p1_casscf_N4_w0.1_g5.0.log
+==============================================================================
+------------------------------------------------------------------------------
+<< [PIPELINE 1 | CASSCF | N4_w0.1_g5.0] TERMINADO (Código de salida: 0)
+   PID                : 1613214
+   Hora de Inicio     : 2026-10-30 11:56:58
+   Hora de Terminación: 2026-10-30 11:56:59
+   Tiempo transcurrido: 1s (00h 00m 01s)
+   Archivo de Log     : results_production_3pipelines/logs/p1_casscf_N4_w0.1_g5.0.log
+==============================================================================
+==============================================================================
+>> [PIPELINE 1 | CASSCF | N4_w0.1_g8.0] INICIANDO
+   PID                : 1613228
+   Hora de Inicio     : 2026-10-30 11:56:59
+   Comando / Script   : env CUDA_VISIBLE_DEVICES= python3 -u cli/run_casscf_1d.py --n_elec 4 --n_up 2 --n_dn 2 --omega 0.1 --g 8.0 --softening 0.1 --n_core 0 --n_active_orbitals 4 --n_basis 32 --quadrature_order 80 --outdir results_production_3pipelines/pipeline1_casscf/N4_w0.1_g8.0 --master_csv results_production_3pipelines/live_pipeline1_casscf_summary.csv --reuse_existing --copy_from_advisor_if_available
+   Archivo de Log     : results_production_3pipelines/logs/p1_casscf_N4_w0.1_g8.0.log
+==============================================================================
+------------------------------------------------------------------------------
+<< [PIPELINE 1 | CASSCF | N4_w0.1_g8.0] TERMINADO (Código de salida: 0)
+   PID                : 1613228
+   Hora de Inicio     : 2026-10-30 11:56:59
+   Hora de Terminación: 2026-10-30 12:10:27
+   Tiempo transcurrido: 808s (00h 13m 28s)
+   Archivo de Log     : results_production_3pipelines/logs/p1_casscf_N4_w0.1_g8.0.log
+==============================================================================
+==============================================================================
+>> [PIPELINE 1 | CASSCF | N6_w0.1_g0.5] INICIANDO
+   PID                : 1615665
+   Hora de Inicio     : 2026-10-30 12:10:27
+   Comando / Script   : env CUDA_VISIBLE_DEVICES= python3 -u cli/run_casscf_1d.py --n_elec 6 --n_up 3 --n_dn 3 --omega 0.1 --g 0.5 --softening 0.1 --n_core 1 --n_active_orbitals 4 --n_basis 32 --quadrature_order 80 --outdir results_production_3pipelines/pipeline1_casscf/N6_w0.1_g0.5 --master_csv results_production_3pipelines/live_pipeline1_casscf_summary.csv --reuse_existing --copy_from_advisor_if_available
+   Archivo de Log     : results_production_3pipelines/logs/p1_casscf_N6_w0.1_g0.5.log
+==============================================================================
+------------------------------------------------------------------------------
+<< [PIPELINE 1 | CASSCF | N6_w0.1_g0.5] TERMINADO (Código de salida: 0)
+   PID                : 1615665
+   Hora de Inicio     : 2026-10-30 12:10:27
+   Hora de Terminación: 2026-10-30 12:18:05
+   Tiempo transcurrido: 458s (00h 07m 38s)
+   Archivo de Log     : results_production_3pipelines/logs/p1_casscf_N6_w0.1_g0.5.log
+==============================================================================
+==============================================================================
+>> [PIPELINE 1 | CASSCF | N6_w0.1_g1.0] INICIANDO
+   PID                : 1616584
+   Hora de Inicio     : 2026-10-30 12:18:05
+   Comando / Script   : env CUDA_VISIBLE_DEVICES= python3 -u cli/run_casscf_1d.py --n_elec 6 --n_up 3 --n_dn 3 --omega 0.1 --g 1.0 --softening 0.1 --n_core 1 --n_active_orbitals 4 --n_basis 32 --quadrature_order 80 --outdir results_production_3pipelines/pipeline1_casscf/N6_w0.1_g1.0 --master_csv results_production_3pipelines/live_pipeline1_casscf_summary.csv --reuse_existing --copy_from_advisor_if_available
+   Archivo de Log     : results_production_3pipelines/logs/p1_casscf_N6_w0.1_g1.0.log
+==============================================================================
+------------------------------------------------------------------------------
+<< [PIPELINE 1 | CASSCF | N6_w0.1_g1.0] TERMINADO (Código de salida: 0)
+   PID                : 1616584
+   Hora de Inicio     : 2026-10-30 12:18:05
+   Hora de Terminación: 2026-10-30 12:31:40
+   Tiempo transcurrido: 815s (00h 13m 35s)
+   Archivo de Log     : results_production_3pipelines/logs/p1_casscf_N6_w0.1_g1.0.log
+==============================================================================
+==============================================================================
+>> [PIPELINE 1 | CASSCF | N6_w0.1_g2.0] INICIANDO
+   PID                : 1622116
+   Hora de Inicio     : 2026-10-30 12:31:40
+   Comando / Script   : env CUDA_VISIBLE_DEVICES= python3 -u cli/run_casscf_1d.py --n_elec 6 --n_up 3 --n_dn 3 --omega 0.1 --g 2.0 --softening 0.1 --n_core 1 --n_active_orbitals 4 --n_basis 32 --quadrature_order 80 --outdir results_production_3pipelines/pipeline1_casscf/N6_w0.1_g2.0 --master_csv results_production_3pipelines/live_pipeline1_casscf_summary.csv --reuse_existing --copy_from_advisor_if_available
+   Archivo de Log     : results_production_3pipelines/logs/p1_casscf_N6_w0.1_g2.0.log
+==============================================================================
+------------------------------------------------------------------------------
+<< [PIPELINE 1 | CASSCF | N6_w0.1_g2.0] TERMINADO (Código de salida: 0)
+   PID                : 1622116
+   Hora de Inicio     : 2026-10-30 12:31:40
+   Hora de Terminación: 2026-10-30 12:52:21
+   Tiempo transcurrido: 1241s (00h 20m 41s)
+   Archivo de Log     : results_production_3pipelines/logs/p1_casscf_N6_w0.1_g2.0.log
+==============================================================================
+==============================================================================
+>> [PIPELINE 1 | CASSCF | N6_w0.1_g3.0] INICIANDO
+   PID                : 1624834
+   Hora de Inicio     : 2026-10-30 12:52:22
+   Comando / Script   : env CUDA_VISIBLE_DEVICES= python3 -u cli/run_casscf_1d.py --n_elec 6 --n_up 3 --n_dn 3 --omega 0.1 --g 3.0 --softening 0.1 --n_core 1 --n_active_orbitals 4 --n_basis 32 --quadrature_order 80 --outdir results_production_3pipelines/pipeline1_casscf/N6_w0.1_g3.0 --master_csv results_production_3pipelines/live_pipeline1_casscf_summary.csv --reuse_existing --copy_from_advisor_if_available
+   Archivo de Log     : results_production_3pipelines/logs/p1_casscf_N6_w0.1_g3.0.log
+==============================================================================
+------------------------------------------------------------------------------
+<< [PIPELINE 1 | CASSCF | N6_w0.1_g3.0] TERMINADO (Código de salida: 0)
+   PID                : 1624834
+   Hora de Inicio     : 2026-10-30 12:52:22
+   Hora de Terminación: 2026-10-30 13:10:44
+   Tiempo transcurrido: 1102s (00h 18m 22s)
+   Archivo de Log     : results_production_3pipelines/logs/p1_casscf_N6_w0.1_g3.0.log
+==============================================================================
+==============================================================================
+>> [PIPELINE 1 | CASSCF | N6_w0.1_g5.0] INICIANDO
+   PID                : 1627295
+   Hora de Inicio     : 2026-10-30 13:10:44
+   Comando / Script   : env CUDA_VISIBLE_DEVICES= python3 -u cli/run_casscf_1d.py --n_elec 6 --n_up 3 --n_dn 3 --omega 0.1 --g 5.0 --softening 0.1 --n_core 1 --n_active_orbitals 4 --n_basis 32 --quadrature_order 80 --outdir results_production_3pipelines/pipeline1_casscf/N6_w0.1_g5.0 --master_csv results_production_3pipelines/live_pipeline1_casscf_summary.csv --reuse_existing --copy_from_advisor_if_available
+   Archivo de Log     : results_production_3pipelines/logs/p1_casscf_N6_w0.1_g5.0.log
+==============================================================================
+------------------------------------------------------------------------------
+<< [PIPELINE 1 | CASSCF | N6_w0.1_g5.0] TERMINADO (Código de salida: 0)
+   PID                : 1627295
+   Hora de Inicio     : 2026-10-30 13:10:44
+   Hora de Terminación: 2026-10-30 13:27:06
+   Tiempo transcurrido: 982s (00h 16m 22s)
+   Archivo de Log     : results_production_3pipelines/logs/p1_casscf_N6_w0.1_g5.0.log
+==============================================================================
+==============================================================================
+>> [PIPELINE 1 | CASSCF | N6_w0.1_g8.0] INICIANDO
+   PID                : 1629584
+   Hora de Inicio     : 2026-10-30 13:27:06
+   Comando / Script   : env CUDA_VISIBLE_DEVICES= python3 -u cli/run_casscf_1d.py --n_elec 6 --n_up 3 --n_dn 3 --omega 0.1 --g 8.0 --softening 0.1 --n_core 1 --n_active_orbitals 4 --n_basis 32 --quadrature_order 80 --outdir results_production_3pipelines/pipeline1_casscf/N6_w0.1_g8.0 --master_csv results_production_3pipelines/live_pipeline1_casscf_summary.csv --reuse_existing --copy_from_advisor_if_available
+   Archivo de Log     : results_production_3pipelines/logs/p1_casscf_N6_w0.1_g8.0.log
+==============================================================================
+------------------------------------------------------------------------------
+<< [PIPELINE 1 | CASSCF | N6_w0.1_g8.0] TERMINADO (Código de salida: 0)
+   PID                : 1629584
+   Hora de Inicio     : 2026-10-30 13:27:06
+   Hora de Terminación: 2026-10-30 13:43:46
+   Tiempo transcurrido: 1000s (00h 16m 40s)
+   Archivo de Log     : results_production_3pipelines/logs/p1_casscf_N6_w0.1_g8.0.log
+==============================================================================
+==============================================================================
+>> [PIPELINE 1 | CASSCF | N10_w0.1_g0.5] INICIANDO
+   PID                : 1631572
+   Hora de Inicio     : 2026-10-30 13:43:46
+   Comando / Script   : env CUDA_VISIBLE_DEVICES= python3 -u cli/run_casscf_1d.py --n_elec 10 --n_up 5 --n_dn 5 --omega 0.1 --g 0.5 --softening 0.25 --n_core 4 --n_active_orbitals 4 --n_basis 24 --quadrature_order 80 --outdir results_production_3pipelines/pipeline1_casscf/N10_w0.1_g0.5 --master_csv results_production_3pipelines/live_pipeline1_casscf_summary.csv --reuse_existing --copy_from_advisor_if_available
+   Archivo de Log     : results_production_3pipelines/logs/p1_casscf_N10_w0.1_g0.5.log
+==============================================================================
+------------------------------------------------------------------------------
+<< [PIPELINE 1 | CASSCF | N10_w0.1_g0.5] TERMINADO (Código de salida: 0)
+   PID                : 1631572
+   Hora de Inicio     : 2026-10-30 13:43:46
+   Hora de Terminación: 2026-10-30 13:50:08
+   Tiempo transcurrido: 382s (00h 06m 22s)
+   Archivo de Log     : results_production_3pipelines/logs/p1_casscf_N10_w0.1_g0.5.log
+==============================================================================
+==============================================================================
+>> [PIPELINE 1 | CASSCF | N10_w0.1_g1.0] INICIANDO
+   PID                : 1632345
+   Hora de Inicio     : 2026-10-30 13:50:08
+   Comando / Script   : env CUDA_VISIBLE_DEVICES= python3 -u cli/run_casscf_1d.py --n_elec 10 --n_up 5 --n_dn 5 --omega 0.1 --g 1.0 --softening 0.25 --n_core 4 --n_active_orbitals 4 --n_basis 24 --quadrature_order 80 --outdir results_production_3pipelines/pipeline1_casscf/N10_w0.1_g1.0 --master_csv results_production_3pipelines/live_pipeline1_casscf_summary.csv --reuse_existing --copy_from_advisor_if_available
+   Archivo de Log     : results_production_3pipelines/logs/p1_casscf_N10_w0.1_g1.0.log
+==============================================================================
+------------------------------------------------------------------------------
+<< [PIPELINE 1 | CASSCF | N10_w0.1_g1.0] TERMINADO (Código de salida: 0)
+   PID                : 1632345
+   Hora de Inicio     : 2026-10-30 13:50:08
+   Hora de Terminación: 2026-10-30 13:50:10
+   Tiempo transcurrido: 2s (00h 00m 02s)
+   Archivo de Log     : results_production_3pipelines/logs/p1_casscf_N10_w0.1_g1.0.log
+==============================================================================
+==============================================================================
+>> [PIPELINE 1 | CASSCF | N10_w0.1_g2.0] INICIANDO
+   PID                : 1632355
+   Hora de Inicio     : 2026-10-30 13:50:10
+   Comando / Script   : env CUDA_VISIBLE_DEVICES= python3 -u cli/run_casscf_1d.py --n_elec 10 --n_up 5 --n_dn 5 --omega 0.1 --g 2.0 --softening 0.25 --n_core 4 --n_active_orbitals 4 --n_basis 24 --quadrature_order 80 --outdir results_production_3pipelines/pipeline1_casscf/N10_w0.1_g2.0 --master_csv results_production_3pipelines/live_pipeline1_casscf_summary.csv --reuse_existing --copy_from_advisor_if_available
+   Archivo de Log     : results_production_3pipelines/logs/p1_casscf_N10_w0.1_g2.0.log
+==============================================================================
+------------------------------------------------------------------------------
+<< [PIPELINE 1 | CASSCF | N10_w0.1_g2.0] TERMINADO (Código de salida: 0)
+   PID                : 1632355
+   Hora de Inicio     : 2026-10-30 13:50:10
+   Hora de Terminación: 2026-10-30 13:56:24
+   Tiempo transcurrido: 374s (00h 06m 14s)
+   Archivo de Log     : results_production_3pipelines/logs/p1_casscf_N10_w0.1_g2.0.log
+==============================================================================
+==============================================================================
+>> [PIPELINE 1 | CASSCF | N10_w0.1_g3.0] INICIANDO
+   PID                : 1633728
+   Hora de Inicio     : 2026-10-30 13:56:24
+   Comando / Script   : env CUDA_VISIBLE_DEVICES= python3 -u cli/run_casscf_1d.py --n_elec 10 --n_up 5 --n_dn 5 --omega 0.1 --g 3.0 --softening 0.25 --n_core 4 --n_active_orbitals 4 --n_basis 24 --quadrature_order 80 --outdir results_production_3pipelines/pipeline1_casscf/N10_w0.1_g3.0 --master_csv results_production_3pipelines/live_pipeline1_casscf_summary.csv --reuse_existing --copy_from_advisor_if_available
+   Archivo de Log     : results_production_3pipelines/logs/p1_casscf_N10_w0.1_g3.0.log
+==============================================================================
+------------------------------------------------------------------------------
+<< [PIPELINE 1 | CASSCF | N10_w0.1_g3.0] TERMINADO (Código de salida: 0)
+   PID                : 1633728
+   Hora de Inicio     : 2026-10-30 13:56:24
+   Hora de Terminación: 2026-10-30 14:02:09
+   Tiempo transcurrido: 345s (00h 05m 45s)
+   Archivo de Log     : results_production_3pipelines/logs/p1_casscf_N10_w0.1_g3.0.log
+==============================================================================
+==============================================================================
+>> [PIPELINE 1 | CASSCF | N10_w0.1_g5.0] INICIANDO
+   PID                : 1634768
+   Hora de Inicio     : 2026-10-30 14:02:09
+   Comando / Script   : env CUDA_VISIBLE_DEVICES= python3 -u cli/run_casscf_1d.py --n_elec 10 --n_up 5 --n_dn 5 --omega 0.1 --g 5.0 --softening 0.25 --n_core 4 --n_active_orbitals 4 --n_basis 24 --quadrature_order 80 --outdir results_production_3pipelines/pipeline1_casscf/N10_w0.1_g5.0 --master_csv results_production_3pipelines/live_pipeline1_casscf_summary.csv --reuse_existing --copy_from_advisor_if_available
+   Archivo de Log     : results_production_3pipelines/logs/p1_casscf_N10_w0.1_g5.0.log
+==============================================================================
+------------------------------------------------------------------------------
+<< [PIPELINE 1 | CASSCF | N10_w0.1_g5.0] TERMINADO (Código de salida: 0)
+   PID                : 1634768
+   Hora de Inicio     : 2026-10-30 14:02:09
+   Hora de Terminación: 2026-10-30 14:07:53
+   Tiempo transcurrido: 344s (00h 05m 44s)
+   Archivo de Log     : results_production_3pipelines/logs/p1_casscf_N10_w0.1_g5.0.log
+==============================================================================
+==============================================================================
+>> [PIPELINE 1 | CASSCF | N10_w0.1_g8.0] INICIANDO
+   PID                : 1635795
+   Hora de Inicio     : 2026-10-30 14:07:53
+   Comando / Script   : env CUDA_VISIBLE_DEVICES= python3 -u cli/run_casscf_1d.py --n_elec 10 --n_up 5 --n_dn 5 --omega 0.1 --g 8.0 --softening 0.25 --n_core 4 --n_active_orbitals 4 --n_basis 24 --quadrature_order 80 --outdir results_production_3pipelines/pipeline1_casscf/N10_w0.1_g8.0 --master_csv results_production_3pipelines/live_pipeline1_casscf_summary.csv --reuse_existing --copy_from_advisor_if_available
+   Archivo de Log     : results_production_3pipelines/logs/p1_casscf_N10_w0.1_g8.0.log
+==============================================================================
+------------------------------------------------------------------------------
+<< [PIPELINE 1 | CASSCF | N10_w0.1_g8.0] TERMINADO (Código de salida: 0)
+   PID                : 1635795
+   Hora de Inicio     : 2026-10-30 14:07:53
+   Hora de Terminación: 2026-10-30 14:13:33
+   Tiempo transcurrido: 340s (00h 05m 40s)
+   Archivo de Log     : results_production_3pipelines/logs/p1_casscf_N10_w0.1_g8.0.log
+==============================================================================
+
+ [PIPELINE 1] Todos los cálculos CASSCF en CPU han terminado. Resumen en: results_production_3pipelines/live_pipeline1_casscf_summary.csv
+
+==============================================================================
+ [PIPELINE 2] Muestreo Puro sobre CASSCF Congelado (MALA vs RL-MALA TD3)
+ Despacho dinámico de GPUs: 0 1 2 (Límite: 3 trabajos paralelos)
+ Tablas CSV en vivo: results_production_3pipelines/live_pipeline2_sampling_runs.csv | results_production_3pipelines/live_pipeline2_sampling_comparison.csv
+==============================================================================
+==============================================================================
+>> [PIPELINE 2 | TRABAJO ASIGNADO] Sistema: N2_w0.1_g0.5
+   PID del Worker     : 1636814
+   GPU Asignada       : 0
+   Hora de Inicio     : 2026-10-30 14:13:33
+   Script / Tarea     : run_sistema_pipeline_2 GPU=0 N=2 G=0.5
+   Log del Sistema    : results_production_3pipelines/logs/p2_sampling_N2_w0.1_g0.5.log
+==============================================================================
+==============================================================================
+>> [PIPELINE 2 | TRABAJO ASIGNADO] Sistema: N2_w0.1_g1.0
+   PID del Worker     : 1636838
+   GPU Asignada       : 1
+   Hora de Inicio     : 2026-10-30 14:13:33
+   Script / Tarea     : run_sistema_pipeline_2 GPU=1 N=2 G=1.0
+   Log del Sistema    : results_production_3pipelines/logs/p2_sampling_N2_w0.1_g1.0.log
+==============================================================================
+==============================================================================
+>> [PIPELINE 2 | TRABAJO ASIGNADO] Sistema: N2_w0.1_g2.0
+   PID del Worker     : 1636871
+   GPU Asignada       : 2
+   Hora de Inicio     : 2026-10-30 14:13:33
+   Script / Tarea     : run_sistema_pipeline_2 GPU=2 N=2 G=2.0
+   Log del Sistema    : results_production_3pipelines/logs/p2_sampling_N2_w0.1_g2.0.log
+==============================================================================
+------------------------------------------------------------------------------
+<< [PIPELINE 2 | TRABAJO FINALIZADO] Sistema: N2_w0.1_g2.0
+   PID del Worker     : 1636871 (Código: -1)
+   GPU Liberada       : 2
+   Script / Tarea     : run_sistema_pipeline_2 GPU=2 N=2 G=2.0
+   Hora de Inicio     : 2026-10-30 14:13:33
+   Hora de Terminación: 2026-10-30 14:28:31
+   Tiempo transcurrido: 898s (00h 14m 58s)
+   Log del Sistema    : results_production_3pipelines/logs/p2_sampling_N2_w0.1_g2.0.log
+==============================================================================
+==============================================================================
+>> [PIPELINE 2 | TRABAJO ASIGNADO] Sistema: N2_w0.1_g3.0
+   PID del Worker     : 1656143
+   GPU Asignada       : 2
+   Hora de Inicio     : 2026-10-30 14:28:31
+   Script / Tarea     : run_sistema_pipeline_2 GPU=2 N=2 G=3.0
+   Log del Sistema    : results_production_3pipelines/logs/p2_sampling_N2_w0.1_g3.0.log
+==============================================================================
+------------------------------------------------------------------------------
+<< [PIPELINE 2 | TRABAJO FINALIZADO] Sistema: N2_w0.1_g0.5
+   PID del Worker     : 1636814 (Código: -1)
+   GPU Liberada       : 0
+   Script / Tarea     : run_sistema_pipeline_2 GPU=0 N=2 G=0.5
+   Hora de Inicio     : 2026-10-30 14:13:33
+   Hora de Terminación: 2026-10-30 14:28:43
+   Tiempo transcurrido: 910s (00h 15m 10s)
+   Log del Sistema    : results_production_3pipelines/logs/p2_sampling_N2_w0.1_g0.5.log
+==============================================================================
+------------------------------------------------------------------------------
+<< [PIPELINE 2 | TRABAJO FINALIZADO] Sistema: N2_w0.1_g1.0
+   PID del Worker     : 1636838 (Código: -1)
+   GPU Liberada       : 1
+   Script / Tarea     : run_sistema_pipeline_2 GPU=1 N=2 G=1.0
+   Hora de Inicio     : 2026-10-30 14:13:33
+   Hora de Terminación: 2026-10-30 14:28:43
+   Tiempo transcurrido: 910s (00h 15m 10s)
+   Log del Sistema    : results_production_3pipelines/logs/p2_sampling_N2_w0.1_g1.0.log
+==============================================================================
+==============================================================================
+>> [PIPELINE 2 | TRABAJO ASIGNADO] Sistema: N2_w0.1_g5.0
+   PID del Worker     : 1657083
+   GPU Asignada       : 0
+   Hora de Inicio     : 2026-10-30 14:28:43
+   Script / Tarea     : run_sistema_pipeline_2 GPU=0 N=2 G=5.0
+   Log del Sistema    : results_production_3pipelines/logs/p2_sampling_N2_w0.1_g5.0.log
+==============================================================================
+==============================================================================
+>> [PIPELINE 2 | TRABAJO ASIGNADO] Sistema: N2_w0.1_g8.0
+   PID del Worker     : 1657116
+   GPU Asignada       : 1
+   Hora de Inicio     : 2026-10-30 14:28:43
+   Script / Tarea     : run_sistema_pipeline_2 GPU=1 N=2 G=8.0
+   Log del Sistema    : results_production_3pipelines/logs/p2_sampling_N2_w0.1_g8.0.log
+==============================================================================
+------------------------------------------------------------------------------
+<< [PIPELINE 2 | TRABAJO FINALIZADO] Sistema: N2_w0.1_g3.0
+   PID del Worker     : 1656143 (Código: -1)
+   GPU Liberada       : 2
+   Script / Tarea     : run_sistema_pipeline_2 GPU=2 N=2 G=3.0
+   Hora de Inicio     : 2026-10-30 14:28:31
+   Hora de Terminación: 2026-10-30 14:43:32
+   Tiempo transcurrido: 901s (00h 15m 01s)
+   Log del Sistema    : results_production_3pipelines/logs/p2_sampling_N2_w0.1_g3.0.log
+==============================================================================
+==============================================================================
+>> [PIPELINE 2 | TRABAJO ASIGNADO] Sistema: N4_w0.1_g0.5
+   PID del Worker     : 1675108
+   GPU Asignada       : 2
+   Hora de Inicio     : 2026-10-30 14:43:32
+   Script / Tarea     : run_sistema_pipeline_2 GPU=2 N=4 G=0.5
+   Log del Sistema    : results_production_3pipelines/logs/p2_sampling_N4_w0.1_g0.5.log
+==============================================================================
+------------------------------------------------------------------------------
+<< [PIPELINE 2 | TRABAJO FINALIZADO] Sistema: N2_w0.1_g8.0
+   PID del Worker     : 1657116 (Código: -1)
+   GPU Liberada       : 1
+   Script / Tarea     : run_sistema_pipeline_2 GPU=1 N=2 G=8.0
+   Hora de Inicio     : 2026-10-30 14:28:43
+   Hora de Terminación: 2026-10-30 14:43:48
+   Tiempo transcurrido: 905s (00h 15m 05s)
+   Log del Sistema    : results_production_3pipelines/logs/p2_sampling_N2_w0.1_g8.0.log
+==============================================================================
+==============================================================================
+>> [PIPELINE 2 | TRABAJO ASIGNADO] Sistema: N4_w0.1_g1.0
+   PID del Worker     : 1676101
+   GPU Asignada       : 1
+   Hora de Inicio     : 2026-10-30 14:43:48
+   Script / Tarea     : run_sistema_pipeline_2 GPU=1 N=4 G=1.0
+   Log del Sistema    : results_production_3pipelines/logs/p2_sampling_N4_w0.1_g1.0.log
+==============================================================================
+------------------------------------------------------------------------------
+<< [PIPELINE 2 | TRABAJO FINALIZADO] Sistema: N2_w0.1_g5.0
+   PID del Worker     : 1657083 (Código: -1)
+   GPU Liberada       : 0
+   Script / Tarea     : run_sistema_pipeline_2 GPU=0 N=2 G=5.0
+   Hora de Inicio     : 2026-10-30 14:28:43
+   Hora de Terminación: 2026-10-30 14:44:07
+   Tiempo transcurrido: 924s (00h 15m 24s)
+   Log del Sistema    : results_production_3pipelines/logs/p2_sampling_N2_w0.1_g5.0.log
+==============================================================================
+==============================================================================
+>> [PIPELINE 2 | TRABAJO ASIGNADO] Sistema: N4_w0.1_g2.0
+   PID del Worker     : 1677199
+   GPU Asignada       : 0
+   Hora de Inicio     : 2026-10-30 14:44:07
+   Script / Tarea     : run_sistema_pipeline_2 GPU=0 N=4 G=2.0
+   Log del Sistema    : results_production_3pipelines/logs/p2_sampling_N4_w0.1_g2.0.log
+==============================================================================
+------------------------------------------------------------------------------
+<< [PIPELINE 2 | TRABAJO FINALIZADO] Sistema: N4_w0.1_g0.5
+   PID del Worker     : 1675108 (Código: -1)
+   GPU Liberada       : 2
+   Script / Tarea     : run_sistema_pipeline_2 GPU=2 N=4 G=0.5
+   Hora de Inicio     : 2026-10-30 14:43:32
+   Hora de Terminación: 2026-10-30 15:02:20
+   Tiempo transcurrido: 1128s (00h 18m 48s)
+   Log del Sistema    : results_production_3pipelines/logs/p2_sampling_N4_w0.1_g0.5.log
+==============================================================================
+==============================================================================
+>> [PIPELINE 2 | TRABAJO ASIGNADO] Sistema: N4_w0.1_g3.0
+   PID del Worker     : 1697516
+   GPU Asignada       : 2
+   Hora de Inicio     : 2026-10-30 15:02:20
+   Script / Tarea     : run_sistema_pipeline_2 GPU=2 N=4 G=3.0
+   Log del Sistema    : results_production_3pipelines/logs/p2_sampling_N4_w0.1_g3.0.log
+==============================================================================
+------------------------------------------------------------------------------
+<< [PIPELINE 2 | TRABAJO FINALIZADO] Sistema: N4_w0.1_g1.0
+   PID del Worker     : 1676101 (Código: -1)
+   GPU Liberada       : 1
+   Script / Tarea     : run_sistema_pipeline_2 GPU=1 N=4 G=1.0
+   Hora de Inicio     : 2026-10-30 14:43:48
+   Hora de Terminación: 2026-10-30 15:02:44
+   Tiempo transcurrido: 1136s (00h 18m 56s)
+   Log del Sistema    : results_production_3pipelines/logs/p2_sampling_N4_w0.1_g1.0.log
+==============================================================================
+==============================================================================
+>> [PIPELINE 2 | TRABAJO ASIGNADO] Sistema: N4_w0.1_g5.0
+   PID del Worker     : 1698612
+   GPU Asignada       : 1
+   Hora de Inicio     : 2026-10-30 15:02:44
+   Script / Tarea     : run_sistema_pipeline_2 GPU=1 N=4 G=5.0
+   Log del Sistema    : results_production_3pipelines/logs/p2_sampling_N4_w0.1_g5.0.log
+==============================================================================
+------------------------------------------------------------------------------
+<< [PIPELINE 2 | TRABAJO FINALIZADO] Sistema: N4_w0.1_g2.0
+   PID del Worker     : 1677199 (Código: -1)
+   GPU Liberada       : 0
+   Script / Tarea     : run_sistema_pipeline_2 GPU=0 N=4 G=2.0
+   Hora de Inicio     : 2026-10-30 14:44:07
+   Hora de Terminación: 2026-10-30 15:02:58
+   Tiempo transcurrido: 1131s (00h 18m 51s)
+   Log del Sistema    : results_production_3pipelines/logs/p2_sampling_N4_w0.1_g2.0.log
+==============================================================================
+==============================================================================
+>> [PIPELINE 2 | TRABAJO ASIGNADO] Sistema: N4_w0.1_g8.0
+   PID del Worker     : 1699625
+   GPU Asignada       : 0
+   Hora de Inicio     : 2026-10-30 15:02:58
+   Script / Tarea     : run_sistema_pipeline_2 GPU=0 N=4 G=8.0
+   Log del Sistema    : results_production_3pipelines/logs/p2_sampling_N4_w0.1_g8.0.log
+==============================================================================
+------------------------------------------------------------------------------
+<< [PIPELINE 2 | TRABAJO FINALIZADO] Sistema: N4_w0.1_g5.0
+   PID del Worker     : 1698612 (Código: -1)
+   GPU Liberada       : 1
+   Script / Tarea     : run_sistema_pipeline_2 GPU=1 N=4 G=5.0
+   Hora de Inicio     : 2026-10-30 15:02:44
+   Hora de Terminación: 2026-10-30 15:21:42
+   Tiempo transcurrido: 1138s (00h 18m 58s)
+   Log del Sistema    : results_production_3pipelines/logs/p2_sampling_N4_w0.1_g5.0.log
+==============================================================================
+==============================================================================
+>> [PIPELINE 2 | TRABAJO ASIGNADO] Sistema: N6_w0.1_g0.5
+   PID del Worker     : 1719835
+   GPU Asignada       : 1
+   Hora de Inicio     : 2026-10-30 15:21:42
+   Script / Tarea     : run_sistema_pipeline_2 GPU=1 N=6 G=0.5
+   Log del Sistema    : results_production_3pipelines/logs/p2_sampling_N6_w0.1_g0.5.log
+==============================================================================
+------------------------------------------------------------------------------
+<< [PIPELINE 2 | TRABAJO FINALIZADO] Sistema: N4_w0.1_g8.0
+   PID del Worker     : 1699625 (Código: -1)
+   GPU Liberada       : 0
+   Script / Tarea     : run_sistema_pipeline_2 GPU=0 N=4 G=8.0
+   Hora de Inicio     : 2026-10-30 15:02:58
+   Hora de Terminación: 2026-10-30 15:21:56
+   Tiempo transcurrido: 1138s (00h 18m 58s)
+   Log del Sistema    : results_production_3pipelines/logs/p2_sampling_N4_w0.1_g8.0.log
+==============================================================================
+==============================================================================
+>> [PIPELINE 2 | TRABAJO ASIGNADO] Sistema: N6_w0.1_g1.0
+   PID del Worker     : 1720794
+   GPU Asignada       : 0
+   Hora de Inicio     : 2026-10-30 15:21:56
+   Script / Tarea     : run_sistema_pipeline_2 GPU=0 N=6 G=1.0
+   Log del Sistema    : results_production_3pipelines/logs/p2_sampling_N6_w0.1_g1.0.log
+==============================================================================
+------------------------------------------------------------------------------
+<< [PIPELINE 2 | TRABAJO FINALIZADO] Sistema: N4_w0.1_g3.0
+   PID del Worker     : 1697516 (Código: -1)
+   GPU Liberada       : 2
+   Script / Tarea     : run_sistema_pipeline_2 GPU=2 N=4 G=3.0
+   Hora de Inicio     : 2026-10-30 15:02:20
+   Hora de Terminación: 2026-10-30 15:22:04
+   Tiempo transcurrido: 1184s (00h 19m 44s)
+   Log del Sistema    : results_production_3pipelines/logs/p2_sampling_N4_w0.1_g3.0.log
+==============================================================================
+==============================================================================
+>> [PIPELINE 2 | TRABAJO ASIGNADO] Sistema: N6_w0.1_g2.0
+   PID del Worker     : 1721556
+   GPU Asignada       : 2
+   Hora de Inicio     : 2026-10-30 15:22:04
+   Script / Tarea     : run_sistema_pipeline_2 GPU=2 N=6 G=2.0
+   Log del Sistema    : results_production_3pipelines/logs/p2_sampling_N6_w0.1_g2.0.log
+==============================================================================
+------------------------------------------------------------------------------
+<< [PIPELINE 2 | TRABAJO FINALIZADO] Sistema: N6_w0.1_g0.5
+   PID del Worker     : 1719835 (Código: -1)
+   GPU Liberada       : 1
+   Script / Tarea     : run_sistema_pipeline_2 GPU=1 N=6 G=0.5
+   Hora de Inicio     : 2026-10-30 15:21:42
+   Hora de Terminación: 2026-10-30 15:41:08
+   Tiempo transcurrido: 1166s (00h 19m 26s)
+   Log del Sistema    : results_production_3pipelines/logs/p2_sampling_N6_w0.1_g0.5.log
+==============================================================================
+==============================================================================
+>> [PIPELINE 2 | TRABAJO ASIGNADO] Sistema: N6_w0.1_g3.0
+   PID del Worker     : 1742340
+   GPU Asignada       : 1
+   Hora de Inicio     : 2026-10-30 15:41:08
+   Script / Tarea     : run_sistema_pipeline_2 GPU=1 N=6 G=3.0
+   Log del Sistema    : results_production_3pipelines/logs/p2_sampling_N6_w0.1_g3.0.log
+==============================================================================
+------------------------------------------------------------------------------
+<< [PIPELINE 2 | TRABAJO FINALIZADO] Sistema: N6_w0.1_g1.0
+   PID del Worker     : 1720794 (Código: -1)
+   GPU Liberada       : 0
+   Script / Tarea     : run_sistema_pipeline_2 GPU=0 N=6 G=1.0
+   Hora de Inicio     : 2026-10-30 15:21:56
+   Hora de Terminación: 2026-10-30 15:41:35
+   Tiempo transcurrido: 1179s (00h 19m 39s)
+   Log del Sistema    : results_production_3pipelines/logs/p2_sampling_N6_w0.1_g1.0.log
+==============================================================================
+==============================================================================
+>> [PIPELINE 2 | TRABAJO ASIGNADO] Sistema: N6_w0.1_g5.0
+   PID del Worker     : 1743445
+   GPU Asignada       : 0
+   Hora de Inicio     : 2026-10-30 15:41:35
+   Script / Tarea     : run_sistema_pipeline_2 GPU=0 N=6 G=5.0
+   Log del Sistema    : results_production_3pipelines/logs/p2_sampling_N6_w0.1_g5.0.log
+==============================================================================
+------------------------------------------------------------------------------
+<< [PIPELINE 2 | TRABAJO FINALIZADO] Sistema: N6_w0.1_g2.0
+   PID del Worker     : 1721556 (Código: -1)
+   GPU Liberada       : 2
+   Script / Tarea     : run_sistema_pipeline_2 GPU=2 N=6 G=2.0
+   Hora de Inicio     : 2026-10-30 15:22:04
+   Hora de Terminación: 2026-10-30 15:41:53
+   Tiempo transcurrido: 1189s (00h 19m 49s)
+   Log del Sistema    : results_production_3pipelines/logs/p2_sampling_N6_w0.1_g2.0.log
+==============================================================================
+==============================================================================
+>> [PIPELINE 2 | TRABAJO ASIGNADO] Sistema: N6_w0.1_g8.0
+   PID del Worker     : 1744530
+   GPU Asignada       : 2
+   Hora de Inicio     : 2026-10-30 15:41:53
+   Script / Tarea     : run_sistema_pipeline_2 GPU=2 N=6 G=8.0
+   Log del Sistema    : results_production_3pipelines/logs/p2_sampling_N6_w0.1_g8.0.log
+==============================================================================
+------------------------------------------------------------------------------
+<< [PIPELINE 2 | TRABAJO FINALIZADO] Sistema: N6_w0.1_g3.0
+   PID del Worker     : 1742340 (Código: -1)
+   GPU Liberada       : 1
+   Script / Tarea     : run_sistema_pipeline_2 GPU=1 N=6 G=3.0
+   Hora de Inicio     : 2026-10-30 15:41:08
+   Hora de Terminación: 2026-10-30 16:00:33
+   Tiempo transcurrido: 1165s (00h 19m 25s)
+   Log del Sistema    : results_production_3pipelines/logs/p2_sampling_N6_w0.1_g3.0.log
+==============================================================================
+==============================================================================
+>> [PIPELINE 2 | TRABAJO ASIGNADO] Sistema: N10_w0.1_g0.5
+   PID del Worker     : 1765218
+   GPU Asignada       : 1
+   Hora de Inicio     : 2026-10-30 16:00:33
+   Script / Tarea     : run_sistema_pipeline_2 GPU=1 N=10 G=0.5
+   Log del Sistema    : results_production_3pipelines/logs/p2_sampling_N10_w0.1_g0.5.log
+==============================================================================
+------------------------------------------------------------------------------
+<< [PIPELINE 2 | TRABAJO FINALIZADO] Sistema: N6_w0.1_g5.0
+   PID del Worker     : 1743445 (Código: -1)
+   GPU Liberada       : 0
+   Script / Tarea     : run_sistema_pipeline_2 GPU=0 N=6 G=5.0
+   Hora de Inicio     : 2026-10-30 15:41:35
+   Hora de Terminación: 2026-10-30 16:01:05
+   Tiempo transcurrido: 1170s (00h 19m 30s)
+   Log del Sistema    : results_production_3pipelines/logs/p2_sampling_N6_w0.1_g5.0.log
+==============================================================================
+==============================================================================
+>> [PIPELINE 2 | TRABAJO ASIGNADO] Sistema: N10_w0.1_g1.0
+   PID del Worker     : 1766432
+   GPU Asignada       : 0
+   Hora de Inicio     : 2026-10-30 16:01:05
+   Script / Tarea     : run_sistema_pipeline_2 GPU=0 N=10 G=1.0
+   Log del Sistema    : results_production_3pipelines/logs/p2_sampling_N10_w0.1_g1.0.log
+==============================================================================
+------------------------------------------------------------------------------
+<< [PIPELINE 2 | TRABAJO FINALIZADO] Sistema: N6_w0.1_g8.0
+   PID del Worker     : 1744530 (Código: -1)
+   GPU Liberada       : 2
+   Script / Tarea     : run_sistema_pipeline_2 GPU=2 N=6 G=8.0
+   Hora de Inicio     : 2026-10-30 15:41:53
+   Hora de Terminación: 2026-10-30 16:01:23
+   Tiempo transcurrido: 1170s (00h 19m 30s)
+   Log del Sistema    : results_production_3pipelines/logs/p2_sampling_N6_w0.1_g8.0.log
+==============================================================================
+==============================================================================
+>> [PIPELINE 2 | TRABAJO ASIGNADO] Sistema: N10_w0.1_g2.0
+   PID del Worker     : 1767531
+   GPU Asignada       : 2
+   Hora de Inicio     : 2026-10-30 16:01:23
+   Script / Tarea     : run_sistema_pipeline_2 GPU=2 N=10 G=2.0
+   Log del Sistema    : results_production_3pipelines/logs/p2_sampling_N10_w0.1_g2.0.log
+==============================================================================
+------------------------------------------------------------------------------
+<< [PIPELINE 2 | TRABAJO FINALIZADO] Sistema: N10_w0.1_g1.0
+   PID del Worker     : 1766432 (Código: -1)
+   GPU Liberada       : 0
+   Script / Tarea     : run_sistema_pipeline_2 GPU=0 N=10 G=1.0
+   Hora de Inicio     : 2026-10-30 16:01:05
+   Hora de Terminación: 2026-10-30 16:18:13
+   Tiempo transcurrido: 1028s (00h 17m 08s)
+   Log del Sistema    : results_production_3pipelines/logs/p2_sampling_N10_w0.1_g1.0.log
+==============================================================================
+==============================================================================
+>> [PIPELINE 2 | TRABAJO ASIGNADO] Sistema: N10_w0.1_g3.0
+   PID del Worker     : 1787324
+   GPU Asignada       : 0
+   Hora de Inicio     : 2026-10-30 16:18:13
+   Script / Tarea     : run_sistema_pipeline_2 GPU=0 N=10 G=3.0
+   Log del Sistema    : results_production_3pipelines/logs/p2_sampling_N10_w0.1_g3.0.log
+==============================================================================
+------------------------------------------------------------------------------
+<< [PIPELINE 2 | TRABAJO FINALIZADO] Sistema: N10_w0.1_g0.5
+   PID del Worker     : 1765218 (Código: -1)
+   GPU Liberada       : 1
+   Script / Tarea     : run_sistema_pipeline_2 GPU=1 N=10 G=0.5
+   Hora de Inicio     : 2026-10-30 16:00:33
+   Hora de Terminación: 2026-10-30 16:18:19
+   Tiempo transcurrido: 1066s (00h 17m 46s)
+   Log del Sistema    : results_production_3pipelines/logs/p2_sampling_N10_w0.1_g0.5.log
+==============================================================================
+==============================================================================
+>> [PIPELINE 2 | TRABAJO ASIGNADO] Sistema: N10_w0.1_g5.0
+   PID del Worker     : 1788048
+   GPU Asignada       : 1
+   Hora de Inicio     : 2026-10-30 16:18:19
+   Script / Tarea     : run_sistema_pipeline_2 GPU=1 N=10 G=5.0
+   Log del Sistema    : results_production_3pipelines/logs/p2_sampling_N10_w0.1_g5.0.log
+==============================================================================
+------------------------------------------------------------------------------
+<< [PIPELINE 2 | TRABAJO FINALIZADO] Sistema: N10_w0.1_g2.0
+   PID del Worker     : 1767531 (Código: -1)
+   GPU Liberada       : 2
+   Script / Tarea     : run_sistema_pipeline_2 GPU=2 N=10 G=2.0
+   Hora de Inicio     : 2026-10-30 16:01:23
+   Hora de Terminación: 2026-10-30 16:19:22
+   Tiempo transcurrido: 1079s (00h 17m 59s)
+   Log del Sistema    : results_production_3pipelines/logs/p2_sampling_N10_w0.1_g2.0.log
+==============================================================================
+==============================================================================
+>> [PIPELINE 2 | TRABAJO ASIGNADO] Sistema: N10_w0.1_g8.0
+   PID del Worker     : 1790074
+   GPU Asignada       : 2
+   Hora de Inicio     : 2026-10-30 16:19:22
+   Script / Tarea     : run_sistema_pipeline_2 GPU=2 N=10 G=8.0
+   Log del Sistema    : results_production_3pipelines/logs/p2_sampling_N10_w0.1_g8.0.log
+==============================================================================
+------------------------------------------------------------------------------
+<< [PIPELINE 2 | TRABAJO FINALIZADO] Sistema: N10_w0.1_g5.0
+   PID del Worker     : 1788048 (Código: 0)
+   GPU Liberada       : 1
+   Script / Tarea     : run_sistema_pipeline_2 GPU=1 N=10 G=5.0
+   Hora de Inicio     : 2026-10-30 16:18:19
+   Hora de Terminación: 2026-10-30 16:35:54
+   Tiempo transcurrido: 1055s (00h 17m 35s)
+   Log del Sistema    : results_production_3pipelines/logs/p2_sampling_N10_w0.1_g5.0.log
+==============================================================================
+------------------------------------------------------------------------------
+<< [PIPELINE 2 | TRABAJO FINALIZADO] Sistema: N10_w0.1_g3.0
+   PID del Worker     : 1787324 (Código: 0)
+   GPU Liberada       : 0
+   Script / Tarea     : run_sistema_pipeline_2 GPU=0 N=10 G=3.0
+   Hora de Inicio     : 2026-10-30 16:18:13
+   Hora de Terminación: 2026-10-30 16:36:00
+   Tiempo transcurrido: 1067s (00h 17m 47s)
+   Log del Sistema    : results_production_3pipelines/logs/p2_sampling_N10_w0.1_g3.0.log
+==============================================================================
+------------------------------------------------------------------------------
+<< [PIPELINE 2 | TRABAJO FINALIZADO] Sistema: N10_w0.1_g8.0
+   PID del Worker     : 1790074 (Código: 0)
+   GPU Liberada       : 2
+   Script / Tarea     : run_sistema_pipeline_2 GPU=2 N=10 G=8.0
+   Hora de Inicio     : 2026-10-30 16:19:22
+   Hora de Terminación: 2026-10-30 16:37:09
+   Tiempo transcurrido: 1067s (00h 17m 47s)
+   Log del Sistema    : results_production_3pipelines/logs/p2_sampling_N10_w0.1_g8.0.log
+==============================================================================
+
+ [PIPELINE 2] Todos los sistemas han terminado exitosamente.
+
+==============================================================================
+ [PIPELINE 3] Entrenamiento Variacional SJB (VMC+MALA vs Coupled VMC+RL-MALA)
+ Despacho dinámico de GPUs: 0 1 2 (Límite: 3 trabajos paralelos)
+ Tablas CSV en vivo: results_production_3pipelines/live_pipeline3_training_runs.csv | results_production_3pipelines/live_pipeline3_training_comparison.csv
+==============================================================================
+==============================================================================
+>> [PIPELINE 3 | TRABAJO ASIGNADO] Sistema: N2_w0.1_g0.5
+   PID del Worker     : 1809996
+   GPU Asignada       : 0
+   Hora de Inicio     : 2026-10-30 16:37:09
+   Script / Tarea     : run_sistema_pipeline_3 GPU=0 N=2 G=0.5
+   Log del Sistema    : results_production_3pipelines/logs/p3_training_N2_w0.1_g0.5.log
+==============================================================================
+==============================================================================
+>> [PIPELINE 3 | TRABAJO ASIGNADO] Sistema: N2_w0.1_g1.0
+   PID del Worker     : 1810020
+   GPU Asignada       : 1
+   Hora de Inicio     : 2026-10-30 16:37:09
+   Script / Tarea     : run_sistema_pipeline_3 GPU=1 N=2 G=1.0
+   Log del Sistema    : results_production_3pipelines/logs/p3_training_N2_w0.1_g1.0.log
+==============================================================================
+==============================================================================
+>> [PIPELINE 3 | TRABAJO ASIGNADO] Sistema: N2_w0.1_g2.0
+   PID del Worker     : 1810053
+   GPU Asignada       : 2
+   Hora de Inicio     : 2026-10-30 16:37:09
+   Script / Tarea     : run_sistema_pipeline_3 GPU=2 N=2 G=2.0
+   Log del Sistema    : results_production_3pipelines/logs/p3_training_N2_w0.1_g2.0.log
+==============================================================================
+------------------------------------------------------------------------------
+<< [PIPELINE 3 | TRABAJO FINALIZADO] Sistema: N2_w0.1_g1.0
+   PID del Worker     : 1810020 (Código: -1)
+   GPU Liberada       : 1
+   Script / Tarea     : run_sistema_pipeline_3 GPU=1 N=2 G=1.0
+   Hora de Inicio     : 2026-10-30 16:37:09
+   Hora de Terminación: 2026-10-30 17:43:43
+   Tiempo transcurrido: 3994s (01h 06m 34s)
+   Log del Sistema    : results_production_3pipelines/logs/p3_training_N2_w0.1_g1.0.log
+==============================================================================
+==============================================================================
+>> [PIPELINE 3 | TRABAJO ASIGNADO] Sistema: N2_w0.1_g3.0
+   PID del Worker     : 1869451
+   GPU Asignada       : 1
+   Hora de Inicio     : 2026-10-30 17:43:43
+   Script / Tarea     : run_sistema_pipeline_3 GPU=1 N=2 G=3.0
+   Log del Sistema    : results_production_3pipelines/logs/p3_training_N2_w0.1_g3.0.log
+==============================================================================
+------------------------------------------------------------------------------
+<< [PIPELINE 3 | TRABAJO FINALIZADO] Sistema: N2_w0.1_g2.0
+   PID del Worker     : 1810053 (Código: -1)
+   GPU Liberada       : 2
+   Script / Tarea     : run_sistema_pipeline_3 GPU=2 N=2 G=2.0
+   Hora de Inicio     : 2026-10-30 16:37:09
+   Hora de Terminación: 2026-10-30 17:45:28
+   Tiempo transcurrido: 4099s (01h 08m 19s)
+   Log del Sistema    : results_production_3pipelines/logs/p3_training_N2_w0.1_g2.0.log
+==============================================================================
+==============================================================================
+>> [PIPELINE 3 | TRABAJO ASIGNADO] Sistema: N2_w0.1_g5.0
+   PID del Worker     : 1872564
+   GPU Asignada       : 2
+   Hora de Inicio     : 2026-10-30 17:45:28
+   Script / Tarea     : run_sistema_pipeline_3 GPU=2 N=2 G=5.0
+   Log del Sistema    : results_production_3pipelines/logs/p3_training_N2_w0.1_g5.0.log
+==============================================================================
+------------------------------------------------------------------------------
+<< [PIPELINE 3 | TRABAJO FINALIZADO] Sistema: N2_w0.1_g0.5
+   PID del Worker     : 1809996 (Código: -1)
+   GPU Liberada       : 0
+   Script / Tarea     : run_sistema_pipeline_3 GPU=0 N=2 G=0.5
+   Hora de Inicio     : 2026-10-30 16:37:09
+   Hora de Terminación: 2026-10-30 17:45:44
+   Tiempo transcurrido: 4115s (01h 08m 35s)
+   Log del Sistema    : results_production_3pipelines/logs/p3_training_N2_w0.1_g0.5.log
+==============================================================================
+==============================================================================
+>> [PIPELINE 3 | TRABAJO ASIGNADO] Sistema: N2_w0.1_g8.0
+   PID del Worker     : 1873690
+   GPU Asignada       : 0
+   Hora de Inicio     : 2026-10-30 17:45:44
+   Script / Tarea     : run_sistema_pipeline_3 GPU=0 N=2 G=8.0
+   Log del Sistema    : results_production_3pipelines/logs/p3_training_N2_w0.1_g8.0.log
+==============================================================================
+------------------------------------------------------------------------------
+<< [PIPELINE 3 | TRABAJO FINALIZADO] Sistema: N2_w0.1_g3.0
+   PID del Worker     : 1869451 (Código: -1)
+   GPU Liberada       : 1
+   Script / Tarea     : run_sistema_pipeline_3 GPU=1 N=2 G=3.0
+   Hora de Inicio     : 2026-10-30 17:43:43
+   Hora de Terminación: 2026-10-30 18:51:18
+   Tiempo transcurrido: 4055s (01h 07m 35s)
+   Log del Sistema    : results_production_3pipelines/logs/p3_training_N2_w0.1_g3.0.log
+==============================================================================
+==============================================================================
+>> [PIPELINE 3 | TRABAJO ASIGNADO] Sistema: N4_w0.1_g0.5
+   PID del Worker     : 1931334
+   GPU Asignada       : 1
+   Hora de Inicio     : 2026-10-30 18:51:18
+   Script / Tarea     : run_sistema_pipeline_3 GPU=1 N=4 G=0.5
+   Log del Sistema    : results_production_3pipelines/logs/p3_training_N4_w0.1_g0.5.log
+==============================================================================
+------------------------------------------------------------------------------
+<< [PIPELINE 3 | TRABAJO FINALIZADO] Sistema: N2_w0.1_g5.0
+   PID del Worker     : 1872564 (Código: -1)
+   GPU Liberada       : 2
+   Script / Tarea     : run_sistema_pipeline_3 GPU=2 N=2 G=5.0
+   Hora de Inicio     : 2026-10-30 17:45:28
+   Hora de Terminación: 2026-10-30 18:52:08
+   Tiempo transcurrido: 4000s (01h 06m 40s)
+   Log del Sistema    : results_production_3pipelines/logs/p3_training_N2_w0.1_g5.0.log
+==============================================================================
+==============================================================================
+>> [PIPELINE 3 | TRABAJO ASIGNADO] Sistema: N4_w0.1_g1.0
+   PID del Worker     : 1933303
+   GPU Asignada       : 2
+   Hora de Inicio     : 2026-10-30 18:52:09
+   Script / Tarea     : run_sistema_pipeline_3 GPU=2 N=4 G=1.0
+   Log del Sistema    : results_production_3pipelines/logs/p3_training_N4_w0.1_g1.0.log
+==============================================================================
+------------------------------------------------------------------------------
+<< [PIPELINE 3 | TRABAJO FINALIZADO] Sistema: N2_w0.1_g8.0
+   PID del Worker     : 1873690 (Código: -1)
+   GPU Liberada       : 0
+   Script / Tarea     : run_sistema_pipeline_3 GPU=0 N=2 G=8.0
+   Hora de Inicio     : 2026-10-30 17:45:44
+   Hora de Terminación: 2026-10-30 18:53:05
+   Tiempo transcurrido: 4041s (01h 07m 21s)
+   Log del Sistema    : results_production_3pipelines/logs/p3_training_N2_w0.1_g8.0.log
+==============================================================================
+==============================================================================
+>> [PIPELINE 3 | TRABAJO ASIGNADO] Sistema: N4_w0.1_g2.0
+   PID del Worker     : 1935222
+   GPU Asignada       : 0
+   Hora de Inicio     : 2026-10-30 18:53:05
+   Script / Tarea     : run_sistema_pipeline_3 GPU=0 N=4 G=2.0
+   Log del Sistema    : results_production_3pipelines/logs/p3_training_N4_w0.1_g2.0.log
+==============================================================================
+------------------------------------------------------------------------------
+<< [PIPELINE 3 | TRABAJO FINALIZADO] Sistema: N4_w0.1_g0.5
+   PID del Worker     : 1931334 (Código: -1)
+   GPU Liberada       : 1
+   Script / Tarea     : run_sistema_pipeline_3 GPU=1 N=4 G=0.5
+   Hora de Inicio     : 2026-10-30 18:51:18
+   Hora de Terminación: 2026-10-30 20:04:55
+   Tiempo transcurrido: 4417s (01h 13m 37s)
+   Log del Sistema    : results_production_3pipelines/logs/p3_training_N4_w0.1_g0.5.log
+==============================================================================
+==============================================================================
+>> [PIPELINE 3 | TRABAJO ASIGNADO] Sistema: N4_w0.1_g3.0
+   PID del Worker     : 1993925
+   GPU Asignada       : 1
+   Hora de Inicio     : 2026-10-30 20:04:55
+   Script / Tarea     : run_sistema_pipeline_3 GPU=1 N=4 G=3.0
+   Log del Sistema    : results_production_3pipelines/logs/p3_training_N4_w0.1_g3.0.log
+==============================================================================
+------------------------------------------------------------------------------
+<< [PIPELINE 3 | TRABAJO FINALIZADO] Sistema: N4_w0.1_g1.0
+   PID del Worker     : 1933303 (Código: -1)
+   GPU Liberada       : 2
+   Script / Tarea     : run_sistema_pipeline_3 GPU=2 N=4 G=1.0
+   Hora de Inicio     : 2026-10-30 18:52:09
+   Hora de Terminación: 2026-10-30 20:06:56
+   Tiempo transcurrido: 4487s (01h 14m 47s)
+   Log del Sistema    : results_production_3pipelines/logs/p3_training_N4_w0.1_g1.0.log
+==============================================================================
+==============================================================================
+>> [PIPELINE 3 | TRABAJO ASIGNADO] Sistema: N4_w0.1_g5.0
+   PID del Worker     : 1996998
+   GPU Asignada       : 2
+   Hora de Inicio     : 2026-10-30 20:06:56
+   Script / Tarea     : run_sistema_pipeline_3 GPU=2 N=4 G=5.0
+   Log del Sistema    : results_production_3pipelines/logs/p3_training_N4_w0.1_g5.0.log
+==============================================================================
+------------------------------------------------------------------------------
+<< [PIPELINE 3 | TRABAJO FINALIZADO] Sistema: N4_w0.1_g2.0
+   PID del Worker     : 1935222 (Código: -1)
+   GPU Liberada       : 0
+   Script / Tarea     : run_sistema_pipeline_3 GPU=0 N=4 G=2.0
+   Hora de Inicio     : 2026-10-30 18:53:05
+   Hora de Terminación: 2026-10-30 20:08:05
+   Tiempo transcurrido: 4500s (01h 15m 00s)
+   Log del Sistema    : results_production_3pipelines/logs/p3_training_N4_w0.1_g2.0.log
+==============================================================================
+==============================================================================
+>> [PIPELINE 3 | TRABAJO ASIGNADO] Sistema: N4_w0.1_g8.0
+   PID del Worker     : 1999069
+   GPU Asignada       : 0
+   Hora de Inicio     : 2026-10-30 20:08:05
+   Script / Tarea     : run_sistema_pipeline_3 GPU=0 N=4 G=8.0
+   Log del Sistema    : results_production_3pipelines/logs/p3_training_N4_w0.1_g8.0.log
+==============================================================================
+------------------------------------------------------------------------------
+<< [PIPELINE 3 | TRABAJO FINALIZADO] Sistema: N4_w0.1_g3.0
+   PID del Worker     : 1993925 (Código: -1)
+   GPU Liberada       : 1
+   Script / Tarea     : run_sistema_pipeline_3 GPU=1 N=4 G=3.0
+   Hora de Inicio     : 2026-10-30 20:04:55
+   Hora de Terminación: 2026-10-30 21:19:48
+   Tiempo transcurrido: 4493s (01h 14m 53s)
+   Log del Sistema    : results_production_3pipelines/logs/p3_training_N4_w0.1_g3.0.log
+==============================================================================
+==============================================================================
+>> [PIPELINE 3 | TRABAJO ASIGNADO] Sistema: N6_w0.1_g0.5
+   PID del Worker     : 2058138
+   GPU Asignada       : 1
+   Hora de Inicio     : 2026-10-30 21:19:48
+   Script / Tarea     : run_sistema_pipeline_3 GPU=1 N=6 G=0.5
+   Log del Sistema    : results_production_3pipelines/logs/p3_training_N6_w0.1_g0.5.log
+==============================================================================
+------------------------------------------------------------------------------
+<< [PIPELINE 3 | TRABAJO FINALIZADO] Sistema: N4_w0.1_g5.0
+   PID del Worker     : 1996998 (Código: -1)
+   GPU Liberada       : 2
+   Script / Tarea     : run_sistema_pipeline_3 GPU=2 N=4 G=5.0
+   Hora de Inicio     : 2026-10-30 20:06:56
+   Hora de Terminación: 2026-10-30 21:21:33
+   Tiempo transcurrido: 4477s (01h 14m 37s)
+   Log del Sistema    : results_production_3pipelines/logs/p3_training_N4_w0.1_g5.0.log
+==============================================================================
+==============================================================================
+>> [PIPELINE 3 | TRABAJO ASIGNADO] Sistema: N6_w0.1_g1.0
+   PID del Worker     : 2061203
+   GPU Asignada       : 2
+   Hora de Inicio     : 2026-10-30 21:21:33
+   Script / Tarea     : run_sistema_pipeline_3 GPU=2 N=6 G=1.0
+   Log del Sistema    : results_production_3pipelines/logs/p3_training_N6_w0.1_g1.0.log
+==============================================================================
+------------------------------------------------------------------------------
+<< [PIPELINE 3 | TRABAJO FINALIZADO] Sistema: N4_w0.1_g8.0
+   PID del Worker     : 1999069 (Código: -1)
+   GPU Liberada       : 0
+   Script / Tarea     : run_sistema_pipeline_3 GPU=0 N=4 G=8.0
+   Hora de Inicio     : 2026-10-30 20:08:05
+   Hora de Terminación: 2026-10-30 21:22:09
+   Tiempo transcurrido: 4444s (01h 14m 04s)
+   Log del Sistema    : results_production_3pipelines/logs/p3_training_N4_w0.1_g8.0.log
+==============================================================================
+==============================================================================
+>> [PIPELINE 3 | TRABAJO ASIGNADO] Sistema: N6_w0.1_g2.0
+   PID del Worker     : 2062699
+   GPU Asignada       : 0
+   Hora de Inicio     : 2026-10-30 21:22:09
+   Script / Tarea     : run_sistema_pipeline_3 GPU=0 N=6 G=2.0
+   Log del Sistema    : results_production_3pipelines/logs/p3_training_N6_w0.1_g2.0.log
+==============================================================================
+------------------------------------------------------------------------------
+<< [PIPELINE 3 | TRABAJO FINALIZADO] Sistema: N6_w0.1_g0.5
+   PID del Worker     : 2058138 (Código: -1)
+   GPU Liberada       : 1
+   Script / Tarea     : run_sistema_pipeline_3 GPU=1 N=6 G=0.5
+   Hora de Inicio     : 2026-10-30 21:19:48
+   Hora de Terminación: 2026-10-30 22:42:10
+   Tiempo transcurrido: 4942s (01h 22m 22s)
+   Log del Sistema    : results_production_3pipelines/logs/p3_training_N6_w0.1_g0.5.log
+==============================================================================
+==============================================================================
+>> [PIPELINE 3 | TRABAJO ASIGNADO] Sistema: N6_w0.1_g3.0
+   PID del Worker     : 2127596
+   GPU Asignada       : 1
+   Hora de Inicio     : 2026-10-30 22:42:10
+   Script / Tarea     : run_sistema_pipeline_3 GPU=1 N=6 G=3.0
+   Log del Sistema    : results_production_3pipelines/logs/p3_training_N6_w0.1_g3.0.log
+==============================================================================
+------------------------------------------------------------------------------
+<< [PIPELINE 3 | TRABAJO FINALIZADO] Sistema: N6_w0.1_g2.0
+   PID del Worker     : 2062699 (Código: -1)
+   GPU Liberada       : 0
+   Script / Tarea     : run_sistema_pipeline_3 GPU=0 N=6 G=2.0
+   Hora de Inicio     : 2026-10-30 21:22:09
+   Hora de Terminación: 2026-10-30 22:43:27
+   Tiempo transcurrido: 4878s (01h 21m 18s)
+   Log del Sistema    : results_production_3pipelines/logs/p3_training_N6_w0.1_g2.0.log
+==============================================================================
+==============================================================================
+>> [PIPELINE 3 | TRABAJO ASIGNADO] Sistema: N6_w0.1_g5.0
+   PID del Worker     : 2130115
+   GPU Asignada       : 0
+   Hora de Inicio     : 2026-10-30 22:43:27
+   Script / Tarea     : run_sistema_pipeline_3 GPU=0 N=6 G=5.0
+   Log del Sistema    : results_production_3pipelines/logs/p3_training_N6_w0.1_g5.0.log
+==============================================================================
+------------------------------------------------------------------------------
+<< [PIPELINE 3 | TRABAJO FINALIZADO] Sistema: N6_w0.1_g1.0
+   PID del Worker     : 2061203 (Código: -1)
+   GPU Liberada       : 2
+   Script / Tarea     : run_sistema_pipeline_3 GPU=2 N=6 G=1.0
+   Hora de Inicio     : 2026-10-30 21:21:33
+   Hora de Terminación: 2026-10-30 22:43:49
+   Tiempo transcurrido: 4936s (01h 22m 16s)
+   Log del Sistema    : results_production_3pipelines/logs/p3_training_N6_w0.1_g1.0.log
+==============================================================================
+==============================================================================
+>> [PIPELINE 3 | TRABAJO ASIGNADO] Sistema: N6_w0.1_g8.0
+   PID del Worker     : 2131373
+   GPU Asignada       : 2
+   Hora de Inicio     : 2026-10-30 22:43:49
+   Script / Tarea     : run_sistema_pipeline_3 GPU=2 N=6 G=8.0
+   Log del Sistema    : results_production_3pipelines/logs/p3_training_N6_w0.1_g8.0.log
+==============================================================================
+------------------------------------------------------------------------------
+<< [PIPELINE 3 | TRABAJO FINALIZADO] Sistema: N6_w0.1_g3.0
+   PID del Worker     : 2127596 (Código: -1)
+   GPU Liberada       : 1
+   Script / Tarea     : run_sistema_pipeline_3 GPU=1 N=6 G=3.0
+   Hora de Inicio     : 2026-10-30 22:42:10
+   Hora de Terminación: 2026-10-31 00:04:36
+   Tiempo transcurrido: 4946s (01h 22m 26s)
+   Log del Sistema    : results_production_3pipelines/logs/p3_training_N6_w0.1_g3.0.log
+==============================================================================
+==============================================================================
+>> [PIPELINE 3 | TRABAJO ASIGNADO] Sistema: N10_w0.1_g0.5
+   PID del Worker     : 2197527
+   GPU Asignada       : 1
+   Hora de Inicio     : 2026-10-31 00:04:36
+   Script / Tarea     : run_sistema_pipeline_3 GPU=1 N=10 G=0.5
+   Log del Sistema    : results_production_3pipelines/logs/p3_training_N10_w0.1_g0.5.log
+==============================================================================
+------------------------------------------------------------------------------
+<< [PIPELINE 3 | TRABAJO FINALIZADO] Sistema: N6_w0.1_g5.0
+   PID del Worker     : 2130115 (Código: -1)
+   GPU Liberada       : 0
+   Script / Tarea     : run_sistema_pipeline_3 GPU=0 N=6 G=5.0
+   Hora de Inicio     : 2026-10-30 22:43:27
+   Hora de Terminación: 2026-10-31 00:05:22
+   Tiempo transcurrido: 4915s (01h 21m 55s)
+   Log del Sistema    : results_production_3pipelines/logs/p3_training_N6_w0.1_g5.0.log
+==============================================================================
+==============================================================================
+>> [PIPELINE 3 | TRABAJO ASIGNADO] Sistema: N10_w0.1_g1.0
+   PID del Worker     : 2199457
+   GPU Asignada       : 0
+   Hora de Inicio     : 2026-10-31 00:05:23
+   Script / Tarea     : run_sistema_pipeline_3 GPU=0 N=10 G=1.0
+   Log del Sistema    : results_production_3pipelines/logs/p3_training_N10_w0.1_g1.0.log
+==============================================================================
+------------------------------------------------------------------------------
+<< [PIPELINE 3 | TRABAJO FINALIZADO] Sistema: N6_w0.1_g8.0
+   PID del Worker     : 2131373 (Código: -1)
+   GPU Liberada       : 2
+   Script / Tarea     : run_sistema_pipeline_3 GPU=2 N=6 G=8.0
+   Hora de Inicio     : 2026-10-30 22:43:49
+   Hora de Terminación: 2026-10-31 00:06:19
+   Tiempo transcurrido: 4950s (01h 22m 30s)
+   Log del Sistema    : results_production_3pipelines/logs/p3_training_N6_w0.1_g8.0.log
+==============================================================================
+==============================================================================
+>> [PIPELINE 3 | TRABAJO ASIGNADO] Sistema: N10_w0.1_g2.0
+   PID del Worker     : 2201266
+   GPU Asignada       : 2
+   Hora de Inicio     : 2026-10-31 00:06:19
+   Script / Tarea     : run_sistema_pipeline_3 GPU=2 N=10 G=2.0
+   Log del Sistema    : results_production_3pipelines/logs/p3_training_N10_w0.1_g2.0.log
+==============================================================================
+------------------------------------------------------------------------------
+<< [PIPELINE 3 | TRABAJO FINALIZADO] Sistema: N10_w0.1_g0.5
+   PID del Worker     : 2197527 (Código: -1)
+   GPU Liberada       : 1
+   Script / Tarea     : run_sistema_pipeline_3 GPU=1 N=10 G=0.5
+   Hora de Inicio     : 2026-10-31 00:04:36
+   Hora de Terminación: 2026-10-31 01:49:17
+   Tiempo transcurrido: 6281s (01h 44m 41s)
+   Log del Sistema    : results_production_3pipelines/logs/p3_training_N10_w0.1_g0.5.log
+==============================================================================
+==============================================================================
+>> [PIPELINE 3 | TRABAJO ASIGNADO] Sistema: N10_w0.1_g3.0
+   PID del Worker     : 2283172
+   GPU Asignada       : 1
+   Hora de Inicio     : 2026-10-31 01:49:17
+   Script / Tarea     : run_sistema_pipeline_3 GPU=1 N=10 G=3.0
+   Log del Sistema    : results_production_3pipelines/logs/p3_training_N10_w0.1_g3.0.log
+==============================================================================
+------------------------------------------------------------------------------
+<< [PIPELINE 3 | TRABAJO FINALIZADO] Sistema: N10_w0.1_g1.0
+   PID del Worker     : 2199457 (Código: -1)
+   GPU Liberada       : 0
+   Script / Tarea     : run_sistema_pipeline_3 GPU=0 N=10 G=1.0
+   Hora de Inicio     : 2026-10-31 00:05:23
+   Hora de Terminación: 2026-10-31 01:49:34
+   Tiempo transcurrido: 6251s (01h 44m 11s)
+   Log del Sistema    : results_production_3pipelines/logs/p3_training_N10_w0.1_g1.0.log
+==============================================================================
+==============================================================================
+>> [PIPELINE 3 | TRABAJO ASIGNADO] Sistema: N10_w0.1_g5.0
+   PID del Worker     : 2284287
+   GPU Asignada       : 0
+   Hora de Inicio     : 2026-10-31 01:49:34
+   Script / Tarea     : run_sistema_pipeline_3 GPU=0 N=10 G=5.0
+   Log del Sistema    : results_production_3pipelines/logs/p3_training_N10_w0.1_g5.0.log
+==============================================================================
+------------------------------------------------------------------------------
+<< [PIPELINE 3 | TRABAJO FINALIZADO] Sistema: N10_w0.1_g2.0
+   PID del Worker     : 2201266 (Código: -1)
+   GPU Liberada       : 2
+   Script / Tarea     : run_sistema_pipeline_3 GPU=2 N=10 G=2.0
+   Hora de Inicio     : 2026-10-31 00:06:19
+   Hora de Terminación: 2026-10-31 01:50:22
+   Tiempo transcurrido: 6243s (01h 44m 03s)
+   Log del Sistema    : results_production_3pipelines/logs/p3_training_N10_w0.1_g2.0.log
+==============================================================================
+==============================================================================
+>> [PIPELINE 3 | TRABAJO ASIGNADO] Sistema: N10_w0.1_g8.0
+   PID del Worker     : 2286072
+   GPU Asignada       : 2
+   Hora de Inicio     : 2026-10-31 01:50:22
+   Script / Tarea     : run_sistema_pipeline_3 GPU=2 N=10 G=8.0
+   Log del Sistema    : results_production_3pipelines/logs/p3_training_N10_w0.1_g8.0.log
+==============================================================================
+------------------------------------------------------------------------------
+<< [PIPELINE 3 | TRABAJO FINALIZADO] Sistema: N10_w0.1_g3.0
+   PID del Worker     : 2283172 (Código: 0)
+   GPU Liberada       : 1
+   Script / Tarea     : run_sistema_pipeline_3 GPU=1 N=10 G=3.0
+   Hora de Inicio     : 2026-10-31 01:49:17
+   Hora de Terminación: 2026-10-31 03:33:59
+   Tiempo transcurrido: 6282s (01h 44m 42s)
+   Log del Sistema    : results_production_3pipelines/logs/p3_training_N10_w0.1_g3.0.log
+==============================================================================
+------------------------------------------------------------------------------
+<< [PIPELINE 3 | TRABAJO FINALIZADO] Sistema: N10_w0.1_g5.0
+   PID del Worker     : 2284287 (Código: 0)
+   GPU Liberada       : 0
+   Script / Tarea     : run_sistema_pipeline_3 GPU=0 N=10 G=5.0
+   Hora de Inicio     : 2026-10-31 01:49:34
+   Hora de Terminación: 2026-10-31 03:34:05
+   Tiempo transcurrido: 6271s (01h 44m 31s)
+   Log del Sistema    : results_production_3pipelines/logs/p3_training_N10_w0.1_g5.0.log
+==============================================================================
+------------------------------------------------------------------------------
+<< [PIPELINE 3 | TRABAJO FINALIZADO] Sistema: N10_w0.1_g8.0
+   PID del Worker     : 2286072 (Código: 0)
+   GPU Liberada       : 2
+   Script / Tarea     : run_sistema_pipeline_3 GPU=2 N=10 G=8.0
+   Hora de Inicio     : 2026-10-31 01:50:22
+   Hora de Terminación: 2026-10-31 03:35:29
+   Tiempo transcurrido: 6307s (01h 45m 07s)
+   Log del Sistema    : results_production_3pipelines/logs/p3_training_N10_w0.1_g8.0.log
+==============================================================================
+
+ [PIPELINE 3] Todos los sistemas han terminado exitosamente.
+
+==============================================================================
+ BENCHMARK DE 3 PIPELINES FINALIZADO EXITOSAMENTE
+ PID del Master      : 1613042
+ Hora de Inicio      : 2026-10-30 11:56:44
+ Hora de Terminación : 2026-10-31 03:35:29
+ Tiempo Total        : 56325s (15h 38m 45s)
+ Tablas CSV maestras generadas en vivo:
+   - Pipeline 1 (CASSCF)       : results_production_3pipelines/live_pipeline1_casscf_summary.csv
+   - Pipeline 2 (Muestreo)     : results_production_3pipelines/live_pipeline2_sampling_comparison.csv
+   - Pipeline 3 (Entrenamiento): results_production_3pipelines/live_pipeline3_training_comparison.csv
+   - Tabla global consolidada  : results_production_3pipelines/live_all_models_master.csv
+==============================================================================
