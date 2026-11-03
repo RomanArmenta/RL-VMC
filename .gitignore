@@ -34,3 +34,4 @@ opt_vmc.log
 # Repositorio central ligero de resultados para análisis y contexto
 !results_csv/
 !results_csv/**
+!results_csv*/
