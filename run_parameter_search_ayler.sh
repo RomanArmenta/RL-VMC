@@ -12,7 +12,38 @@ export JAX_ENABLE_X64=True
 PYTHON_BIN="${PYTHON_BIN:-python3}"
 
 # 1. Configuración de Rutas y Sistema Objetivo
-TARGET_CASSCF_NPZ="figures/cas_n6_g1.0_omega0.1_soft0.1_b256_c0-a6_casscf_state_det-20.npz"
+TARGET_CASSCF_NPZ="${TARGET_CASSCF_NPZ:-figures/cas_n6_g1.0_omega0.1_soft0.1_b256_c0-a6_casscf_state_det-20.npz}"
+
+# Fallbacks automáticos si el archivo .npz se ubica en data/, raíz o figures/
+if [ ! -f "${TARGET_CASSCF_NPZ}" ]; then
+    if [ -f "cas_n6_g1.0_omega0.1_soft0.1_b256_c0-a6_casscf_state_det-20.npz" ]; then
+        TARGET_CASSCF_NPZ="cas_n6_g1.0_omega0.1_soft0.1_b256_c0-a6_casscf_state_det-20.npz"
+    elif [ -f "data/cas_n6_g1.0_omega0.1_soft0.1_b256_c0-a6_casscf_state_det-20.npz" ]; then
+        TARGET_CASSCF_NPZ="data/cas_n6_g1.0_omega0.1_soft0.1_b256_c0-a6_casscf_state_det-20.npz"
+    elif [ -f "results/cas_n6_g1.0_omega0.1_soft0.1_b256_c0-a6_casscf_state_det-20.npz" ]; then
+        TARGET_CASSCF_NPZ="results/cas_n6_g1.0_omega0.1_soft0.1_b256_c0-a6_casscf_state_det-20.npz"
+    fi
+fi
+
+# Detección de CSV de densidad de referencia CASSCF opcional
+REF_DENSITY_CSV="${REF_DENSITY_CSV:-results_csv_b2/casscf_exact_density_N6_w0.1_g1.0.csv}"
+REF_CSV_ARG=""
+if [ ! -f "${REF_DENSITY_CSV}" ]; then
+    if [ -f "results_csv/casscf_exact_density_N6_w0.1_g1.0.csv" ]; then
+        REF_DENSITY_CSV="results_csv/casscf_exact_density_N6_w0.1_g1.0.csv"
+    elif [ -f "casscf_exact_density_N6_w0.1_g1.0.csv" ]; then
+        REF_DENSITY_CSV="casscf_exact_density_N6_w0.1_g1.0.csv"
+    elif [ -f "data/casscf_exact_density_N6_w0.1_g1.0.csv" ]; then
+        REF_DENSITY_CSV="data/casscf_exact_density_N6_w0.1_g1.0.csv"
+    else
+        REF_DENSITY_CSV=""
+    fi
+fi
+if [ -n "${REF_DENSITY_CSV}" ] && [ -f "${REF_DENSITY_CSV}" ]; then
+    REF_CSV_ARG="--reference_density_csv ${REF_DENSITY_CSV}"
+    echo "[+] CSV de Densidad de Referencia encontrado: ${REF_DENSITY_CSV}"
+fi
+
 BASE_OUT_DIR="results_param_search"
 CSV_COLLECT_DIR="${BASE_OUT_DIR}/csv_summary"
 FIG_OUT_DIR="${BASE_OUT_DIR}/figures"
@@ -99,9 +130,12 @@ for tau in "${TAU_MALA_LIST[@]}"; do
         --labels "MALA (tau=${tau})" \
         --out_dir "${POST_DIR}" \
         --casscf_npz_path "${TARGET_CASSCF_NPZ}" \
+        ${REF_CSV_ARG} \
         --system_tag "${RUN_TAG}" \
         --csv_collect_dir "${CSV_COLLECT_DIR}" \
-        --plot_observables_comparison &
+        --plot_observables_comparison \
+        --plot_kl_divergence \
+        --figure_format png &
     PID_POST=$!
     wait ${PID_POST}
     log_step_info "postprocess.py (${RUN_TAG})" "${START_POST}" "${PID_POST}"
@@ -153,9 +187,12 @@ for amp in "${ACTOR_AMP_LIST[@]}"; do
             --labels "RL-MALA (A=${amp}, tau=${tau})" \
             --out_dir "${POST_DIR}" \
             --casscf_npz_path "${TARGET_CASSCF_NPZ}" \
+            ${REF_CSV_ARG} \
             --system_tag "${RUN_TAG}" \
             --csv_collect_dir "${CSV_COLLECT_DIR}" \
-            --plot_observables_comparison &
+            --plot_observables_comparison \
+            --plot_kl_divergence \
+            --figure_format png &
         PID_POST=$!
         wait ${PID_POST}
         log_step_info "postprocess.py (${RUN_TAG})" "${START_POST}" "${PID_POST}"
@@ -227,10 +264,13 @@ ${PYTHON_BIN} -u cli/postprocess.py \
     --labels "VMC + MALA (Multi-SJB)" "Coupled VMC + RL-MALA (Multi-SJB)" \
     --out_dir "${P3_POST_DIR}" \
     --casscf_npz_path "${TARGET_CASSCF_NPZ}" \
+    ${REF_CSV_ARG} \
     --system_tag "P3_MultiSJB_N6_w0.1_g1.0" \
     --csv_collect_dir "${CSV_COLLECT_DIR}" \
     --plot_training_metrics \
-    --plot_observables_comparison
+    --plot_observables_comparison \
+    --plot_kl_divergence \
+    --figure_format png
 
 # ==============================================================================
 # FASE 4: AGREGACIÓN DE RESULTADOS Y GENERACIÓN DE FIGURAS 2D
