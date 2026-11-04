@@ -402,6 +402,11 @@ run_system_pipeline() {
     # el estado CASSCF antes de correr la evaluación de cruce nodal.
     # --------------------------------------------------------------------------
     log_msg "[${sys_tag} - FASE 2] Entrenamiento TD3 (--train_mode rl_only) + Evaluación de Cruce Nodal..."
+    local sched_flag="--no-use_lr_scheduler"
+    if [[ "$RL_USE_LR_SCHEDULER" == "true" || "$RL_USE_LR_SCHEDULER" == "1" ]]; then
+        sched_flag="--use_lr_scheduler"
+    fi
+
     for tau in "${TD3_TAU_GRID[@]}"; do
         for amp in "${ACTOR_AMP_GRID[@]}"; do
             for pen in "${PENALTY_GRID[@]}"; do
@@ -426,10 +431,10 @@ run_system_pipeline() {
                         --max_phys_jump_factor "$MAX_PHYS_JUMP" \
                         --lr_actor "$RL_LR_ACTOR" \
                         --lr_critic "$RL_LR_CRITIC" \
-                        --use_lr_scheduler "$RL_USE_LR_SCHEDULER" \
+                        "$sched_flag" \
                         --rl_replay_capacity "$RL_REPLAY_CAPACITY" \
                         --rl_batch_size "$RL_BATCH_SIZE" \
-                        --use_actor_in_eval true \
+                        --use_actor_in_eval \
                         --pipeline_stage "phase2_rl_nodal_crossing" \
                         --run_name "$rname" \
                         --results_out_dir "$rdir"
@@ -461,7 +466,7 @@ run_system_pipeline() {
             --lr_ansatz "$LR_ANSATZ" \
             --lr_actor "$RL_LR_ACTOR" \
             --lr_critic "$RL_LR_CRITIC" \
-            --use_lr_scheduler "$RL_USE_LR_SCHEDULER" \
+            "$sched_flag" \
             --tau "0.10" \
             --actor_amplitude "0.15" \
             --sigma_action_scale "1.1" \

@@ -410,34 +410,84 @@ def build_experiment_argparser() -> argparse.ArgumentParser:
 def _sanitize_cli_tokens(tokens: list[str]) -> list[str]:
     """Sanitiza tokens CLI para evitar desajustes posicionales en flags booleanos y alias."""
     bool_flags = {
-        "--casscf_trainable", "--export_legacy_files", "--save_config",
-        "--save_ansatz_weights", "--save_actor_weights", "--save_critic_weights",
-        "--save_training_history", "--save_production_walkers",
-        "--save_production_energies", "--save_production_sampler_stats",
-        "--save_summary_json", "--use_actor_in_eval", "--use_spatial_gating",
-        "--legacy_drift_factor", "--staggered_critic_reset", "--run_evaluation",
-        "--auto_casscf_baseline", "--recompute_local_energy"
+        # Experiment argparser
+        "casscf_trainable",
+        "use_spatial_gating",
+        "legacy_drift_factor",
+        "staggered_critic_reset",
+        "use_lr_scheduler",
+        "run_evaluation",
+        "use_actor_in_eval",
+        "save_config",
+        "save_ansatz_weights",
+        "save_actor_weights",
+        "save_critic_weights",
+        "save_training_history",
+        "save_production_walkers",
+        "save_production_energies",
+        "save_production_sampler_stats",
+        "export_legacy_files",
+        "save_summary_json",
+        # Postprocess argparser
+        "auto_casscf_baseline",
+        "recompute_local_energy",
+        "compute_observables",
+        "compute_diagnostics",
+        "save_summary_csv",
+        "save_observables_csv",
+        "plot_training_metrics",
+        "plot_production_summary",
+        "plot_observables_comparison",
+        "plot_efficiency_bars",
+        "plot_time_to_solution",
+        "plot_walker_trace",
+        "plot_kl_divergence",
     }
     sanitized: list[str] = []
     i = 0
     while i < len(tokens):
-        t = tokens[i]
-        if t in bool_flags and (i + 1) < len(tokens):
-            next_t = str(tokens[i + 1]).strip().lower()
-            if next_t in ("false", "0", "no"):
-                sanitized.append(t.replace("--", "--no-"))
-                i += 2
+        t = str(tokens[i])
+
+        # Manejo de formato --flag=value o --no-flag=value
+        if "=" in t and t.startswith("--"):
+            key, val = t.split("=", 1)
+            val_clean = val.strip().lower()
+            base_name = key[2:]
+            is_negated = base_name.startswith("no-")
+            clean_name = base_name[3:] if is_negated else base_name
+            if clean_name in bool_flags:
+                if val_clean in ("false", "0", "no", "f", "n"):
+                    sanitized.append(f"--no-{clean_name}" if not is_negated else f"--{clean_name}")
+                elif val_clean in ("true", "1", "yes", "t", "y"):
+                    sanitized.append(f"--{clean_name}" if not is_negated else f"--no-{clean_name}")
+                else:
+                    sanitized.append(t)
+                i += 1
                 continue
-            elif next_t in ("true", "1", "yes"):
-                sanitized.append(t)
-                i += 2
-                continue
+
+        # Manejo de formato --flag value o --no-flag value
+        if t.startswith("--"):
+            base_name = t[2:]
+            is_negated = base_name.startswith("no-")
+            clean_name = base_name[3:] if is_negated else base_name
+            if clean_name in bool_flags and (i + 1) < len(tokens):
+                next_t = str(tokens[i + 1]).strip().lower()
+                if next_t in ("false", "0", "no", "f", "n"):
+                    sanitized.append(f"--no-{clean_name}" if not is_negated else f"--{clean_name}")
+                    i += 2
+                    continue
+                elif next_t in ("true", "1", "yes", "t", "y"):
+                    sanitized.append(f"--{clean_name}" if not is_negated else f"--no-{clean_name}")
+                    i += 2
+                    continue
+
         if t in ("--reward_type", "--reward_mode") and (i + 1) < len(tokens):
             if str(tokens[i + 1]).strip().lower() == "displacement":
                 sanitized.append("--reward_type")
                 sanitized.append("log_esjd")
                 i += 2
                 continue
+
         sanitized.append(t)
         i += 1
     return sanitized
@@ -674,6 +724,9 @@ def build_postprocess_argparser() -> argparse.ArgumentParser:
 
 
 def parse_postprocess_args(argv: Optional[list[str]] = None) -> PostProcessConfig:
+    import sys
+    raw_tokens = sys.argv[1:] if argv is None else list(argv)
+    tokens = _sanitize_cli_tokens(raw_tokens)
     parser = build_postprocess_argparser()
-    args = parser.parse_args(argv)
+    args = parser.parse_args(tokens)
     return PostProcessConfig(**vars(args))

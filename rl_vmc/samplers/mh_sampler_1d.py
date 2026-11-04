@@ -52,12 +52,13 @@ class MHSampler1D:
         omega = max(float(self.cfg.system.omega), 1e-3)
         g = max(float(self.cfg.system.interaction_strength), 0.0)
         init_scale = (1.0 / jnp.sqrt(omega)) * ((1.0 + 0.25 * g) ** 0.25)
+        target_dtype = jnp.float64 if jax.config.jax_enable_x64 else jnp.float32
 
         if mode == "spin_ordered_offset":
             base_pos = float(getattr(self.cfg.sampler, "init_offset_base", 5.0))
             step_pos = float(getattr(self.cfg.sampler, "init_offset_step", 1.0))
-            offset = jnp.arange(self.n_elec, dtype=jnp.float32).reshape(1, self.n_elec, 1) * step_pos
-            walkers = jnp.ones((bs, self.n_elec, 1), dtype=jnp.float32) * base_pos + offset
+            offset = jnp.arange(self.n_elec, dtype=target_dtype).reshape(1, self.n_elec, 1) * step_pos
+            walkers = jnp.ones((bs, self.n_elec, 1), dtype=target_dtype) * base_pos + offset
         elif mode == "alternating_spin":
             n_up = int(self.cfg.system.n_up)
             n_dn = int(self.cfg.system.n_dn)
@@ -74,14 +75,15 @@ class MHSampler1D:
             else:
                 base_centers = jnp.linspace(-spread, spread, self.n_elec)[None, :, None]
             jitter_std = 0.35 * init_scale / jnp.sqrt(max(float(self.n_elec), 1.0))
-            walkers = base_centers + jax.random.normal(key, (bs, self.n_elec, 1)) * jitter_std
+            walkers = base_centers.astype(target_dtype) + jax.random.normal(key, (bs, self.n_elec, 1), dtype=target_dtype) * jitter_std
         else:
             # symmetric_gaussian: isotrópico e invariante ante permutaciones de espín (como en Article_plots_11)
             std_val = float(getattr(self.cfg.sampler, "init_std", 3.0))
             if std_val <= 0.0:
                 std_val = float(init_scale)
-            walkers = jax.random.normal(key, (bs, self.n_elec, 1)) * std_val
+            walkers = jax.random.normal(key, (bs, self.n_elec, 1), dtype=target_dtype) * std_val
 
+        walkers = walkers.astype(target_dtype)
         log_psi, grad_log_psi = self.ansatz.value_and_grad(
             params_psi,
             walkers,
@@ -89,9 +91,9 @@ class MHSampler1D:
             max_clip=self.max_clip_grad,
         )
         return SamplerState(
-            walkers=walkers,
-            log_psi=log_psi,
-            grad_log_psi=grad_log_psi,
+            walkers=walkers.astype(target_dtype),
+            log_psi=log_psi.astype(target_dtype),
+            grad_log_psi=grad_log_psi.astype(target_dtype),
         )
 
     @functools.partial(jax.jit, static_argnums=(0, 5))
@@ -108,6 +110,7 @@ class MHSampler1D:
         w_curr = state.walkers
         log_p_curr = state.log_psi
         grad_curr = state.grad_log_psi
+        target_dtype = w_curr.dtype
 
         state_feat = self.proposal.build_state_features(w_curr, grad_curr)
         mu_fwd, sigma_fwd, aux_fwd = self.proposal.distribution(
@@ -120,8 +123,8 @@ class MHSampler1D:
             is_reverse=False,
         )
 
-        noise = jax.random.normal(k_prop, shape=w_curr.shape)
-        w_prop = mu_fwd + sigma_fwd * noise
+        noise = jax.random.normal(k_prop, shape=w_curr.shape, dtype=target_dtype)
+        w_prop = (mu_fwd + sigma_fwd * noise).astype(target_dtype)
 
         log_p_prop, grad_prop = self.ansatz.value_and_grad(
             params_psi,
@@ -161,9 +164,9 @@ class MHSampler1D:
         accepted = log_u < log_alpha
         acc_mask_3d = accepted[:, None, None]
 
-        w_next = jnp.where(acc_mask_3d, w_prop, w_curr)
-        log_p_next = jnp.where(accepted, log_p_prop, log_p_curr)
-        grad_next = jnp.where(acc_mask_3d, grad_prop, grad_curr)
+        w_next = jnp.where(acc_mask_3d, w_prop, w_curr).astype(target_dtype)
+        log_p_next = jnp.where(accepted, log_p_prop, log_p_curr).astype(log_p_curr.dtype)
+        grad_next = jnp.where(acc_mask_3d, grad_prop, grad_curr).astype(grad_curr.dtype)
 
         proposed_disp = jnp.mean(jnp.abs(w_prop - w_curr), axis=(-2, -1))
         accepted_disp = jnp.mean(jnp.abs(w_next - w_curr), axis=(-2, -1))
@@ -230,6 +233,7 @@ class MHSampler1D:
                 last_aux,
             ) = carry
             k_next, k_exp, k_prop, k_acc = jax.random.split(k_curr, 4)
+            target_dtype = st.walkers.dtype
 
             mu_fwd, sigma_fwd, aux_fwd = self.proposal.distribution(
                 params_actor,
@@ -241,10 +245,10 @@ class MHSampler1D:
                 is_reverse=False,
             )
 
-            noise_e = jax.random.normal(k_prop, shape=(st.walkers.shape[0], 1))
+            noise_e = jax.random.normal(k_prop, shape=(st.walkers.shape[0], 1), dtype=target_dtype)
             mu_e = mu_fwd[:, e_idx, :]
             sigma_e = sigma_fwd[:, e_idx, :]
-            w_prop_e = mu_e + sigma_e * noise_e
+            w_prop_e = (mu_e + sigma_e * noise_e).astype(target_dtype)
             w_prop = st.walkers.at[:, e_idx, :].set(w_prop_e)
 
             log_p_prop, grad_prop = self.ansatz.value_and_grad(
@@ -287,9 +291,9 @@ class MHSampler1D:
             accepted = log_u < log_alpha
             acc_mask_3d = accepted[:, None, None]
 
-            w_next = jnp.where(acc_mask_3d, w_prop, st.walkers)
-            log_p_next = jnp.where(accepted, log_p_prop, st.log_psi)
-            grad_next = jnp.where(acc_mask_3d, grad_prop, st.grad_log_psi)
+            w_next = jnp.where(acc_mask_3d, w_prop, st.walkers).astype(target_dtype)
+            log_p_next = jnp.where(accepted, log_p_prop, st.log_psi).astype(st.log_psi.dtype)
+            grad_next = jnp.where(acc_mask_3d, grad_prop, st.grad_log_psi).astype(st.grad_log_psi.dtype)
 
             disp_e = jnp.abs(w_prop_e[:, 0] - w_curr_e[:, 0])
             disp_e_sq = disp_e ** 2
@@ -391,30 +395,33 @@ class MHSampler1D:
         w_curr = state.walkers
         log_p_curr = state.log_psi
         grad_curr = state.grad_log_psi
+        target_dtype = w_curr.dtype
 
         eps = self.cfg.proposal.hmc_step_size
         n_leapfrog = max(1, self.cfg.proposal.hmc_leapfrog_steps)
 
-        p_init = jax.random.normal(k_mom, shape=w_curr.shape)
-        p = p_init + 0.5 * eps * (2.0 * grad_curr)
+        p_init = jax.random.normal(k_mom, shape=w_curr.shape, dtype=target_dtype)
+        p = (p_init + 0.5 * eps * (2.0 * grad_curr)).astype(target_dtype)
         w = w_curr
         log_p = log_p_curr
         grad = grad_curr
 
         def leapfrog_body(i, carry):
             w_c, p_c, lp_c, g_c = carry
-            w_n = w_c + eps * p_c
+            w_n = (w_c + eps * p_c).astype(target_dtype)
             lp_n, g_n = self.ansatz.value_and_grad(
                 params_psi,
                 w_n,
                 min_clip=self.min_clip_grad,
                 max_clip=self.max_clip_grad,
             )
+            lp_n = lp_n.astype(log_p_curr.dtype)
+            g_n = g_n.astype(grad_curr.dtype)
             p_n = jnp.where(
                 i < n_leapfrog - 1,
                 p_c + eps * (2.0 * g_n),
                 p_c + 0.5 * eps * (2.0 * g_n),
-            )
+            ).astype(target_dtype)
             return (w_n, p_n, lp_n, g_n)
 
         w_prop, p_prop, log_p_prop, grad_prop = jax.lax.fori_loop(
@@ -431,9 +438,9 @@ class MHSampler1D:
         accepted = log_u < log_alpha
         acc_mask_3d = accepted[:, None, None]
 
-        w_next = jnp.where(acc_mask_3d, w_prop, w_curr)
-        log_p_next = jnp.where(accepted, log_p_prop, log_p_curr)
-        grad_next = jnp.where(acc_mask_3d, grad_prop, grad_curr)
+        w_next = jnp.where(acc_mask_3d, w_prop, w_curr).astype(target_dtype)
+        log_p_next = jnp.where(accepted, log_p_prop, log_p_curr).astype(log_p_curr.dtype)
+        grad_next = jnp.where(acc_mask_3d, grad_prop, grad_curr).astype(grad_curr.dtype)
 
         proposed_disp = jnp.mean(jnp.abs(w_prop - w_curr), axis=(-2, -1))
         accepted_disp = jnp.mean(jnp.abs(w_next - w_curr), axis=(-2, -1))
