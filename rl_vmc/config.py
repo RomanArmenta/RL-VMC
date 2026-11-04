@@ -67,6 +67,10 @@ class Sampler1DConfig:
     update_mode: Literal["all_electrons", "single_electron"] = "all_electrons"
     sweeps_per_step: int = 1
     n_burn_in: int = 2000
+    init_mode: Literal["symmetric_gaussian", "alternating_spin", "spin_ordered_offset"] = "symmetric_gaussian"
+    init_std: float = 3.0
+    init_offset_base: float = 5.0
+    init_offset_step: float = 1.0
     min_clip_grads_ansatz: float = -500.0
     max_clip_grads_ansatz: float = 500.0
     min_clip_log_ratio: float = -50.0
@@ -134,6 +138,7 @@ class Eval1DConfig:
     run_evaluation: bool = True
     n_eval_chains: int = 1
     eval_burn_in: int = 2000
+    eval_init_mode: Literal["same_as_sampler", "symmetric_gaussian", "alternating_spin", "spin_ordered_offset"] = "same_as_sampler"
     measure_steps: int = 5000
     thin: int = 1
     jit_chunk_size: int = 1000
@@ -154,6 +159,7 @@ class IOConfig:
     save_actor_weights: bool = True
     save_critic_weights: bool = True
     save_training_history: bool = True
+    save_training_csv: bool = True
     save_production_walkers: bool = True
     save_walkers_max_batch: int = 64
     save_production_energies: bool = True
@@ -305,6 +311,10 @@ def build_experiment_argparser() -> argparse.ArgumentParser:
     g_samp.add_argument("--update_mode", type=str, default="all_electrons", choices=["all_electrons", "single_electron"], help="Actualización simultánea de todos los electrones o secuencial uno por uno.")
     g_samp.add_argument("--sweeps_per_step", type=int, default=1, help="Barridos MCMC ejecutados entre cada actualización de gradiente VMC.")
     g_samp.add_argument("--n_ter", "--n_burn_in", dest="n_burn_in", type=int, default=2000, help="Pasos de termalización previos al entrenamiento.")
+    g_samp.add_argument("--init_mode", type=str, default="symmetric_gaussian", choices=["symmetric_gaussian", "alternating_spin", "spin_ordered_offset"], help="Modo de inicialización espacial de los caminantes.")
+    g_samp.add_argument("--init_std", type=float, default=3.0, help="Desviación estándar inicial (Bohr) para init_mode='symmetric_gaussian'.")
+    g_samp.add_argument("--init_offset_base", type=float, default=5.0, help="Posición base inicial (Bohr) para init_mode='spin_ordered_offset'.")
+    g_samp.add_argument("--init_offset_step", type=float, default=1.0, help="Separación entre electrones (Bohr) para init_mode='spin_ordered_offset'.")
     g_samp.add_argument("--min_clip_grads_ansatz", type=float, default=-500.0, help="Cota inferior para recortar el gradiente espacial de log|Psi|.")
     g_samp.add_argument("--max_clip_grads_ansatz", type=float, default=500.0, help="Cota superior para recortar el gradiente espacial de log|Psi|.")
     g_samp.add_argument("--min_clip_log_ratio", type=float, default=-50.0, help="Cota inferior del log-ratio de aceptación de Metropolis.")
@@ -363,6 +373,7 @@ def build_experiment_argparser() -> argparse.ArgumentParser:
     g_evl.add_argument("--run_evaluation", action=argparse.BooleanOptionalAction, default=True, help="Ejecuta la cadena de producción al finalizar el entrenamiento.")
     g_evl.add_argument("--n_eval_chains", type=int, default=1, help="Número de cadenas independientes de evaluación a correr.")
     g_evl.add_argument("--eval_burn_in", type=int, default=2000, help="Pasos de termalización (burn-in) descartados en cada cadena de evaluación.")
+    g_evl.add_argument("--eval_init_mode", type=str, default="same_as_sampler", choices=["same_as_sampler", "symmetric_gaussian", "alternating_spin", "spin_ordered_offset"], help="Modo de inicialización de caminantes al comenzar cada cadena de evaluación.")
     g_evl.add_argument("--measure_steps", type=int, default=5000, help="Pasos de producción recolectados en cada cadena de evaluación.")
     g_evl.add_argument("--thin", type=int, default=1, help="Factor de submuestreo (thinning) dentro de la GPU durante la evaluación.")
     g_evl.add_argument("--jit_chunk_size", type=int, default=1000, help="Tamaño de bloque lax.scan compilado para no saturar la memoria de GPU.")
@@ -523,6 +534,10 @@ def parse_experiment_args(argv: Optional[list[str]] = None) -> Experiment1DConfi
             update_mode=args.update_mode,
             sweeps_per_step=args.sweeps_per_step,
             n_burn_in=args.n_burn_in,
+            init_mode=args.init_mode,
+            init_std=args.init_std,
+            init_offset_base=args.init_offset_base,
+            init_offset_step=args.init_offset_step,
             min_clip_grads_ansatz=args.min_clip_grads_ansatz,
             max_clip_grads_ansatz=args.max_clip_grads_ansatz,
             min_clip_log_ratio=args.min_clip_log_ratio,
@@ -580,6 +595,7 @@ def parse_experiment_args(argv: Optional[list[str]] = None) -> Experiment1DConfi
             run_evaluation=args.run_evaluation,
             n_eval_chains=args.n_eval_chains,
             eval_burn_in=args.eval_burn_in,
+            eval_init_mode=args.eval_init_mode,
             measure_steps=args.measure_steps,
             thin=args.thin,
             jit_chunk_size=args.jit_chunk_size,

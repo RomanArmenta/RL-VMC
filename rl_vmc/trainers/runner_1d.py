@@ -313,6 +313,9 @@ def run_experiment_1d(cfg: Experiment1DConfig) -> str:
                         "ESJD": float(jnp.mean(stats.esjd)),
                         "Proposed_Disp": float(jnp.mean(stats.proposed_disp)),
                         "RL_Reward": 0.0,
+                        "RL_Exploit": 0.0,
+                        "RL_Entropy": 0.0,
+                        "RL_Explore": 0.0,
                         "Actor_Loss": 0.0,
                         "Critic_Loss": 0.0,
                     }
@@ -348,12 +351,15 @@ def run_experiment_1d(cfg: Experiment1DConfig) -> str:
                     use_actor=True,
                     exploration_std=exp_std,
                 )
-                rewards, _ = compute_rl_reward(rl_info, cfg)
+                rewards, r_comp = compute_rl_reward(rl_info, cfg)
                 learner.push_transitions(rl_info, rewards)
                 upd = learner.update_step(k_u)
                 params_actor = learner.get_actor_params()
                 params_critic1, params_critic2 = learner.get_critic_params()
                 r_mean = float(jnp.mean(rewards))
+                r_exploit_val = float(jnp.mean(r_comp["r_exploit"]))
+                r_entropy_val = float(jnp.mean(r_comp["r_entropy"]))
+                r_explore_val = float(jnp.mean(r_comp["r_explore"]))
                 acc_val = float(jnp.mean(stats.acceptance))
                 esjd_val = float(jnp.mean(stats.esjd))
                 pdisp_val = float(jnp.mean(stats.proposed_disp))
@@ -364,6 +370,9 @@ def run_experiment_1d(cfg: Experiment1DConfig) -> str:
                 state, upd = learner.update_on_policy(k_u, state, params_psi)
                 params_actor = learner.get_actor_params()
                 r_mean = upd["reward"]
+                r_exploit_val = 0.0
+                r_entropy_val = 0.0
+                r_explore_val = 0.0
                 acc_val = upd["acceptance"]
                 esjd_val = upd["esjd"]
                 pdisp_val = 0.0
@@ -387,6 +396,9 @@ def run_experiment_1d(cfg: Experiment1DConfig) -> str:
                         "ESJD": esjd_val,
                         "Proposed_Disp": pdisp_val,
                         "RL_Reward": r_mean,
+                        "RL_Exploit": r_exploit_val,
+                        "RL_Entropy": r_entropy_val,
+                        "RL_Explore": r_explore_val,
                         "Actor_Loss": a_loss,
                         "Critic_Loss": c_loss,
                     }
@@ -474,10 +486,15 @@ def run_experiment_1d(cfg: Experiment1DConfig) -> str:
         }
         total_wall_time = 0.0
 
+        eval_init_mode = (
+            cfg.sampler.init_mode
+            if getattr(cfg.eval, "eval_init_mode", "same_as_sampler") == "same_as_sampler"
+            else cfg.eval.eval_init_mode
+        )
         for c_idx in range(cfg.eval.n_eval_chains):
             c_key = jax.random.PRNGKey(cfg.train.seed + 10000 + c_idx * 97)
             k_init, k_burn, k_prod = jax.random.split(c_key, 3)
-            c_state = sampler.init_state(k_init, best_params_psi)
+            c_state = sampler.init_state(k_init, best_params_psi, init_mode=eval_init_mode)
             if cfg.eval.eval_burn_in > 0:
                 _, c_state = sampler.run_burn_in(
                     k_burn,
@@ -683,7 +700,7 @@ def run_experiment_1d(cfg: Experiment1DConfig) -> str:
                     "final_actor_loss": float(df_train_hist["Actor_Loss"].iloc[-1]) if "Actor_Loss" in df_train_hist else float("nan"),
                     "final_critic_loss": float(df_train_hist["Critic_Loss"].iloc[-1]) if "Critic_Loss" in df_train_hist else float("nan"),
                 }
-                if cfg.io.save_training_csv:
+                if getattr(cfg.io, "save_training_csv", True) or getattr(cfg.io, "save_training_history", True):
                     train_csv_sys = saved_path.parent / f"training_history_{safe_run_tag}.csv"
                     df_train_hist.to_csv(train_csv_sys, index=False)
                     if getattr(cfg.io, "csv_collect_dir", ""):

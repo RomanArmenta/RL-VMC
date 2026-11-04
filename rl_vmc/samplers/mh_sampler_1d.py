@@ -45,27 +45,43 @@ class MHSampler1D:
         key: jax.Array,
         params_psi: dict,
         batch_size: Optional[int] = None,
+        init_mode: Optional[str] = None,
     ) -> SamplerState:
         bs = batch_size if batch_size is not None else self.cfg.sampler.batch_size
+        mode = init_mode if init_mode is not None else getattr(self.cfg.sampler, "init_mode", "symmetric_gaussian")
         omega = max(float(self.cfg.system.omega), 1e-3)
         g = max(float(self.cfg.system.interaction_strength), 0.0)
         init_scale = (1.0 / jnp.sqrt(omega)) * ((1.0 + 0.25 * g) ** 0.25)
-        n_up = int(self.cfg.system.n_up)
-        n_dn = int(self.cfg.system.n_dn)
-        spread = init_scale * jnp.sqrt(max(float(self.n_elec), 2.0) / 2.5)
-        if n_up > 0 and n_dn > 0 and self.n_elec >= 2:
-            centers_all = jnp.linspace(-spread, spread, self.n_elec)
-            up_centers = centers_all[0::2][:n_up]
-            dn_centers = centers_all[1::2][:n_dn]
-            if up_centers.shape[0] < n_up:
-                up_centers = jnp.linspace(-spread, spread, n_up)
-            if dn_centers.shape[0] < n_dn:
-                dn_centers = jnp.linspace(-spread, spread, n_dn)
-            base_centers = jnp.concatenate([up_centers, dn_centers], axis=0)[None, :, None]
+
+        if mode == "spin_ordered_offset":
+            base_pos = float(getattr(self.cfg.sampler, "init_offset_base", 5.0))
+            step_pos = float(getattr(self.cfg.sampler, "init_offset_step", 1.0))
+            offset = jnp.arange(self.n_elec, dtype=jnp.float32).reshape(1, self.n_elec, 1) * step_pos
+            walkers = jnp.ones((bs, self.n_elec, 1), dtype=jnp.float32) * base_pos + offset
+        elif mode == "alternating_spin":
+            n_up = int(self.cfg.system.n_up)
+            n_dn = int(self.cfg.system.n_dn)
+            spread = init_scale * jnp.sqrt(max(float(self.n_elec), 2.0) / 2.5)
+            if n_up > 0 and n_dn > 0 and self.n_elec >= 2:
+                centers_all = jnp.linspace(-spread, spread, self.n_elec)
+                up_centers = centers_all[0::2][:n_up]
+                dn_centers = centers_all[1::2][:n_dn]
+                if up_centers.shape[0] < n_up:
+                    up_centers = jnp.linspace(-spread, spread, n_up)
+                if dn_centers.shape[0] < n_dn:
+                    dn_centers = jnp.linspace(-spread, spread, n_dn)
+                base_centers = jnp.concatenate([up_centers, dn_centers], axis=0)[None, :, None]
+            else:
+                base_centers = jnp.linspace(-spread, spread, self.n_elec)[None, :, None]
+            jitter_std = 0.35 * init_scale / jnp.sqrt(max(float(self.n_elec), 1.0))
+            walkers = base_centers + jax.random.normal(key, (bs, self.n_elec, 1)) * jitter_std
         else:
-            base_centers = jnp.linspace(-spread, spread, self.n_elec)[None, :, None]
-        jitter_std = 0.35 * init_scale / jnp.sqrt(max(float(self.n_elec), 1.0))
-        walkers = base_centers + jax.random.normal(key, (bs, self.n_elec, 1)) * jitter_std
+            # symmetric_gaussian: isotrópico e invariante ante permutaciones de espín (como en Article_plots_11)
+            std_val = float(getattr(self.cfg.sampler, "init_std", 3.0))
+            if std_val <= 0.0:
+                std_val = float(init_scale)
+            walkers = jax.random.normal(key, (bs, self.n_elec, 1)) * std_val
+
         log_psi, grad_log_psi = self.ansatz.value_and_grad(
             params_psi,
             walkers,

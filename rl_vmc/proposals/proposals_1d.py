@@ -225,11 +225,13 @@ def gaussian_log_prob(
     axis: tuple[int, ...] = (-2, -1),
 ) -> jax.Array:
     """
-    Calcula la log-densidad de transición Gaussiana diagonal exacta log q(x_to | x_from),
-    incluyendo el término -log(sigma) indispensable cuando sigma depende del estado.
+    Calcula la log-densidad de transición Gaussiana diagonal log q(x_to | x_from)
+    omitiendo la constante aditiva -0.5*log(2*pi) (que se cancela exactamente en el
+    cociente de Metropolis-Hastings log_q_rev - log_q_fwd) para preservar la calibración
+    exacta del término de exploración CDLB (-alpha * log_q_fwd) de `src/td3_modules.py`.
     """
-    var = sigma ** 2 + 1e-12
-    log_p = -0.5 * ((x_to - mu) ** 2) / var - 0.5 * jnp.log(2.0 * jnp.pi * var)
+    sigma_safe = jnp.maximum(sigma, 1e-6)
+    log_p = -jnp.log(sigma_safe) - 0.5 * ((x_to - mu) / sigma_safe) ** 2
     return jnp.sum(log_p, axis=axis)
 
 
