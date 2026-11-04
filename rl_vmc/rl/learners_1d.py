@@ -5,6 +5,7 @@ import numpy as np
 import jax
 import jax.numpy as jnp
 import optax
+from rl_vmc.core.optimizers import build_lr_schedule
 
 from rl_vmc.config import Experiment1DConfig
 from rl_vmc.ansatze.ansatz_1d import BaseAnsatz1D
@@ -124,8 +125,29 @@ class TD3Learner1D:
             lambda x: x.copy(), self.critic2_params
         )
 
-        self.opt_a = optax.adam(cfg.rl.lr_actor)
-        self.opt_c = optax.adam(cfg.rl.lr_critic)
+        total_rl_steps = (
+            cfg.train.train_steps
+            if cfg.train.mode == "rl_only"
+            else (cfg.train.coupled_training_cycles * cfg.train.rl_sweeps_per_cycle)
+        )
+        actor_lr = build_lr_schedule(
+            base_lr=cfg.rl.lr_actor,
+            total_steps=total_rl_steps,
+            use_scheduler=cfg.rl.use_lr_scheduler,
+            scheduler_type=cfg.rl.lr_scheduler_type,
+            warmup_steps=cfg.rl.lr_warmup_steps,
+            min_ratio=cfg.rl.lr_min_ratio,
+        )
+        critic_lr = build_lr_schedule(
+            base_lr=cfg.rl.lr_critic,
+            total_steps=total_rl_steps,
+            use_scheduler=cfg.rl.use_lr_scheduler,
+            scheduler_type=cfg.rl.lr_scheduler_type,
+            warmup_steps=cfg.rl.lr_warmup_steps,
+            min_ratio=cfg.rl.lr_min_ratio,
+        )
+        self.opt_a = optax.adam(actor_lr)
+        self.opt_c = optax.adam(critic_lr)
 
         self.opt_act_state = self.opt_a.init(self.actor_params)
         self.opt_c1_state = self.opt_c.init(self.critic1_params)
@@ -364,7 +386,20 @@ class REINFORCELearner1D:
         dummy_w = jnp.zeros((1, self.n_elec, 1))
         dummy_g = jnp.zeros((1, self.n_elec, 1))
         self.actor_params = proposal.init_params(key, dummy_w, dummy_g)
-        self.actor_opt = optax.adam(cfg.rl.lr_actor)
+        total_rl_steps = (
+            cfg.train.train_steps
+            if cfg.train.mode == "rl_only"
+            else (cfg.train.coupled_training_cycles * cfg.train.rl_sweeps_per_cycle)
+        )
+        actor_lr = build_lr_schedule(
+            base_lr=cfg.rl.lr_actor,
+            total_steps=total_rl_steps,
+            use_scheduler=cfg.rl.use_lr_scheduler,
+            scheduler_type=cfg.rl.lr_scheduler_type,
+            warmup_steps=cfg.rl.lr_warmup_steps,
+            min_ratio=cfg.rl.lr_min_ratio,
+        )
+        self.actor_opt = optax.adam(actor_lr)
         self.actor_opt_state = self.actor_opt.init(self.actor_params)
 
     def get_actor_params(self) -> dict:

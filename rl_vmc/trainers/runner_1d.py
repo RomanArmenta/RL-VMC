@@ -7,6 +7,7 @@ import numpy as np
 import jax
 import jax.numpy as jnp
 import optax
+from rl_vmc.core.optimizers import build_lr_schedule
 
 from rl_vmc.config import Experiment1DConfig
 from rl_vmc.core.types import SamplerState
@@ -193,10 +194,23 @@ def run_experiment_1d(cfg: Experiment1DConfig) -> str:
             use_actor=(proposal.is_neural and loaded_actor),
         )
 
-    # Optimizador del Ansatz para VMC
+    # Optimizador del Ansatz para VMC con soporte para Learning Rate Scheduler
+    total_vmc_steps = (
+        cfg.train.train_steps
+        if cfg.train.mode == "vmc_only"
+        else (cfg.train.coupled_training_cycles * cfg.train.vmc_iterations_per_cycle)
+    )
+    ansatz_lr = build_lr_schedule(
+        base_lr=cfg.train.lr_ansatz,
+        total_steps=total_vmc_steps,
+        use_scheduler=cfg.train.use_lr_scheduler,
+        scheduler_type=cfg.train.lr_scheduler_type,
+        warmup_steps=cfg.train.lr_warmup_steps,
+        min_ratio=cfg.train.lr_min_ratio,
+    )
     vmc_opt = optax.chain(
         optax.clip_by_global_norm(cfg.train.grad_clip_norm),
-        optax.adam(cfg.train.lr_ansatz),
+        optax.adam(ansatz_lr),
     )
     vmc_opt_state = vmc_opt.init(params_psi)
 

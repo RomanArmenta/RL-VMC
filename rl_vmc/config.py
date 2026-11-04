@@ -99,6 +99,10 @@ class RL1DConfig:
     reward_epsilon: float = 1e-3
     max_phys_jump_factor: float = 5.0
     staggered_critic_reset: bool = False
+    use_lr_scheduler: bool = True
+    lr_scheduler_type: Literal["cosine", "exponential", "linear", "constant"] = "cosine"
+    lr_warmup_steps: int = 100
+    lr_min_ratio: float = 0.05
 
 
 @dataclass
@@ -107,6 +111,10 @@ class Train1DConfig:
     mode: Literal["vmc_only", "rl_only", "coupled", "eval_only"] = "vmc_only"
     seed: int = 42
     lr_ansatz: float = 5e-4
+    use_lr_scheduler: bool = True
+    lr_scheduler_type: Literal["cosine", "exponential", "linear", "constant"] = "cosine"
+    lr_warmup_steps: int = 100
+    lr_min_ratio: float = 0.05
     grad_clip_norm: float = 1.0
     train_steps: int = 5000
     coupled_training_cycles: int = 8
@@ -333,6 +341,10 @@ def build_experiment_argparser() -> argparse.ArgumentParser:
     g_trn.add_argument("--train_mode", type=str, default="vmc_only", choices=["vmc_only", "rl_only", "coupled", "eval_only"], help="Modo de entrenamiento a ejecutar.")
     g_trn.add_argument("--seed", type=int, default=42, help="Semilla pseudoaleatoria global.")
     g_trn.add_argument("--lr_ansatz", type=float, default=5e-4, help="Tasa de aprendizaje (Adam) para los parámetros del Ansatz.")
+    g_trn.add_argument("--use_lr_scheduler", action=argparse.BooleanOptionalAction, default=True, help="Habilita o deshabilita el learning rate scheduler para todos los modelos entrenables (Ansatz VMC, Actor RL y Críticos).")
+    g_trn.add_argument("--lr_scheduler_type", type=str, default="cosine", choices=["cosine", "exponential", "linear", "constant"], help="Tipo de decaimiento del scheduler de learning rate.")
+    g_trn.add_argument("--lr_warmup_steps", type=int, default=100, help="Pasos de calentamiento (warmup) del learning rate scheduler.")
+    g_trn.add_argument("--lr_min_ratio", type=float, default=0.05, help="Cociente mínimo entre el learning rate final y el inicial (default: 0.05).")
     g_trn.add_argument("--grad_clip_norm", type=float, default=1.0, help="Norma global máxima para recorte de gradientes del Ansatz.")
     g_trn.add_argument("--train_steps", type=int, default=5000, help="Pasos totales de optimización si train_mode='vmc_only'.")
     g_trn.add_argument("--rl_steps", "--vmc_steps", "--coupled_steps", dest="train_steps", type=int, help="Alias de --train_steps.")
@@ -539,11 +551,19 @@ def parse_experiment_args(argv: Optional[list[str]] = None) -> Experiment1DConfi
             kappa=args.kappa,
             max_phys_jump_factor=args.max_phys_jump_factor,
             staggered_critic_reset=args.staggered_critic_reset,
+            use_lr_scheduler=args.use_lr_scheduler,
+            lr_scheduler_type=args.lr_scheduler_type,
+            lr_warmup_steps=args.lr_warmup_steps,
+            lr_min_ratio=args.lr_min_ratio,
         ),
         train=Train1DConfig(
             mode=train_mode,
             seed=args.seed,
             lr_ansatz=args.lr_ansatz,
+            use_lr_scheduler=args.use_lr_scheduler,
+            lr_scheduler_type=args.lr_scheduler_type,
+            lr_warmup_steps=args.lr_warmup_steps,
+            lr_min_ratio=args.lr_min_ratio,
             grad_clip_norm=args.grad_clip_norm,
             train_steps=args.train_steps,
             coupled_training_cycles=args.coupled_training_cycles,
