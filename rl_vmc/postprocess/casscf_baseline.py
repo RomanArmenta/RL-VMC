@@ -10,16 +10,23 @@ from scipy.special import eval_hermite, factorial
 
 def ho_basis_1d(x: np.ndarray, n_basis: int, omega: float) -> np.ndarray:
     """
-    Evalúa las funciones base normalizadas del oscilador armónico 1D:
-    phi_n(x) = (omega / pi)^(1/4) * (2^n n!)^(-1/2) * H_n(sqrt(omega) x) * exp(-omega x^2 / 2)
+    Evalúa las funciones base normalizadas del oscilador armónico 1D mediante
+    la relación de recurrencia normalizada de 3 términos incondicionalmente estable:
+    psi_n(z) = sqrt(2/n) * z * psi_{n-1}(z) - sqrt((n-1)/n) * psi_{n-2}(z)
+    Inmune a desbordamientos numéricos (overflow) para n_basis >= 256.
     Retorna arreglo de forma (len(x), n_basis).
     """
     x_arr = np.asarray(x, dtype=np.float64)
     z = np.sqrt(omega) * x_arr
     pref = (omega / np.pi) ** 0.25 * np.exp(-0.5 * z * z)
     out = np.empty((x_arr.size, n_basis), dtype=np.float64)
-    for n in range(n_basis):
-        out[:, n] = pref * eval_hermite(n, z) / np.sqrt((2.0 ** n) * factorial(n))
+    
+    if n_basis > 0:
+        out[:, 0] = pref
+    if n_basis > 1:
+        out[:, 1] = np.sqrt(2.0) * z * out[:, 0]
+    for n in range(2, n_basis):
+        out[:, n] = np.sqrt(2.0 / n) * z * out[:, n - 1] - np.sqrt((n - 1.0) / n) * out[:, n - 2]
     return out
 
 

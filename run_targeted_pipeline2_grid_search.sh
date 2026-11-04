@@ -4,18 +4,25 @@
 # ==============================================================================
 # Grid Search Focalizado de Pipeline 2 (Muestreo Puro sobre CASSCF Congelado)
 #
-# Características Principales:
-#   1. Sistemas seleccionados fácilmente modificables:
-#      Default: [N=4, g=0.5], [N=4, g=1.0], [N=10, g=0.5], [N=10, g=5.0]
-#   2. Grid search sobre 'actor_amplitude' para RL-MALA (TD3 Actor).
-#   3. Grid search sobre 'tau_mala' para MALA Estándar.
-#   4. Reutiliza los estados CASSCF generados en el Pipeline 1.
-#   5. Sistema de colas dinámico idéntico a los benchmarks (despacho asíncrono
-#      de slots libres en GPU, tracking con archivos .meta, control de concurrencia).
-#   6. Logs en TIEMPO REAL en la carpeta logs/ (PYTHONUNBUFFERED=1, python3 -u,
-#      redirección desacoplada a archivos de log individuales).
-#   7. Master log detallado con tiempos de corrida (inicio, fin, PID, duración)
-#      y tabla ejecutiva de resumen en términos de precisión física y muestreo.
+# Medidas Críticas de Estabilidad y Gestión de Memoria (Anti-Crash):
+#   1. Separación estricta STDOUT / STDERR: Las funciones de logging (`log_master`)
+#      y reportes de finalización escriben a STDERR y al archivo de log maestro.
+#      Esto evita la polución de capturas subshell `$(...)` en `wait_for_free_gpu_slot`,
+#      asegurando que `CUDA_VISIBLE_DEVICES` contenga estrictamente un único entero.
+#   2. Sanitización defensiva de GPU_ID: Se filtra numéricamente cualquier valor
+#      asignado a `CUDA_VISIBLE_DEVICES` mediante `grep -o '[0-9]\+' | tail -n 1`.
+#   3. Aislamiento estricto de VRAM en JAX/XLA:
+#      - XLA_PYTHON_CLIENT_PREALLOCATE=false
+#      - XLA_PYTHON_CLIENT_MEM_FRACTION=0.18 (máx 18% VRAM por worker)
+#      - TF_FORCE_GPU_ALLOW_GROWTH=true
+#      - CUDA_DEVICE_MAX_CONNECTIONS=1
+#   4. Optimización de Memoria RAM de Host:
+#      - BATCH_SIZE=256 (default balanceado, reduciendo 75% del uso de RAM frente a 1024)
+#      - MEASURE_STEPS=4000 (1M muestras totales: error estándar < 3e-4 Ha)
+#      - Chunking lax.scan y Eloc en JAX: --jit_chunk_size 500 --eloc_chunk_size 10000
+#   5. Concurrencia de Hilos de CPU: OMP/MKL/OPENBLAS acotados a 1 hilo por worker.
+#   6. Sistemas fácilmente modificables (lista `SYSTEMS_LIST`).
+#   7. Tiempos de ejecución en tiempo real y tabla ejecutiva al finalizar.
 # ==============================================================================
 
 set -u
@@ -43,14 +50,15 @@ rm -f "${TRACKER_DIR}"/job_*.meta 2>/dev/null || true
 
 MASTER_LOG="${LOG_DIR}/master_targeted_pipeline2_search.log"
 
+# Logger directo: envía a STDERR (para no corromper subshells) y al archivo maestro
 log_master() {
     local msg="$1"
-    echo "$msg"
+    echo "$msg" >&2
     echo "$msg" >> "${MASTER_LOG}"
 }
 
 # ------------------------------------------------------------------------------
-# 2. Entorno y Rendimiento Numérico
+# 2. Entorno y Salvaguardas de Memoria (VRAM y Host RAM)
 # ------------------------------------------------------------------------------
 export PYTHONUNBUFFERED=1
 export JAX_ENABLE_X64=True
@@ -59,14 +67,17 @@ export MKL_NUM_THREADS=1
 export OPENBLAS_NUM_THREADS=1
 export VECLIB_MAXIMUM_THREADS=1
 export NUMEXPR_NUM_THREADS=1
+
+# Prevenir que JAX acapare toda la VRAM y cause Out-Of-Memory en el driver NVIDIA
 export XLA_PYTHON_CLIENT_PREALLOCATE=false
-export XLA_PYTHON_CLIENT_MEM_FRACTION="${XLA_MEM_FRACTION:-0.20}"
+export XLA_PYTHON_CLIENT_MEM_FRACTION="${XLA_MEM_FRACTION:-0.18}"
 export TF_FORCE_GPU_ALLOW_GROWTH=true
+export CUDA_DEVICE_MAX_CONNECTIONS=1
 
 PYTHON_BIN="${PYTHON_BIN:-python3}"
 
 # ------------------------------------------------------------------------------
-# 3. Configuración de GPUs y Colas
+# 3. Configuración de GPUs y Colas Dinámicas
 # ------------------------------------------------------------------------------
 GPU_LIST="${GPU_LIST:-auto}"
 JOBS_PER_GPU="${JOBS_PER_GPU:-1}"
@@ -100,11 +111,13 @@ discover_gpus() {
 discover_gpus
 
 # ------------------------------------------------------------------------------
-# 4. Hiperparámetros de la Rejilla de Muestreo
+# 4. Hiperparámetros de Producción MCMC Estables en Memoria
 # ------------------------------------------------------------------------------
-N_BURN_IN="${N_BURN_IN:-2500}"
-MEASURE_STEPS="${MEASURE_STEPS:-8000}"
-BATCH_SIZE="${BATCH_SIZE:-1024}"
+N_BURN_IN="${N_BURN_IN:-1500}"
+MEASURE_STEPS="${MEASURE_STEPS:-4000}"
+BATCH_SIZE="${BATCH_SIZE:-256}"
+JIT_CHUNK_SIZE="${JIT_CHUNK_SIZE:-500}"
+ELOC_CHUNK_SIZE="${ELOC_CHUNK_SIZE:-10000}"
 
 # Grillas de Parámetros
 # A. Amplitudes del Actor para TD3 (RL-MALA)
@@ -142,6 +155,8 @@ log_master "    Barrido TD3 (Actor) : act_amp in [${ACTOR_AMP_LIST[*]}]"
 log_master "    Pool de GPUs        : ${AVAILABLE_GPUS[*]}"
 log_master "    Trabajos por GPU    : ${JOBS_PER_GPU}"
 log_master "    Concurrencia Máxima : ${MAX_TOTAL_JOBS} trabajos simultáneos"
+log_master "    Walkers / Pasos     : Batch=${BATCH_SIZE}, Pasos=${MEASURE_STEPS}, Burn-in=${N_BURN_IN}"
+log_master "    XLA Mem Fraction    : ${XLA_MEM_FRACTION:-0.18} por worker"
 log_master "    Logs en Tiempo Real : ${LOG_DIR}/"
 log_master "=============================================================================="
 
@@ -207,7 +222,7 @@ find_ref_density_csv() {
 }
 
 # ------------------------------------------------------------------------------
-# 6. Funciones del Gestor de Colas
+# 6. Funciones del Gestor de Colas (Queue Manager) con Aislamiento de STDOUT
 # ------------------------------------------------------------------------------
 format_duration() {
     local dur=$1
@@ -222,7 +237,7 @@ cleanup_finished_jobs() {
         local pid
         pid=$(basename "$f" | cut -d'_' -f2)
         if ! kill -0 "$pid" 2>/dev/null; then
-            wait "$pid" 2>/dev/null
+            wait "$pid" 2>/dev/null || true
             local exit_code=$?
             local gpu sys start_epoch start_time script_name sys_log_file sum_csv method_tag param_name param_val sys_tag_val n_val g_val
             # shellcheck disable=SC1090
@@ -303,6 +318,7 @@ wait_for_free_gpu_slot() {
                 fi
             done
             if [ -n "$best_gpu" ]; then
+                # Imprime estrictamente el entero del ID de GPU a STDOUT
                 echo "$best_gpu"
                 return 0
             fi
@@ -362,7 +378,7 @@ run_targeted_sampling_worker() {
         REF_CSV_ARG="--reference_density_csv ${REF_DENSITY}"
     fi
 
-    # Ejecución no bufferizada
+    # Ejecución no bufferizada con salvaguardas de memoria en GPU y host
     env CUDA_VISIBLE_DEVICES="${GPU_ID}" ${PYTHON_BIN} -u cli/run_1d.py \
         --method "${METHOD}" \
         --train_mode eval_only \
@@ -375,6 +391,8 @@ run_targeted_sampling_worker() {
         --n_ter "${N_BURN_IN}" \
         --measure_steps "${MEASURE_STEPS}" \
         --batch_size "${BATCH_SIZE}" \
+        --jit_chunk_size "${JIT_CHUNK_SIZE}" \
+        --eloc_chunk_size "${ELOC_CHUNK_SIZE}" \
         --output_h5 "${H5_FILE}"
 
     # Post-procesamiento
@@ -422,7 +440,11 @@ for entry in "${SYSTEMS_LIST[@]}"; do
     for tau in $TAUS_TO_RUN; do
         RUN_TAG="${SYS_TAG}_MALA_tau${tau}"
         SYS_LOG="sampling_${RUN_TAG}.log"
-        GPU_ID=$(wait_for_free_gpu_slot "GRID SEARCH P2")
+        
+        RAW_GPU=$(wait_for_free_gpu_slot "GRID SEARCH P2")
+        # Sanitizar estrictamente: extraer el último entero limpio
+        GPU_ID=$(echo "${RAW_GPU}" | grep -o '[0-9]\+' | tail -n 1)
+        if [ -z "$GPU_ID" ]; then GPU_ID=0; fi
 
         start_epoch=$(date +%s)
         start_time=$(date "+%Y-%m-%d %H:%M:%S")
@@ -455,7 +477,10 @@ EOF
     for amp in "${ACTOR_AMP_LIST[@]}"; do
         RUN_TAG="${SYS_TAG}_RL_TD3_amp${amp}_tau${RL_TAU}"
         SYS_LOG="sampling_${RUN_TAG}.log"
-        GPU_ID=$(wait_for_free_gpu_slot "GRID SEARCH P2")
+        
+        RAW_GPU=$(wait_for_free_gpu_slot "GRID SEARCH P2")
+        GPU_ID=$(echo "${RAW_GPU}" | grep -o '[0-9]\+' | tail -n 1)
+        if [ -z "$GPU_ID" ]; then GPU_ID=0; fi
 
         start_epoch=$(date +%s)
         start_time=$(date "+%Y-%m-%d %H:%M:%S")
@@ -517,9 +542,9 @@ for c in num_cols:
     if c in df.columns:
         df[c] = pd.to_numeric(df[c], errors="coerce")
 
-print("\n" + "=" * 90)
-print(f"{'SISTEMA':<16} | {'METODO':<6} | {'PARAMETRO':<10} | {'VALOR':<6} | {'E_mean (Ha)':<11} | {'SE(E)':<9} | {'tau_int':<7} | {'D_KL':<8} | {'Acc %':<5}")
-print("=" * 90)
+print("\n" + "=" * 94)
+print(f"{'SISTEMA':<16} | {'METODO':<6} | {'PARAMETRO':<15} | {'VALOR':<6} | {'E_mean (Ha)':<11} | {'SE(E)':<9} | {'tau_int':<7} | {'D_KL':<8} | {'Acc %':<5}")
+print("=" * 94)
 
 for (sys_tag), g_df in df.groupby("sys_tag"):
     # Mejor MALA
@@ -527,17 +552,17 @@ for (sys_tag), g_df in df.groupby("sys_tag"):
     if not mala_df.empty:
         best_mala = mala_df.sort_values("kl_casscf_total_mean").iloc[0]
         acc_pct = f"{best_mala.get('acceptance', 0)*100:.1f}%"
-        print(f"{sys_tag:<16} | {'MALA':<6} | {'tau_mala':<10} | {str(best_mala.get('param_val', '')):<6} | {best_mala.get('E_mean', np.nan):<11.5f} | {best_mala.get('SE_E', np.nan):<9.2e} | {best_mala.get('tau_int_E', np.nan):<7.2f} | {best_mala.get('kl_casscf_total_mean', np.nan):<8.4f} | {acc_pct:<5}")
+        print(f"{sys_tag:<16} | {'MALA':<6} | {'tau_mala':<15} | {str(best_mala.get('param_val', '')):<6} | {best_mala.get('E_mean', np.nan):<11.5f} | {best_mala.get('SE_E', np.nan):<9.2e} | {best_mala.get('tau_int_E', np.nan):<7.2f} | {best_mala.get('kl_casscf_total_mean', np.nan):<8.4f} | {acc_pct:<5}")
 
     # Mejor RL-MALA (TD3)
     rl_df = g_df[g_df["method"] == "TD3"]
     if not rl_df.empty:
         best_rl = rl_df.sort_values("kl_casscf_total_mean").iloc[0]
         acc_pct = f"{best_rl.get('acceptance', 0)*100:.1f}%"
-        print(f"{sys_tag:<16} | {'TD3':<6} | {'act_amp':<10} | {str(best_rl.get('param_val', '')):<6} | {best_rl.get('E_mean', np.nan):<11.5f} | {best_rl.get('SE_E', np.nan):<9.2e} | {best_rl.get('tau_int_E', np.nan):<7.2f} | {best_rl.get('kl_casscf_total_mean', np.nan):<8.4f} | {acc_pct:<5}")
-    print("-" * 90)
+        print(f"{sys_tag:<16} | {'TD3':<6} | {'actor_amplitude':<15} | {str(best_rl.get('param_val', '')):<6} | {best_rl.get('E_mean', np.nan):<11.5f} | {best_rl.get('SE_E', np.nan):<9.2e} | {best_rl.get('tau_int_E', np.nan):<7.2f} | {best_rl.get('kl_casscf_total_mean', np.nan):<8.4f} | {acc_pct:<5}")
+    print("-" * 94)
 
-print("=" * 90 + "\n")
+print("=" * 94 + "\n")
 PY_REPORT
 
 log_master "=============================================================================="

@@ -33,16 +33,14 @@ from wigner_post.models import GridConfig
 # =====================================================================
 def build_ho_basis_jax(r, n_basis, omega):
     z = jnp.sqrt(omega) * r
-    H = [jnp.ones_like(z), 2.0 * z]
-    for n in range(2, n_basis):
-        H.append(2.0 * z * H[n-1] - 2.0 * (n - 1) * H[n-2])
-    H_stack = jnp.stack(H[:n_basis], axis=0) 
-    
-    ns = jnp.arange(n_basis)
-    fact = jnp.exp(gammaln(ns + 1.0))
-    norm = jnp.sqrt(2.0**ns * fact)
     pref = (omega / jnp.pi)**0.25 * jnp.exp(-0.5 * z**2)
-    return (pref * (H_stack / norm[:, None])).T 
+    if n_basis == 1:
+        return pref
+    psi_list = [pref, jnp.sqrt(2.0) * z * pref]
+    for n in range(2, n_basis):
+        psi_n = jnp.sqrt(2.0 / n) * z * psi_list[-1] - jnp.sqrt((n - 1.0) / n) * psi_list[-2]
+        psi_list.append(psi_n)
+    return jnp.concatenate(psi_list[:n_basis], axis=-1) 
 
 def cargar_ansatz_casscf(npz_path):
     data = np.load(npz_path)

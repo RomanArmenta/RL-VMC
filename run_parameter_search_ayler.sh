@@ -29,8 +29,9 @@ export OPENBLAS_NUM_THREADS=1
 export VECLIB_MAXIMUM_THREADS=1
 export NUMEXPR_NUM_THREADS=1
 export XLA_PYTHON_CLIENT_PREALLOCATE=false
-export XLA_PYTHON_CLIENT_MEM_FRACTION="${XLA_MEM_FRACTION:-0.25}"
+export XLA_PYTHON_CLIENT_MEM_FRACTION="${XLA_MEM_FRACTION:-0.18}"
 export TF_FORCE_GPU_ALLOW_GROWTH=true
+export CUDA_DEVICE_MAX_CONNECTIONS=1
 
 PYTHON_BIN="${PYTHON_BIN:-python3}"
 
@@ -79,10 +80,10 @@ rm -f "${TRACKER_DIR}"/job_*.meta 2>/dev/null || true
 
 MASTER_LOG="${LOG_DIR}/master_parameter_search.log"
 
-# Logger directo en tiempo real al log maestro y terminal
+# Logger directo en tiempo real al log maestro y terminal (evita polución de STDOUT)
 log_master() {
     local msg="$1"
-    echo "$msg"
+    echo "$msg" >&2
     echo "$msg" >> "${MASTER_LOG}"
 }
 
@@ -123,10 +124,12 @@ discover_gpus
 # ------------------------------------------------------------------------------
 # 4. Parámetros del Parameter Search y Scheduler de Learning Rate
 # ------------------------------------------------------------------------------
-N_BURN_IN="${N_BURN_IN:-2500}"
-MEASURE_STEPS="${MEASURE_STEPS:-8000}"
-BATCH_SIZE="${BATCH_SIZE:-1024}"
+N_BURN_IN="${N_BURN_IN:-1500}"
+MEASURE_STEPS="${MEASURE_STEPS:-4000}"
+BATCH_SIZE="${BATCH_SIZE:-256}"
 VMC_TRAIN_STEPS="${VMC_TRAIN_STEPS:-1500}"
+JIT_CHUNK_SIZE="${JIT_CHUNK_SIZE:-500}"
+ELOC_CHUNK_SIZE="${ELOC_CHUNK_SIZE:-10000}"
 
 # Learning rate scheduler conmutable para modelos entrenables (VMC y RL)
 USE_LR_SCHEDULER="${USE_LR_SCHEDULER:-1}"
@@ -180,7 +183,7 @@ cleanup_finished_jobs() {
         local pid
         pid=$(basename "$f" | cut -d'_' -f2)
         if ! kill -0 "$pid" 2>/dev/null; then
-            wait "$pid" 2>/dev/null
+            wait "$pid" 2>/dev/null || true
             local exit_code=$?
             local gpu sys start_epoch start_time script_name sys_log_file sum_csv method_tag tau_val amp_val
             # shellcheck disable=SC1090
@@ -316,6 +319,8 @@ run_single_sampling_worker() {
         --n_ter "${N_BURN_IN}" \
         --measure_steps "${MEASURE_STEPS}" \
         --batch_size "${BATCH_SIZE}" \
+        --jit_chunk_size "${JIT_CHUNK_SIZE}" \
+        --eloc_chunk_size "${ELOC_CHUNK_SIZE}" \
         --output_h5 "${H5_FILE}"
 
     # Post-procesamiento inmediato con métricas de KL por espín y formato PNG
@@ -367,6 +372,8 @@ run_single_training_worker() {
         --n_ter "${N_BURN_IN}" \
         --measure_steps "${MEASURE_STEPS}" \
         --batch_size "${BATCH_SIZE}" \
+        --jit_chunk_size "${JIT_CHUNK_SIZE}" \
+        --eloc_chunk_size "${ELOC_CHUNK_SIZE}" \
         --output_h5 "${H5_FILE}"
 
     # Post-procesamiento
@@ -402,7 +409,9 @@ log_master "====================================================================
 for tau in "${TAU_MALA_LIST[@]}"; do
     RUN_TAG="MALA_tau${tau}"
     SYS_LOG="sampling_${RUN_TAG}.log"
-    GPU_ID=$(wait_for_free_gpu_slot "FASE 1: MUESTREO PURO")
+    RAW_GPU=$(wait_for_free_gpu_slot "FASE 1: MUESTREO PURO")
+    GPU_ID=$(echo "${RAW_GPU}" | grep -o '[0-9]\+' | tail -n 1)
+    if [ -z "$GPU_ID" ]; then GPU_ID=0; fi
 
     start_epoch=$(date +%s)
     start_time=$(date "+%Y-%m-%d %H:%M:%S")
@@ -432,7 +441,9 @@ for amp in "${ACTOR_AMP_LIST[@]}"; do
     for tau in "${TAU_ACTOR_LIST[@]}"; do
         RUN_TAG="RL_MALA_amp${amp}_tau${tau}"
         SYS_LOG="sampling_${RUN_TAG}.log"
-        GPU_ID=$(wait_for_free_gpu_slot "FASE 1: MUESTREO PURO")
+        RAW_GPU=$(wait_for_free_gpu_slot "FASE 1: MUESTREO PURO")
+        GPU_ID=$(echo "${RAW_GPU}" | grep -o '[0-9]\+' | tail -n 1)
+        if [ -z "$GPU_ID" ]; then GPU_ID=0; fi
 
         start_epoch=$(date +%s)
         start_time=$(date "+%Y-%m-%d %H:%M:%S")
@@ -477,7 +488,9 @@ log_master "====================================================================
 # 2A. VMC + MALA Multi-SJB
 RUN_TAG="VMC_MALA_MultiSJB"
 SYS_LOG="train_${RUN_TAG}.log"
-GPU_ID=$(wait_for_free_gpu_slot "FASE 2: ENTRENAMIENTO")
+RAW_GPU=$(wait_for_free_gpu_slot "FASE 2: ENTRENAMIENTO")
+GPU_ID=$(echo "${RAW_GPU}" | grep -o '[0-9]\+' | tail -n 1)
+if [ -z "$GPU_ID" ]; then GPU_ID=0; fi
 
 start_epoch=$(date +%s)
 start_time=$(date "+%Y-%m-%d %H:%M:%S")
@@ -502,7 +515,9 @@ log_master ">> [FASE 2 | TRABAJO ASIGNADO] ${RUN_TAG} -> GPU ${GPU_ID} | PID: ${
 # 2B. Coupled VMC + RL-MALA TD3 Multi-SJB
 RUN_TAG="Coupled_RL_MultiSJB"
 SYS_LOG="train_${RUN_TAG}.log"
-GPU_ID=$(wait_for_free_gpu_slot "FASE 2: ENTRENAMIENTO")
+RAW_GPU=$(wait_for_free_gpu_slot "FASE 2: ENTRENAMIENTO")
+GPU_ID=$(echo "${RAW_GPU}" | grep -o '[0-9]\+' | tail -n 1)
+if [ -z "$GPU_ID" ]; then GPU_ID=0; fi
 
 start_epoch=$(date +%s)
 start_time=$(date "+%Y-%m-%d %H:%M:%S")

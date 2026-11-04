@@ -565,7 +565,7 @@ def run_experiment_1d(cfg: Experiment1DConfig) -> str:
             from dataclasses import asdict
             from rl_vmc.config import PostProcessConfig
             from rl_vmc.postprocess.diagnostics import summarize_bundle_diagnostics
-            from rl_vmc.postprocess.observables_1d import compute_1d_observables
+            from rl_vmc.postprocess.observables import compute_1d_observables
             from rl_vmc.postprocess.casscf_baseline import (
                 discover_casscf_baselines,
                 find_matching_casscf_baseline,
