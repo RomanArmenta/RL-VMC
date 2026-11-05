@@ -95,6 +95,14 @@ while [[ $# -gt 0 ]]; do
             GPU_LIST="$2"
             shift 2
             ;;
+        --jobs-per-gpu|--jobs|-j)
+            JOBS_PER_GPU="$2"
+            shift 2
+            ;;
+        --walkers|-w)
+            N_WALKERS="$2"
+            shift 2
+            ;;
         --preset|--grid-preset)
             GRID_PRESET="$2"
             shift 2
@@ -172,6 +180,8 @@ while [[ $# -gt 0 ]]; do
             echo "                                  baker: Región compacta original (16 modelos/sistema para 1 GPU)"
             echo "  --system, -s [N4|N6|all]      Sistema físico a evaluar (N4, N6, o all; default: all)"
             echo "  --gpu, --gpus [ID|'ID1 ID2']  Limita la ejecución a GPU(s) específica(s), ej. --gpu 2"
+            echo "  --jobs-per-gpu, -j N          Número de trabajos concurrentes por GPU (default: 1 en Ayler)"
+            echo "  --walkers, -w N               Número de caminantes MCMC (default: 128)"
             echo "  --rl-steps N                  Barridos RL TD3 por modelo (default: 6000; para N=6 2500 es óptimo)"
             echo "  --chains N                    Número de cadenas independientes MCMC en evaluación (default: 3)"
             echo "  --measure-steps N             Pasos MCMC por cadena de producción (default: 40000)"
