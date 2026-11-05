@@ -241,6 +241,9 @@ class PostProcessConfig:
     plot_time_to_solution: bool = True
     plot_walker_trace: bool = True
     plot_kl_divergence: bool = False
+    plot_hyperparameter_evolution: bool = True
+    top_k_models: int = 2
+    n_eval_subblocks: int = 5
     figure_format: Literal["pdf", "png", "both"] = "pdf"
     dpi: int = 300
 
@@ -442,6 +445,7 @@ def _sanitize_cli_tokens(tokens: list[str]) -> list[str]:
         "plot_time_to_solution",
         "plot_walker_trace",
         "plot_kl_divergence",
+        "plot_hyperparameter_evolution",
     }
     sanitized: list[str] = []
     i = 0
@@ -717,6 +721,9 @@ def build_postprocess_argparser() -> argparse.ArgumentParser:
     g_plot.add_argument("--plot_time_to_solution", action=argparse.BooleanOptionalAction, default=True, help="Genera la curva de Error Estándar SE(E) vs Tiempo de reloj (s).")
     g_plot.add_argument("--plot_walker_trace", action=argparse.BooleanOptionalAction, default=True, help="Genera la gráfica de trayectoria espacial (tunelamiento nodal) y movilidad MSD.")
     g_plot.add_argument("--plot_kl_divergence", action=argparse.BooleanOptionalAction, default=False, help="Genera la curva de convergencia de Divergencia KL respecto a reference_density_csv.")
+    g_plot.add_argument("--plot_hyperparameter_evolution", action=argparse.BooleanOptionalAction, default=True, help="Genera las gráficas de evolución de precisión, D_KL y tau_int respecto a los hiperparámetros con barras de error.")
+    g_plot.add_argument("--top_k_models", type=int, default=2, help="Número de mejores modelos de cada familia (ej. 2 MALA vs 2 RL-MALA) a graficar en las comparativas detalladas. Usar 0 o -1 para graficar todos.")
+    g_plot.add_argument("--n_eval_subblocks", type=int, default=5, help="Número de bloques/sub-evaluaciones independientes sobre los caminantes para calcular barras de error en D_KL, energía y tau_int.")
     g_plot.add_argument("--figure_format", type=str, default="pdf", choices=["pdf", "png", "both"], help="Formato de exportación para las figuras generadas.")
     g_plot.add_argument("--dpi", type=int, default=300, help="Resolución (DPI) de las figuras exportadas.")
 

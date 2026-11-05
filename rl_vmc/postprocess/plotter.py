@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 from typing import Any
 
@@ -15,7 +16,11 @@ import matplotlib.gridspec as gridspec
 
 from rl_vmc.config import PostProcessConfig, Experiment1DConfig
 from rl_vmc.core.io_bundle import load_run_bundle_h5
-from rl_vmc.postprocess.diagnostics import summarize_bundle_diagnostics
+from rl_vmc.postprocess.diagnostics import (
+    summarize_bundle_diagnostics,
+    compute_acf_1d,
+    compute_iat_sokal,
+)
 from rl_vmc.postprocess.observables import (
     compute_1d_observables,
     compute_kl_divergence_2e,
@@ -31,12 +36,14 @@ from rl_vmc.ansatze.ansatz_1d import build_ansatz_1d
 
 
 PALETTE = [
-    "#e74c3c",  # Rojo (estilo MALA en scripts legacy)
-    "#2ecc71",  # Verde (estilo RL-MALA en scripts legacy)
-    "#1f77b4",
-    "#ff7f0e",
-    "#9467bd",
-    "#8c564b",
+    "#e74c3c",  # Rojo (MALA 1)
+    "#c0392b",  # Rojo oscuro (MALA 2)
+    "#2ecc71",  # Verde (RL-MALA 1)
+    "#2980b9",  # Azul (RL-MALA 2)
+    "#9b59b6",
+    "#e67e22",
+    "#1abc9c",
+    "#34495e",
 ]
 
 
@@ -48,15 +55,222 @@ def _save_fig(
     dpi: int = 300,
     sys_tag: str = "",
 ) -> None:
-    stems = [stem]
-    if sys_tag and not stem.endswith(f"_{sys_tag}"):
-        stems.append(f"{stem}_{sys_tag}")
-    for st in stems:
-        if fmt in ("png", "both"):
-            fig.savefig(os.path.join(out_dir, f"{st}.png"), dpi=dpi, bbox_inches="tight")
-        if fmt in ("pdf", "both"):
-            fig.savefig(os.path.join(out_dir, f"{st}.pdf"), bbox_inches="tight")
+    """Guarda la figura una única vez con nombre limpio (incluyendo sys_tag si se especifica)."""
+    final_stem = (
+        f"{stem}_{sys_tag}"
+        if (sys_tag and not stem.endswith(f"_{sys_tag}"))
+        else stem
+    )
+    if fmt in ("png", "both"):
+        fig.savefig(os.path.join(out_dir, f"{final_stem}.png"), dpi=dpi, bbox_inches="tight")
+    if fmt in ("pdf", "both"):
+        fig.savefig(os.path.join(out_dir, f"{final_stem}.pdf"), bbox_inches="tight")
     plt.close(fig)
+
+
+def _extract_hyperparams(label: str, bundle: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Extrae hiperparámetros del sampler/RL desde config del bundle o mediante regex sobre label."""
+    cfg = bundle.get("config", {}) if bundle else {}
+    prop_cfg = cfg.get("proposal", {})
+    rl_cfg = cfg.get("rl", {})
+
+    ptype = str(prop_cfg.get("proposal_type", "")).lower()
+    is_neural = ptype in ("neural_deepset", "neural_flat", "deepset", "flat_mlp") or (
+        "rl_mala" in label.lower() or "td3" in label.lower()
+    )
+
+    def _regex_float(pattern: str, text: str, default: float = float("nan")) -> float:
+        m = re.search(pattern, text, flags=re.IGNORECASE)
+        if m:
+            try:
+                return float(m.group(1))
+            except Exception:
+                return default
+        return default
+
+    tau_val = float(prop_cfg.get("tau", _regex_float(r"tau([0-9.]+)", label, 0.08)))
+    if not is_neural:
+        amp_val = 0.0
+        pen_val = 0.0
+        sig_val = 0.0
+        lr_act = 0.0
+    else:
+        amp_val = float(
+            prop_cfg.get("actor_amplitude", _regex_float(r"amp([0-9.]+)", label, 0.15))
+        )
+        pen_val = float(
+            rl_cfg.get("penalty_factor", _regex_float(r"pen([0-9.]+)", label, 0.25))
+        )
+        sig_val = float(
+            prop_cfg.get("sigma_action_scale", _regex_float(r"sig([0-9.]+)", label, 1.1))
+        )
+        lr_act = float(rl_cfg.get("lr_actor", 1e-5))
+
+    return {
+        "is_neural": bool(is_neural),
+        "proposal_type": ptype or ("neural_deepset" if is_neural else "mala"),
+        "tau": tau_val,
+        "actor_amplitude": amp_val,
+        "penalty_factor": pen_val,
+        "sigma_action_scale": sig_val,
+        "lr_actor": lr_act,
+    }
+
+
+def _compute_multi_eval_uncertainties(
+    w_all: np.ndarray | None,
+    bundle: dict[str, Any],
+    summary: dict[str, Any],
+    casscf_ref: dict[str, Any] | None,
+    cfg: PostProcessConfig,
+    x_max: float,
+) -> dict[str, float]:
+    """
+    Calcula barras de error (error estándar) sobre múltiples evaluaciones independientes:
+    - Si existen múltiples cadenas (`n_chains > 1`), evalúa cada cadena y calcula SE entre cadenas.
+    - Si existe 1 cadena con múltiples caminantes/bloques, aplica remuestreo Jackknife
+      por bloques independientes de caminantes y sub-series temporales.
+    """
+    n_sub = max(2, int(getattr(cfg, "n_eval_subblocks", 5)))
+    res = {
+        "kl_tot_mean": float("nan"),
+        "kl_tot_std": float("nan"),
+        "kl_up_mean": float("nan"),
+        "kl_up_std": float("nan"),
+        "kl_dn_mean": float("nan"),
+        "kl_dn_std": float("nan"),
+        "kl_spin_mean": float("nan"),
+        "kl_spin_std": float("nan"),
+        "tau_int_E_std": float("nan"),
+        "ESJD_std": float("nan"),
+        "ESS_per_sec_std": float("nan"),
+    }
+
+    # 1. Estadística de D_KL resuelta por espín
+    if casscf_ref is not None and w_all is not None and w_all.size > 0:
+        w_5d = w_all[None, ...] if w_all.ndim == 4 else w_all
+        n_chains, n_steps, n_batch, n_elec, _ = w_5d.shape
+
+        # Media global usando todo el ensamble disponible
+        w_merged = w_5d.reshape(-1, n_batch, n_elec, 1)
+        kl_full = compute_spin_kl_divergences(
+            w_merged, casscf_ref, n_bins=cfg.n_density_bins, x_max=x_max
+        )
+        res["kl_tot_mean"] = float(kl_full["kl_total"])
+        res["kl_up_mean"] = float(kl_full["kl_up"])
+        res["kl_dn_mean"] = float(kl_full["kl_down"])
+        res["kl_spin_mean"] = 0.5 * (res["kl_up_mean"] + res["kl_dn_mean"])
+
+        if n_chains > 1:
+            kls_t, kls_u, kls_d, kls_s = [], [], [], []
+            for c_i in range(n_chains):
+                kd = compute_spin_kl_divergences(
+                    w_5d[c_i], casscf_ref, n_bins=cfg.n_density_bins, x_max=x_max
+                )
+                kls_t.append(kd["kl_total"])
+                kls_u.append(kd["kl_up"])
+                kls_d.append(kd["kl_down"])
+                kls_s.append(0.5 * (kd["kl_up"] + kd["kl_down"]))
+            scale = 1.0 / np.sqrt(float(n_chains))
+            res["kl_tot_std"] = float(np.std(kls_t, ddof=1) * scale)
+            res["kl_up_std"] = float(np.std(kls_u, ddof=1) * scale)
+            res["kl_dn_std"] = float(np.std(kls_d, ddof=1) * scale)
+            res["kl_spin_std"] = float(np.std(kls_s, ddof=1) * scale)
+        elif n_batch >= n_sub:
+            # Remuestreo Jackknife dejando fuera 1 bloque de caminantes a la vez
+            block_indices = np.array_split(np.arange(n_batch), n_sub)
+            jk_t, jk_u, jk_d, jk_s = [], [], [], []
+            for b_idx in block_indices:
+                keep_mask = np.ones(n_batch, dtype=bool)
+                keep_mask[b_idx] = False
+                w_jk = w_5d[0, :, keep_mask, :, :]
+                # w_jk tras indexar booleano en eje 1 puede ser (n_keep, n_steps, n_elec, 1)
+                if w_jk.shape[0] != n_steps:
+                    w_jk = np.swapaxes(w_jk, 0, 1)
+                kd = compute_spin_kl_divergences(
+                    w_jk, casscf_ref, n_bins=cfg.n_density_bins, x_max=x_max
+                )
+                jk_t.append(kd["kl_total"])
+                jk_u.append(kd["kl_up"])
+                jk_d.append(kd["kl_down"])
+                jk_s.append(0.5 * (kd["kl_up"] + kd["kl_down"]))
+            k_f = float(len(jk_t))
+            jk_factor = np.sqrt((k_f - 1.0) / k_f)
+            res["kl_tot_std"] = float(jk_factor * np.std(jk_t, ddof=0))
+            res["kl_up_std"] = float(jk_factor * np.std(jk_u, ddof=0))
+            res["kl_dn_std"] = float(jk_factor * np.std(jk_d, ddof=0))
+            res["kl_spin_std"] = float(jk_factor * np.std(jk_s, ddof=0))
+
+    # 2. Estadística por bloques para tau_int_E, ESJD y ESS/s
+    e_series = summary.get("e_step_series", None)
+    if e_series is not None and len(e_series) >= n_sub * 100:
+        e_arr = np.asarray(e_series, dtype=np.float64)
+        chunks = np.array_split(e_arr, n_sub)
+        taus_sub = []
+        for ch in chunks:
+            acf_c = compute_acf_1d(ch, max_lag=min(cfg.max_acf_lag, len(ch) // 2))
+            taus_sub.append(compute_iat_sokal(acf_c, c_sokal=cfg.sokal_window_c))
+        tau_se = float(np.std(taus_sub, ddof=1) / np.sqrt(float(len(taus_sub))))
+        res["tau_int_E_std"] = tau_se
+        tau_mean = max(float(summary.get("tau_int_E", 1.0)), 1e-6)
+        ess_s_mean = float(summary.get("ESS_per_sec", 0.0))
+        res["ESS_per_sec_std"] = float(ess_s_mean * min(0.5, tau_se / tau_mean))
+
+    prod = bundle.get("production", {})
+    s_stats = prod.get("sampler_stats", {})
+    if "esjd" in s_stats and np.asarray(s_stats["esjd"]).size >= n_sub * 10:
+        esjd_arr = np.asarray(s_stats["esjd"], dtype=np.float64).reshape(-1)
+        esjd_chunks = [float(np.mean(c)) for c in np.array_split(esjd_arr, n_sub)]
+        res["ESJD_std"] = float(np.std(esjd_chunks, ddof=1) / np.sqrt(float(n_sub)))
+
+    return res
+
+
+def _select_top_k_bundles(
+    bundles_info: list[dict[str, Any]],
+    summary_rows: list[dict[str, Any]],
+    top_k: int,
+) -> list[dict[str, Any]]:
+    """
+    Selecciona los `top_k` mejores modelos clásicos (MALA) y los `top_k` mejores
+    modelos neuronales (RL-MALA) para que las gráficas comparativas sean nítidas.
+    """
+    if top_k <= 0 or len(bundles_info) <= 2 * top_k:
+        return bundles_info
+
+    mala_pairs = []
+    rl_pairs = []
+    for binfo, row in zip(bundles_info, summary_rows):
+        kl_spin = float(row.get("kl_casscf_spin_mean", float("nan")))
+        tau_e = float(row.get("tau_int_E", float("inf")))
+        if not np.isfinite(tau_e) or tau_e <= 0:
+            tau_e = 1e9
+        # Score compuesto: prioriza cruce nodal (D_KL por espín) y desempata con tau_int_E
+        score = kl_spin + 1e-4 * tau_e if np.isfinite(kl_spin) else tau_e
+        if row.get("is_neural", False):
+            rl_pairs.append((score, binfo, row))
+        else:
+            mala_pairs.append((score, binfo, row))
+
+    mala_pairs.sort(key=lambda item: item[0])
+    rl_pairs.sort(key=lambda item: item[0])
+
+    selected_mala = [item[1] for item in mala_pairs[:top_k]]
+    selected_rl = [item[1] for item in rl_pairs[:top_k]]
+    selected = selected_mala + selected_rl
+
+    if not selected:
+        return bundles_info[: 2 * top_k]
+
+    print(
+        f"\n[PostProcess] Filtrando Top-{top_k} modelos por familia para figuras comparativas "
+        f"(de {len(bundles_info)} totales):"
+    )
+    for b in selected_mala:
+        print(f"  * [Top MALA]    {b['label']}")
+    for b in selected_rl:
+        print(f"  * [Top RL-MALA] {b['label']}")
+    return selected
 
 
 def plot_training_dashboard(
@@ -377,12 +591,15 @@ def plot_article_densities_comparison(
         return
 
     n_panels = len(valid)
+    ncols = 2 if n_panels == 4 else min(n_panels, 3)
+    nrows = int(np.ceil(n_panels / ncols))
     fig, axes = plt.subplots(
-        1, n_panels, figsize=(7.0 * n_panels, 5.8), sharey=True, squeeze=False
+        nrows, ncols, figsize=(7.2 * ncols, 5.4 * nrows), sharey=True, squeeze=False
     )
+    axes_flat = axes.flatten()
 
     for idx, binfo in enumerate(valid):
-        ax = axes[0, idx]
+        ax = axes_flat[idx]
         obs = binfo["observables"]
         sys_cfg = binfo["bundle"].get("config", {}).get("system", {})
         omega = float(sys_cfg.get("omega", 0.1))
@@ -390,15 +607,15 @@ def plot_article_densities_comparison(
         x_max = float(obs.get("x_max", 15.0))
         n_chains = int(obs.get("n_chains_eval", 1))
 
-        # Densidad total muestreada + banda +/- 1 sigma entre evaluaciones
+        # Densidad total muestreada + banda +/- 1 sigma entre evaluaciones / sub-bloques
         ax.plot(
             x,
             obs["rho_total"],
             "k-",
             lw=2.5,
-            label=f"Sampled Total ($N_{{\\mathrm{{eval}}}}={n_chains}$)",
+            label=f"Sampled Total ($N_{{\\mathrm{{eval}}}}={max(n_chains, int(getattr(cfg, 'n_eval_subblocks', 5)))}$)",
         )
-        if n_chains > 1 and "rho_total_std" in obs:
+        if "rho_total_std" in obs and np.any(obs["rho_total_std"] > 0):
             ax.fill_between(
                 x,
                 np.maximum(0.0, obs["rho_total"] - obs["rho_total_std"]),
@@ -465,12 +682,15 @@ def plot_article_densities_comparison(
         ax_pot.set_yticks([])
 
         ax.set_xlim(-x_max, x_max)
-        ax.set_title(binfo["label"], fontsize=13, weight="bold")
+        ax.set_title(binfo["label"], fontsize=12, weight="bold")
         ax.set_xlabel("x (Bohr)")
-        if idx == 0:
+        if idx % ncols == 0:
             ax.set_ylabel(r"One-Body Density $\rho(x)$")
         ax.grid(True, alpha=0.3)
         ax.legend(loc="upper right", fontsize=8.5, frameon=True)
+
+    for extra_idx in range(n_panels, len(axes_flat)):
+        axes_flat[extra_idx].set_visible(False)
 
     fig.tight_layout()
     _save_fig(
@@ -493,8 +713,8 @@ def plot_article_kl_divergence(
     Si existe una baseline CASSCF pre-entrenada (`casscf_ref is not None`), genera la
     evolución de la Divergencia KL resuelta por espín (`fig8_article_kl_divergence`,
     equivalente a `Article_KL_Divergence.pdf` de `scripts/evaluar_wigner_casscf_2.py`),
-    promediando entre todas las corridas MCMC independientes y sombreando +/- 1 sigma.
-    Si NO existe baseline CASSCF, no hace nada.
+    promediando entre todas las corridas MCMC independientes (o bloques Jackknife)
+    y sombreando +/- 1 sigma.
     """
     if casscf_ref is None:
         return
@@ -508,8 +728,9 @@ def plot_article_kl_divergence(
     if not valid:
         return
 
-    fig, axes = plt.subplots(1, 3, figsize=(17.5, 5.0), sharey=True)
+    fig, axes = plt.subplots(1, 3, figsize=(17.5, 5.2), sharey=True)
     kl_records = []
+    n_sub = max(2, int(getattr(cfg, "n_eval_subblocks", 5)))
 
     for idx, binfo in enumerate(valid):
         color = PALETTE[idx % len(PALETTE)]
@@ -518,41 +739,83 @@ def plot_article_kl_divergence(
         if w_all.ndim == 4:
             w_all = w_all[None, ...]  # (1, n_steps, batch_size, n_elec, 1)
 
-        n_chains = w_all.shape[0]
+        n_chains, n_steps, n_batch, _, _ = w_all.shape
         x_max = float(
             binfo.get("observables", {}).get("x_max", cfg.density_x_max)
             if binfo.get("observables")
             else cfg.density_x_max
         )
 
-        tot_curves, up_curves, dn_curves = [], [], []
-        steps_grid = None
-        for c_idx in range(n_chains):
-            curve = compute_kl_convergence_curve(
-                w_all[c_idx],
+        if n_chains > 1:
+            tot_curves, up_curves, dn_curves = [], [], []
+            steps_grid = None
+            for c_idx in range(n_chains):
+                curve = compute_kl_convergence_curve(
+                    w_all[c_idx],
+                    casscf_ref,
+                    n_checkpoints=20,
+                    n_bins=cfg.n_density_bins,
+                    x_max=x_max,
+                )
+                steps_grid = curve["steps"]
+                tot_curves.append(curve["kl_total"])
+                up_curves.append(curve["kl_up"])
+                dn_curves.append(curve["kl_down"])
+
+            arr_tot = np.stack(tot_curves, axis=0)
+            arr_up = np.stack(up_curves, axis=0)
+            arr_dn = np.stack(dn_curves, axis=0)
+
+            mean_tot, std_tot = np.mean(arr_tot, axis=0), np.std(arr_tot, axis=0)
+            mean_up, std_up = np.mean(arr_up, axis=0), np.std(arr_up, axis=0)
+            mean_dn, std_dn = np.mean(arr_dn, axis=0), np.std(arr_dn, axis=0)
+        else:
+            full_curve = compute_kl_convergence_curve(
+                w_all[0],
                 casscf_ref,
                 n_checkpoints=20,
                 n_bins=cfg.n_density_bins,
                 x_max=x_max,
             )
-            steps_grid = curve["steps"]
-            tot_curves.append(curve["kl_total"])
-            up_curves.append(curve["kl_up"])
-            dn_curves.append(curve["kl_down"])
+            steps_grid = full_curve["steps"]
+            mean_tot = full_curve["kl_total"]
+            mean_up = full_curve["kl_up"]
+            mean_dn = full_curve["kl_down"]
 
-        arr_tot = np.stack(tot_curves, axis=0)
-        arr_up = np.stack(up_curves, axis=0)
-        arr_dn = np.stack(dn_curves, axis=0)
-
-        mean_tot, std_tot = np.mean(arr_tot, axis=0), np.std(arr_tot, axis=0)
-        mean_up, std_up = np.mean(arr_up, axis=0), np.std(arr_up, axis=0)
-        mean_dn, std_dn = np.mean(arr_dn, axis=0), np.std(arr_dn, axis=0)
+            if n_batch >= n_sub:
+                block_indices = np.array_split(np.arange(n_batch), n_sub)
+                jk_t, jk_u, jk_d = [], [], []
+                for b_idx in block_indices:
+                    keep_mask = np.ones(n_batch, dtype=bool)
+                    keep_mask[b_idx] = False
+                    w_jk = w_all[0, :, keep_mask, :, :]
+                    if w_jk.shape[0] != n_steps:
+                        w_jk = np.swapaxes(w_jk, 0, 1)
+                    c_jk = compute_kl_convergence_curve(
+                        w_jk,
+                        casscf_ref,
+                        n_checkpoints=20,
+                        n_bins=cfg.n_density_bins,
+                        x_max=x_max,
+                    )
+                    jk_t.append(c_jk["kl_total"])
+                    jk_u.append(c_jk["kl_up"])
+                    jk_d.append(c_jk["kl_down"])
+                k_f = float(len(jk_t))
+                jk_factor = np.sqrt((k_f - 1.0) / k_f)
+                std_tot = jk_factor * np.std(np.stack(jk_t, axis=0), axis=0)
+                std_up = jk_factor * np.std(np.stack(jk_u, axis=0), axis=0)
+                std_dn = jk_factor * np.std(np.stack(jk_d, axis=0), axis=0)
+            else:
+                std_tot = np.zeros_like(mean_tot)
+                std_up = np.zeros_like(mean_up)
+                std_dn = np.zeros_like(mean_dn)
 
         for ax, m_arr, s_arr in zip(
             axes, (mean_tot, mean_up, mean_dn), (std_tot, std_up, std_dn)
         ):
             ax.plot(steps_grid, m_arr, color=color, lw=2.4, label=label)
-            if n_chains > 1:
+            if np.any(s_arr > 0):
                 ax.fill_between(
                     steps_grid,
                     np.maximum(1e-8, m_arr - s_arr),
@@ -606,15 +869,18 @@ def plot_article_kl_divergence(
 
     if kl_records and cfg.save_observables_csv:
         df_kl = pd.DataFrame(kl_records)
-        kl_csv_std = os.path.join(out_dir, "kl_convergence_vs_casscf.csv")
-        df_kl.to_csv(kl_csv_std, index=False)
-        if sys_tag:
-            kl_csv_sys = os.path.join(out_dir, f"kl_convergence_vs_casscf_{sys_tag}.csv")
-            df_kl.to_csv(kl_csv_sys, index=False)
-            if getattr(cfg, "csv_collect_dir", ""):
-                import shutil
-                os.makedirs(cfg.csv_collect_dir, exist_ok=True)
-                shutil.copy2(kl_csv_sys, os.path.join(cfg.csv_collect_dir, os.path.basename(kl_csv_sys)))
+        kl_fname = (
+            f"kl_convergence_vs_casscf_{sys_tag}.csv"
+            if sys_tag
+            else "kl_convergence_vs_casscf.csv"
+        )
+        kl_csv_path = os.path.join(out_dir, kl_fname)
+        df_kl.to_csv(kl_csv_path, index=False)
+        if getattr(cfg, "csv_collect_dir", ""):
+            import shutil
+
+            os.makedirs(cfg.csv_collect_dir, exist_ok=True)
+            shutil.copy2(kl_csv_path, os.path.join(cfg.csv_collect_dir, kl_fname))
 
 
 def plot_efficiency_bars(
@@ -628,25 +894,35 @@ def plot_efficiency_bars(
 
     labels = [b["label"] for b in valid]
     taus = [b["diagnostics"]["summary"].get("tau_int_E", 1.0) for b in valid]
+    taus_err = [b.get("uncertainties", {}).get("tau_int_E_std", 0.0) for b in valid]
     ess_s = [b["diagnostics"]["summary"].get("ESS_per_sec", 0.0) for b in valid]
+    ess_s_err = [b.get("uncertainties", {}).get("ESS_per_sec_std", 0.0) for b in valid]
     esjds = [b["diagnostics"]["summary"].get("ESJD", 0.0) for b in valid]
+    esjds_err = [b.get("uncertainties", {}).get("ESJD_std", 0.0) for b in valid]
     colors = [PALETTE[i % len(PALETTE)] for i in range(len(valid))]
 
-    fig, axes = plt.subplots(1, 3, figsize=(13.5, 4.2))
-    axes[0].bar(labels, taus, color=colors, alpha=0.85)
+    taus_err = [0.0 if not np.isfinite(v) else v for v in taus_err]
+    ess_s_err = [0.0 if not np.isfinite(v) else v for v in ess_s_err]
+    esjds_err = [0.0 if not np.isfinite(v) else v for v in esjds_err]
+
+    fig, axes = plt.subplots(1, 3, figsize=(15.0, 4.8))
+    axes[0].bar(labels, taus, yerr=taus_err, capsize=4, color=colors, alpha=0.85, edgecolor="black")
     axes[0].set_title("Tiempo de Autocorrelación $\\tau_{\\mathrm{int}, E}$ (menor es mejor)")
     axes[0].set_ylabel("$\\tau_{\\mathrm{int}, E}$ (pasos)")
 
-    axes[1].bar(labels, ess_s, color=colors, alpha=0.85)
+    axes[1].bar(labels, ess_s, yerr=ess_s_err, capsize=4, color=colors, alpha=0.85, edgecolor="black")
     axes[1].set_title("Muestras Efectivas por Segundo (ESS/s)")
     axes[1].set_ylabel("ESS / s")
 
-    axes[2].bar(labels, esjds, color=colors, alpha=0.85)
+    axes[2].bar(labels, esjds, yerr=esjds_err, capsize=4, color=colors, alpha=0.85, edgecolor="black")
     axes[2].set_title("Expected Squared Jump Distance (ESJD)")
     axes[2].set_ylabel("ESJD ($a_0^2$)")
 
     for ax in axes:
         ax.grid(True, axis="y", alpha=0.25)
+        ax.tick_params(axis="x", rotation=22)
+        for tick in ax.get_xticklabels():
+            tick.set_horizontalalignment("right")
 
     fig.tight_layout()
     _save_fig(
@@ -656,6 +932,372 @@ def plot_efficiency_bars(
         fmt=cfg.figure_format,
         dpi=cfg.dpi,
         sys_tag=getattr(cfg, "system_tag", ""),
+    )
+
+
+def plot_hyperparameter_evolution(
+    df: pd.DataFrame,
+    out_dir: str,
+    cfg: PostProcessConfig,
+    casscf_ref: dict[str, Any] | None = None,
+) -> None:
+    """
+    Grafica la evolución de la precisión y ergodicidad respecto a los hiperparámetros
+    (`actor_amplitude`, `tau`, `penalty_factor`) a través de TODOS los modelos evaluados,
+    mostrando barras de error estadísticas (`errorbar`) obtenidas de múltiples evaluaciones
+    / sub-bloques y remarcando los mejores modelos.
+    """
+    if df is None or len(df) < 2:
+        return
+
+    df_plot = df.copy()
+    if "is_neural" not in df_plot.columns:
+        hp_list = [_extract_hyperparams(str(lbl)) for lbl in df_plot["label"]]
+        for k in ("is_neural", "tau", "actor_amplitude", "penalty_factor", "sigma_action_scale"):
+            df_plot[k] = [h[k] for h in hp_list]
+
+    df_mala = df_plot[~df_plot["is_neural"]].sort_values("tau")
+    df_rl = df_plot[df_plot["is_neural"]].sort_values(
+        ["tau", "penalty_factor", "actor_amplitude"]
+    )
+
+    fig, axes = plt.subplots(2, 3, figsize=(18.5, 10.5))
+    ax_kl_spin, ax_kl_tot, ax_de = axes[0]
+    ax_tau, ax_esjd, ax_ess = axes[1]
+
+    # Estilos por combinación (tau, penalty_factor) para RL-MALA
+    rl_groups = list(df_rl.groupby(["tau", "penalty_factor"]))
+    group_colors = ["#1f77b4", "#d62728", "#2ca02c", "#9467bd", "#ff7f0e", "#17becf"]
+    group_markers = ["o", "s", "^", "D", "v", "P"]
+
+    def _safe_err(series: pd.Series) -> np.ndarray:
+        arr = np.asarray(series, dtype=np.float64)
+        return np.where(np.isfinite(arr) & (arr >= 0), arr, 0.0)
+
+    # Paneles 1 a 5: Evolución vs Actor Amplitude A_mu (con MALA en A_mu = 0 o líneas horizontales)
+    mala_taus = sorted(df_mala["tau"].unique())
+    mala_colors = {t: c for t, c in zip(mala_taus, ["#555555", "#7f7f7f", "#8c564b", "#bcbd22"])}
+
+    # 1. D_KL Spin Promedio vs Actor Amplitude
+    if "kl_casscf_spin_mean" in df_plot.columns and df_plot["kl_casscf_spin_mean"].notna().any():
+        for _, m_row in df_mala.iterrows():
+            t_v = float(m_row["tau"])
+            y_v = float(m_row["kl_casscf_spin_mean"])
+            y_e = float(m_row.get("kl_casscf_spin_std", 0.0))
+            if np.isfinite(y_v):
+                ax_kl_spin.axhline(
+                    y_v, color=mala_colors.get(t_v, "gray"), linestyle="--", alpha=0.55, lw=1.3
+                )
+                ax_kl_spin.errorbar(
+                    [0.0],
+                    [y_v],
+                    yerr=[y_e if np.isfinite(y_e) else 0.0],
+                    fmt="X",
+                    color=mala_colors.get(t_v, "gray"),
+                    markersize=8,
+                    capsize=4,
+                    label=f"MALA ($\\tau={t_v:.2f}$)",
+                )
+
+        for g_idx, ((t_val, p_val), g_df) in enumerate(rl_groups):
+            c = group_colors[g_idx % len(group_colors)]
+            mk = group_markers[g_idx % len(group_markers)]
+            x_v = g_df["actor_amplitude"].to_numpy(dtype=np.float64)
+            y_v = g_df["kl_casscf_spin_mean"].to_numpy(dtype=np.float64)
+            y_e = _safe_err(g_df.get("kl_casscf_spin_std", pd.Series(np.zeros(len(g_df)))))
+            ax_kl_spin.errorbar(
+                x_v,
+                y_v,
+                yerr=y_e,
+                fmt=f"-{mk}",
+                color=c,
+                lw=2.0,
+                markersize=7,
+                capsize=4,
+                label=f"RL-MALA ($\\tau={t_val:.2f}, \\lambda={p_val:.2f}$)",
+            )
+
+        best_spin_idx = df_plot["kl_casscf_spin_mean"].idxmin()
+        if pd.notna(best_spin_idx):
+            b_r = df_plot.loc[best_spin_idx]
+            ax_kl_spin.scatter(
+                [b_r["actor_amplitude"]],
+                [b_r["kl_casscf_spin_mean"]],
+                s=220,
+                facecolors="none",
+                edgecolors="gold",
+                linewidths=3.0,
+                zorder=10,
+                label=f"★ Mejor: {b_r['label']}",
+            )
+        ax_kl_spin.set_yscale("log")
+        ax_kl_spin.set_title(
+            r"Cruce Nodal: $D_{\mathrm{KL}}^{\mathrm{spin}} = \frac{1}{2}(D_{\mathrm{KL}}^\uparrow + D_{\mathrm{KL}}^\downarrow)$ vs $A_\mu$",
+            weight="bold",
+        )
+        ax_kl_spin.set_xlabel(r"Actor Amplitude $A_\mu$ ($0 = \mathrm{MALA}$)")
+        ax_kl_spin.set_ylabel(r"Spin-Averaged $D_{\mathrm{KL}}$ (log)")
+        ax_kl_spin.grid(True, which="both", alpha=0.3)
+        ax_kl_spin.legend(fontsize=7.8, loc="best", frameon=True)
+
+    # 2. D_KL Total vs Actor Amplitude
+    if "kl_casscf_total_mean" in df_plot.columns and df_plot["kl_casscf_total_mean"].notna().any():
+        for _, m_row in df_mala.iterrows():
+            t_v = float(m_row["tau"])
+            y_v = float(m_row["kl_casscf_total_mean"])
+            y_e = float(m_row.get("kl_casscf_total_std", 0.0))
+            if np.isfinite(y_v):
+                ax_kl_tot.axhline(
+                    y_v, color=mala_colors.get(t_v, "gray"), linestyle="--", alpha=0.55, lw=1.3
+                )
+                ax_kl_tot.errorbar(
+                    [0.0],
+                    [y_v],
+                    yerr=[y_e if np.isfinite(y_e) else 0.0],
+                    fmt="X",
+                    color=mala_colors.get(t_v, "gray"),
+                    markersize=8,
+                    capsize=4,
+                    label=f"MALA ($\\tau={t_v:.2f}$)",
+                )
+        for g_idx, ((t_val, p_val), g_df) in enumerate(rl_groups):
+            c = group_colors[g_idx % len(group_colors)]
+            mk = group_markers[g_idx % len(group_markers)]
+            x_v = g_df["actor_amplitude"].to_numpy(dtype=np.float64)
+            y_v = g_df["kl_casscf_total_mean"].to_numpy(dtype=np.float64)
+            y_e = _safe_err(g_df.get("kl_casscf_total_std", pd.Series(np.zeros(len(g_df)))))
+            ax_kl_tot.errorbar(
+                x_v,
+                y_v,
+                yerr=y_e,
+                fmt=f"-{mk}",
+                color=c,
+                lw=2.0,
+                markersize=7,
+                capsize=4,
+                label=f"RL-MALA ($\\tau={t_val:.2f}, \\lambda={p_val:.2f}$)",
+            )
+        ax_kl_tot.set_yscale("log")
+        ax_kl_tot.set_title(
+            r"Precisión de Densidad Total: $D_{\mathrm{KL}}(\rho_{\mathrm{tot}} \parallel \rho_{\mathrm{CASSCF}})$ vs $A_\mu$",
+            weight="bold",
+        )
+        ax_kl_tot.set_xlabel(r"Actor Amplitude $A_\mu$ ($0 = \mathrm{MALA}$)")
+        ax_kl_tot.set_ylabel(r"Total Density $D_{\mathrm{KL}}$ (log)")
+        ax_kl_tot.grid(True, which="both", alpha=0.3)
+
+    # 3. Precisión Energética: <E_L> - E_CASSCF +/- SE(E) vs Actor Amplitude
+    ax_de.axhline(0.0, color="black", linestyle=":", lw=1.8, label="Exact CASSCF ($\\Delta E = 0$)")
+    for _, m_row in df_mala.iterrows():
+        t_v = float(m_row["tau"])
+        de_v = float(m_row.get("delta_E_vs_CASSCF", m_row["E_mean"]))
+        se_v = float(m_row.get("SE_E", 0.0))
+        if np.isfinite(de_v) and abs(de_v) < 0.05:
+            ax_de.errorbar(
+                [0.0],
+                [de_v * 1e3],
+                yerr=[(se_v if np.isfinite(se_v) else 0.0) * 1e3],
+                fmt="X",
+                color=mala_colors.get(t_v, "gray"),
+                markersize=8,
+                capsize=4,
+                label=f"MALA ($\\tau={t_v:.2f}$)",
+            )
+    for g_idx, ((t_val, p_val), g_df) in enumerate(rl_groups):
+        c = group_colors[g_idx % len(group_colors)]
+        mk = group_markers[g_idx % len(group_markers)]
+        sub = g_df[g_df["delta_E_vs_CASSCF"].abs() < 0.05] if "delta_E_vs_CASSCF" in g_df else g_df
+        if len(sub) == 0:
+            continue
+        x_v = sub["actor_amplitude"].to_numpy(dtype=np.float64)
+        y_v = sub["delta_E_vs_CASSCF"].to_numpy(dtype=np.float64) * 1e3
+        y_e = _safe_err(sub["SE_E"]) * 1e3
+        ax_de.errorbar(
+            x_v,
+            y_v,
+            yerr=y_e,
+            fmt=f"-{mk}",
+            color=c,
+            lw=2.0,
+            markersize=7,
+            capsize=4,
+            label=f"RL-MALA ($\\tau={t_val:.2f}, \\lambda={p_val:.2f}$)",
+        )
+    ax_de.set_title(
+        r"Precisión Energética: $(\langle E_L \rangle - E_{\mathrm{CASSCF}}) \pm \mathrm{SE}(E)$ vs $A_\mu$",
+        weight="bold",
+    )
+    ax_de.set_xlabel(r"Actor Amplitude $A_\mu$ ($0 = \mathrm{MALA}$)")
+    ax_de.set_ylabel(r"$\Delta E = \langle E_L \rangle - E_{\mathrm{CASSCF}}$ (mHa)")
+    ax_de.grid(True, alpha=0.3)
+
+    # 4. Tiempo de Autocorrelación tau_int(E) vs Actor Amplitude
+    for _, m_row in df_mala.iterrows():
+        t_v = float(m_row["tau"])
+        y_v = float(m_row["tau_int_E"])
+        y_e = float(m_row.get("tau_int_E_std", 0.0))
+        if np.isfinite(y_v):
+            ax_tau.axhline(
+                y_v, color=mala_colors.get(t_v, "gray"), linestyle="--", alpha=0.55, lw=1.3
+            )
+            ax_tau.errorbar(
+                [0.0],
+                [y_v],
+                yerr=[y_e if np.isfinite(y_e) else 0.0],
+                fmt="X",
+                color=mala_colors.get(t_v, "gray"),
+                markersize=8,
+                capsize=4,
+            )
+    for g_idx, ((t_val, p_val), g_df) in enumerate(rl_groups):
+        c = group_colors[g_idx % len(group_colors)]
+        mk = group_markers[g_idx % len(group_markers)]
+        x_v = g_df["actor_amplitude"].to_numpy(dtype=np.float64)
+        y_v = g_df["tau_int_E"].to_numpy(dtype=np.float64)
+        y_e = _safe_err(g_df.get("tau_int_E_std", pd.Series(np.zeros(len(g_df)))))
+        ax_tau.errorbar(
+            x_v,
+            y_v,
+            yerr=y_e,
+            fmt=f"-{mk}",
+            color=c,
+            lw=2.0,
+            markersize=7,
+            capsize=4,
+            label=f"RL-MALA ($\\tau={t_val:.2f}, \\lambda={p_val:.2f}$)",
+        )
+    best_tau_idx = df_plot["tau_int_E"].idxmin()
+    if pd.notna(best_tau_idx):
+        b_r = df_plot.loc[best_tau_idx]
+        ax_tau.scatter(
+            [b_r["actor_amplitude"]],
+            [b_r["tau_int_E"]],
+            s=220,
+            facecolors="none",
+            edgecolors="gold",
+            linewidths=3.0,
+            zorder=10,
+            label=f"★ Mín $\\tau_{{\\mathrm{{int}}}}$: {b_r['label']}",
+        )
+    ax_tau.set_yscale("log")
+    ax_tau.set_title(
+        r"Tiempo de Autocorrelación Integrado $\tau_{\mathrm{int}}(E)$ vs $A_\mu$ (menor es mejor)",
+        weight="bold",
+    )
+    ax_tau.set_xlabel(r"Actor Amplitude $A_\mu$ ($0 = \mathrm{MALA}$)")
+    ax_tau.set_ylabel(r"$\tau_{\mathrm{int}}(E)$ (pasos, log)")
+    ax_tau.grid(True, which="both", alpha=0.3)
+    ax_tau.legend(fontsize=7.8, loc="best", frameon=True)
+
+    # 5. ESJD vs Actor Amplitude
+    for _, m_row in df_mala.iterrows():
+        t_v = float(m_row["tau"])
+        y_v = float(m_row["ESJD"])
+        y_e = float(m_row.get("ESJD_std", 0.0))
+        if np.isfinite(y_v):
+            ax_esjd.axhline(
+                y_v, color=mala_colors.get(t_v, "gray"), linestyle="--", alpha=0.55, lw=1.3
+            )
+            ax_esjd.errorbar(
+                [0.0],
+                [y_v],
+                yerr=[y_e if np.isfinite(y_e) else 0.0],
+                fmt="X",
+                color=mala_colors.get(t_v, "gray"),
+                markersize=8,
+                capsize=4,
+            )
+    for g_idx, ((t_val, p_val), g_df) in enumerate(rl_groups):
+        c = group_colors[g_idx % len(group_colors)]
+        mk = group_markers[g_idx % len(group_markers)]
+        x_v = g_df["actor_amplitude"].to_numpy(dtype=np.float64)
+        y_v = g_df["ESJD"].to_numpy(dtype=np.float64)
+        y_e = _safe_err(g_df.get("ESJD_std", pd.Series(np.zeros(len(g_df)))))
+        ax_esjd.errorbar(
+            x_v,
+            y_v,
+            yerr=y_e,
+            fmt=f"-{mk}",
+            color=c,
+            lw=2.0,
+            markersize=7,
+            capsize=4,
+        )
+    ax_esjd.set_title(
+        r"Movilidad en Fase: $\mathrm{ESJD}$ ($\mathrm{Bohr}^2$) vs $A_\mu$ (mayor es mejor)",
+        weight="bold",
+    )
+    ax_esjd.set_xlabel(r"Actor Amplitude $A_\mu$ ($0 = \mathrm{MALA}$)")
+    ax_esjd.set_ylabel(r"$\mathrm{ESJD}$ ($\mathrm{Bohr}^2$)")
+    ax_esjd.grid(True, alpha=0.3)
+
+    # 6. Comparativa Directa MALA vs RL-MALA en función del Paso Base tau (ESS/s)
+    if len(df_mala) > 0:
+        ax_ess.errorbar(
+            df_mala["tau"].to_numpy(dtype=np.float64),
+            df_mala["ESS_per_sec"].to_numpy(dtype=np.float64),
+            yerr=_safe_err(df_mala.get("ESS_per_sec_std", pd.Series(np.zeros(len(df_mala))))),
+            fmt="-X",
+            color="#333333",
+            lw=2.4,
+            markersize=9,
+            capsize=5,
+            label="MALA Clásico (barrido en $\\tau$)",
+        )
+    for g_idx, ((amp_val, p_val), g_df) in enumerate(
+        df_rl.groupby(["actor_amplitude", "penalty_factor"])
+    ):
+        c = group_colors[g_idx % len(group_colors)]
+        mk = group_markers[g_idx % len(group_markers)]
+        g_sorted = g_df.sort_values("tau")
+        ax_ess.errorbar(
+            g_sorted["tau"].to_numpy(dtype=np.float64),
+            g_sorted["ESS_per_sec"].to_numpy(dtype=np.float64),
+            yerr=_safe_err(g_sorted.get("ESS_per_sec_std", pd.Series(np.zeros(len(g_sorted))))),
+            fmt=f"--{mk}",
+            color=c,
+            lw=1.9,
+            markersize=7,
+            capsize=4,
+            label=f"RL-MALA ($A_\\mu={amp_val:.2f}, \\lambda={p_val:.2f}$)",
+        )
+    best_ess_idx = df_plot["ESS_per_sec"].idxmax()
+    if pd.notna(best_ess_idx):
+        b_r = df_plot.loc[best_ess_idx]
+        ax_ess.scatter(
+            [b_r["tau"]],
+            [b_r["ESS_per_sec"]],
+            s=220,
+            facecolors="none",
+            edgecolors="gold",
+            linewidths=3.0,
+            zorder=10,
+            label=f"★ Máx ESS/s: {b_r['label']}",
+        )
+    ax_ess.set_title(
+        r"Velocidad Efectiva Real: $\mathrm{ESS/s}$ vs Paso Base $\tau$ (MALA vs RL-MALA)",
+        weight="bold",
+    )
+    ax_ess.set_xlabel(r"Paso Base de Propuesta $\tau$")
+    ax_ess.set_ylabel(r"$\mathrm{ESS} / \mathrm{s}$ ($\mathrm{s}^{-1}$)")
+    ax_ess.grid(True, alpha=0.3)
+    ax_ess.legend(fontsize=7.8, loc="best", frameon=True)
+
+    sys_tag = getattr(cfg, "system_tag", "")
+    fig.suptitle(
+        f"Evolución de Precisión, Cruce Nodal y Eficiencia vs Hiperparámetros ({sys_tag or '1D Wigner'})",
+        fontsize=15,
+        weight="bold",
+        y=1.01,
+    )
+    fig.tight_layout()
+    _save_fig(
+        fig,
+        out_dir,
+        "fig9_hyperparameter_evolution",
+        fmt=cfg.figure_format,
+        dpi=cfg.dpi,
+        sys_tag=sys_tag,
     )
 
 
@@ -994,17 +1636,18 @@ def run_postprocessing_pipeline(cfg: PostProcessConfig) -> pd.DataFrame:
                         "g_pair_opp": obs["g_pair_opp"],
                     }
                 )
-                obs_csv_std = os.path.join(cfg.out_dir, f"observables_{safe_lbl}.csv")
-                df_obs.to_csv(obs_csv_std, index=False)
-                if sys_tag and not safe_lbl.endswith(sys_tag):
-                    obs_csv_sys = os.path.join(cfg.out_dir, f"observables_{safe_lbl}_{sys_tag}.csv")
-                    df_obs.to_csv(obs_csv_sys, index=False)
-                else:
-                    obs_csv_sys = obs_csv_std
+                obs_fname = (
+                    f"observables_{safe_lbl}_{sys_tag}.csv"
+                    if (sys_tag and not safe_lbl.endswith(sys_tag))
+                    else f"observables_{safe_lbl}.csv"
+                )
+                obs_csv_path = os.path.join(cfg.out_dir, obs_fname)
+                df_obs.to_csv(obs_csv_path, index=False)
                 if getattr(cfg, "csv_collect_dir", ""):
                     import shutil
+
                     os.makedirs(cfg.csv_collect_dir, exist_ok=True)
-                    shutil.copy2(obs_csv_sys, os.path.join(cfg.csv_collect_dir, os.path.basename(obs_csv_sys)))
+                    shutil.copy2(obs_csv_path, os.path.join(cfg.csv_collect_dir, obs_fname))
 
             if cfg.plot_kl_divergence and (n_up + n_dn) == 2:
                 ckpts = bundle.get("checkpoints", {})
@@ -1041,15 +1684,18 @@ def run_postprocessing_pipeline(cfg: PostProcessConfig) -> pd.DataFrame:
                             "p_down": casscf_ref["p_down"],
                         }
                     )
-                    cas_csv_std = os.path.join(cfg.out_dir, "casscf_exact_density.csv")
-                    df_cas_ex.to_csv(cas_csv_std, index=False)
-                    if sys_tag:
-                        cas_csv_sys = os.path.join(cfg.out_dir, f"casscf_exact_density_{sys_tag}.csv")
-                        df_cas_ex.to_csv(cas_csv_sys, index=False)
-                        if getattr(cfg, "csv_collect_dir", ""):
-                            import shutil
-                            os.makedirs(cfg.csv_collect_dir, exist_ok=True)
-                            shutil.copy2(cas_csv_sys, os.path.join(cfg.csv_collect_dir, os.path.basename(cas_csv_sys)))
+                    cas_fname = (
+                        f"casscf_exact_density_{sys_tag}.csv"
+                        if sys_tag
+                        else "casscf_exact_density.csv"
+                    )
+                    cas_csv_path = os.path.join(cfg.out_dir, cas_fname)
+                    df_cas_ex.to_csv(cas_csv_path, index=False)
+                    if getattr(cfg, "csv_collect_dir", ""):
+                        import shutil
+
+                        os.makedirs(cfg.csv_collect_dir, exist_ok=True)
+                        shutil.copy2(cas_csv_path, os.path.join(cfg.csv_collect_dir, cas_fname))
             else:
                 print(
                     f"[PostProcess] Sin baseline CASSCF pre-entrenada para "
@@ -1057,26 +1703,17 @@ def run_postprocessing_pipeline(cfg: PostProcessConfig) -> pd.DataFrame:
                     f"Graficando resultados sin baseline CASSCF."
                 )
 
-        # Calcular estadística de D_KL contra CASSCF a través de las corridas de evaluación
-        kl_cas_tot_mean = float("nan")
-        kl_cas_tot_std = float("nan")
-        kl_cas_up_mean = float("nan")
-        kl_cas_dn_mean = float("nan")
-        if casscf_ref is not None and w_all is not None and w_all.size > 0:
-            w_5d = w_all[None, ...] if w_all.ndim == 4 else w_all
-            kls_tot, kls_up, kls_dn = [], [], []
-            eff_xmax = float(obs["x_max"]) if obs is not None else float(cfg.density_x_max)
-            for c_i in range(w_5d.shape[0]):
-                kl_dict = compute_spin_kl_divergences(
-                    w_5d[c_i], casscf_ref, n_bins=cfg.n_density_bins, x_max=eff_xmax
-                )
-                kls_tot.append(kl_dict["kl_total"])
-                kls_up.append(kl_dict["kl_up"])
-                kls_dn.append(kl_dict["kl_down"])
-            kl_cas_tot_mean = float(np.mean(kls_tot))
-            kl_cas_tot_std = float(np.std(kls_tot))
-            kl_cas_up_mean = float(np.mean(kls_up))
-            kl_cas_dn_mean = float(np.mean(kls_dn))
+        # Extraer hiperparámetros e incertidumbres multi-evaluación / Jackknife
+        hp_info = _extract_hyperparams(label, bundle)
+        eff_xmax = float(obs["x_max"]) if obs is not None else float(cfg.density_x_max)
+        unc_info = _compute_multi_eval_uncertainties(
+            w_all=w_all,
+            bundle=bundle,
+            summary=summary,
+            casscf_ref=casscf_ref,
+            cfg=cfg,
+            x_max=eff_xmax,
+        )
 
         tau_e = summary.get("tau_int_E", float("nan"))
         if baseline_tau_e is None and not np.isnan(tau_e) and tau_e > 0:
@@ -1098,6 +1735,12 @@ def run_postprocessing_pipeline(cfg: PostProcessConfig) -> pd.DataFrame:
         row = {
             "label": label,
             "h5_path": str(h5_path),
+            "is_neural": hp_info["is_neural"],
+            "proposal_type": hp_info["proposal_type"],
+            "tau": hp_info["tau"],
+            "actor_amplitude": hp_info["actor_amplitude"],
+            "penalty_factor": hp_info["penalty_factor"],
+            "sigma_action_scale": hp_info["sigma_action_scale"],
             "N": int(n_up + n_dn),
             "n_up": int(n_up),
             "n_dn": int(n_dn),
@@ -1112,12 +1755,15 @@ def run_postprocessing_pipeline(cfg: PostProcessConfig) -> pd.DataFrame:
             "V_mean": summary.get("V_mean", float("nan")),
             "acceptance": summary.get("acceptance", float("nan")),
             "ESJD": summary.get("ESJD", float("nan")),
+            "ESJD_std": unc_info["ESJD_std"],
             "accepted_disp": summary.get("accepted_disp", float("nan")),
             "tau_int_E": tau_e,
+            "tau_int_E_std": unc_info["tau_int_E_std"],
             "tau_int_pos": summary.get("tau_int_pos", float("nan")),
             "G_RL_speedup": g_rl,
             "ESS": summary.get("ESS", float("nan")),
             "ESS_per_sec": summary.get("ESS_per_sec", float("nan")),
+            "ESS_per_sec_std": unc_info["ESS_per_sec_std"],
             "wall_time_sec": summary.get("wall_time_sec", float("nan")),
             "time_to_solution_sec": summary.get("time_to_solution_sec", float("nan")),
             "n_wigner_peaks": obs["n_wigner_peaks"] if obs else -1,
@@ -1126,10 +1772,14 @@ def run_postprocessing_pipeline(cfg: PostProcessConfig) -> pd.DataFrame:
             "has_casscf_baseline": bool(casscf_ref is not None),
             "casscf_energy": cas_e_val,
             "delta_E_vs_CASSCF": delta_e_cas,
-            "kl_casscf_total_mean": kl_cas_tot_mean,
-            "kl_casscf_total_std": kl_cas_tot_std,
-            "kl_casscf_up_mean": kl_cas_up_mean,
-            "kl_casscf_down_mean": kl_cas_dn_mean,
+            "kl_casscf_total_mean": unc_info["kl_tot_mean"],
+            "kl_casscf_total_std": unc_info["kl_tot_std"],
+            "kl_casscf_up_mean": unc_info["kl_up_mean"],
+            "kl_casscf_up_std": unc_info["kl_up_std"],
+            "kl_casscf_down_mean": unc_info["kl_dn_mean"],
+            "kl_casscf_down_std": unc_info["kl_dn_std"],
+            "kl_casscf_spin_mean": unc_info["kl_spin_mean"],
+            "kl_casscf_spin_std": unc_info["kl_spin_std"],
             "kl_divergence_2e": kl_div_2e,
         }
         summary_rows.append(row)
@@ -1140,6 +1790,8 @@ def run_postprocessing_pipeline(cfg: PostProcessConfig) -> pd.DataFrame:
                 "bundle": bundle,
                 "diagnostics": diag,
                 "observables": obs,
+                "hyperparams": hp_info,
+                "uncertainties": unc_info,
             }
         )
 
@@ -1178,9 +1830,10 @@ def run_postprocessing_pipeline(cfg: PostProcessConfig) -> pd.DataFrame:
     df = pd.DataFrame(summary_rows)
     sys_tag = getattr(cfg, "system_tag", "")
     if cfg.save_summary_csv:
-        csv_path = os.path.join(cfg.out_dir, "summary_metrics.csv")
-        json_path = os.path.join(cfg.out_dir, "summary_metrics.json")
-        std_summary_json = os.path.join(cfg.out_dir, "summary.json")
+        csv_fname = f"summary_metrics_{sys_tag}.csv" if sys_tag else "summary_metrics.csv"
+        json_fname = f"summary_{sys_tag}.json" if sys_tag else "summary.json"
+        csv_path = os.path.join(cfg.out_dir, csv_fname)
+        json_path = os.path.join(cfg.out_dir, json_fname)
         df.to_csv(csv_path, index=False)
         summary_dict_payload = {
             "system_tag": sys_tag,
@@ -1193,24 +1846,18 @@ def run_postprocessing_pipeline(cfg: PostProcessConfig) -> pd.DataFrame:
             "models": summary_rows,
         }
         with open(json_path, "w", encoding="utf-8") as f:
-            json.dump(summary_rows, f, indent=2)
-        with open(std_summary_json, "w", encoding="utf-8") as f:
             json.dump(summary_dict_payload, f, indent=2)
-        if sys_tag:
-            csv_sys_path = os.path.join(cfg.out_dir, f"summary_metrics_{sys_tag}.csv")
-            json_sys_path = os.path.join(cfg.out_dir, f"summary_{sys_tag}.json")
-            df.to_csv(csv_sys_path, index=False)
-            with open(json_sys_path, "w", encoding="utf-8") as f:
-                json.dump(summary_dict_payload, f, indent=2)
-            if getattr(cfg, "csv_collect_dir", ""):
-                import shutil
-                os.makedirs(cfg.csv_collect_dir, exist_ok=True)
-                shutil.copy2(csv_sys_path, os.path.join(cfg.csv_collect_dir, os.path.basename(csv_sys_path)))
+        if getattr(cfg, "csv_collect_dir", ""):
+            import shutil
+
+            os.makedirs(cfg.csv_collect_dir, exist_ok=True)
+            shutil.copy2(csv_path, os.path.join(cfg.csv_collect_dir, csv_fname))
         print(f"[PostProcess] Tabla resumen guardada en: {csv_path}")
 
     if getattr(cfg, "master_comparison_csv", None):
         try:
             import fcntl
+
             m_csv = os.path.abspath(cfg.master_comparison_csv)
             os.makedirs(os.path.dirname(m_csv) or ".", exist_ok=True)
             lock_file = m_csv + ".lock"
@@ -1221,6 +1868,7 @@ def run_postprocessing_pipeline(cfg: PostProcessConfig) -> pd.DataFrame:
                     df.to_csv(m_csv, mode="a", header=write_hdr, index=False)
                     if getattr(cfg, "csv_collect_dir", ""):
                         import shutil
+
                         os.makedirs(cfg.csv_collect_dir, exist_ok=True)
                         shutil.copy2(m_csv, os.path.join(cfg.csv_collect_dir, os.path.basename(m_csv)))
                 finally:
@@ -1235,24 +1883,40 @@ def run_postprocessing_pipeline(cfg: PostProcessConfig) -> pd.DataFrame:
         except Exception as exc:
             print(f"  [PostProcess Advertencia] No se pudo generar {fn.__name__}: {exc}")
 
-    if cfg.plot_training_metrics:
-        _safe_run_plot(plot_training_dashboard, bundles_info, cfg.out_dir, cfg, casscf_ref=casscf_ref)
-    if cfg.plot_production_summary:
-        _safe_run_plot(plot_production_summary, bundles_info, cfg.out_dir, cfg, casscf_ref=casscf_ref)
-    if cfg.plot_observables_comparison:
-        _safe_run_plot(plot_observables_comparison, bundles_info, cfg.out_dir, cfg, casscf_ref=casscf_ref)
+    # 1. Graficar evolución respecto a hiperparámetros usando TODOS los modelos + barras de error
+    if getattr(cfg, "plot_hyperparameter_evolution", True) and len(df) >= 2:
         _safe_run_plot(
-            plot_article_densities_comparison, bundles_info, cfg.out_dir, cfg, casscf_ref=casscf_ref
+            plot_hyperparameter_evolution, df, cfg.out_dir, cfg, casscf_ref=casscf_ref
+        )
+
+    # 2. Filtrar los Top-K mejores modelos MALA y Top-K mejores RL-MALA para las figuras comparativas
+    top_k = int(getattr(cfg, "top_k_models", 2))
+    plot_bundles = _select_top_k_bundles(bundles_info, summary_rows, top_k=top_k)
+    if len(plot_bundles) < len(bundles_info):
+        sel_names = [b["label"] for b in plot_bundles]
+        print(
+            f"[PostProcess] Filtrando Top-{top_k} MALA vs Top-{top_k} RL-MALA "
+            f"({len(plot_bundles)}/{len(bundles_info)} modelos) para figuras comparativas: {sel_names}"
+        )
+
+    if cfg.plot_training_metrics:
+        _safe_run_plot(plot_training_dashboard, plot_bundles, cfg.out_dir, cfg, casscf_ref=casscf_ref)
+    if cfg.plot_production_summary:
+        _safe_run_plot(plot_production_summary, plot_bundles, cfg.out_dir, cfg, casscf_ref=casscf_ref)
+    if cfg.plot_observables_comparison:
+        _safe_run_plot(plot_observables_comparison, plot_bundles, cfg.out_dir, cfg, casscf_ref=casscf_ref)
+        _safe_run_plot(
+            plot_article_densities_comparison, plot_bundles, cfg.out_dir, cfg, casscf_ref=casscf_ref
         )
         _safe_run_plot(
-            plot_article_kl_divergence, bundles_info, cfg.out_dir, cfg, casscf_ref=casscf_ref
+            plot_article_kl_divergence, plot_bundles, cfg.out_dir, cfg, casscf_ref=casscf_ref
         )
     if cfg.plot_efficiency_bars:
-        _safe_run_plot(plot_efficiency_bars, bundles_info, cfg.out_dir, cfg)
+        _safe_run_plot(plot_efficiency_bars, plot_bundles, cfg.out_dir, cfg)
     if cfg.plot_time_to_solution:
-        _safe_run_plot(plot_time_to_solution, bundles_info, cfg.out_dir, cfg)
+        _safe_run_plot(plot_time_to_solution, plot_bundles, cfg.out_dir, cfg)
     if cfg.plot_walker_trace:
-        _safe_run_plot(plot_walker_trace, bundles_info, cfg.out_dir, cfg, casscf_ref=casscf_ref)
+        _safe_run_plot(plot_walker_trace, plot_bundles, cfg.out_dir, cfg, casscf_ref=casscf_ref)
 
     print("\n" + "=" * 76)
     print("[PostProcess] Resumen Comparativo de Corridas:")
@@ -1267,7 +1931,14 @@ def run_postprocessing_pipeline(cfg: PostProcessConfig) -> pd.DataFrame:
         "ESS_per_sec",
     ]
     if casscf_ref is not None:
-        cols.extend(["casscf_energy", "delta_E_vs_CASSCF", "kl_casscf_total_mean"])
+        cols.extend(
+            [
+                "casscf_energy",
+                "delta_E_vs_CASSCF",
+                "kl_casscf_total_mean",
+                "kl_casscf_spin_mean",
+            ]
+        )
     print(df[cols].to_string(index=False))
     print("=" * 76)
     return df

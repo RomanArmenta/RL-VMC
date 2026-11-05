@@ -65,16 +65,22 @@ while [[ $# -gt 0 ]]; do
             SYSTEM="$2"
             shift 2
             ;;
+        --top-k|--top_k_models|-k)
+            TOP_K_MODELS="$2"
+            shift 2
+            ;;
         --help|-h)
             echo "Uso: $0 [OPCIONES] [CARPETA_SALIDA]"
             echo ""
             echo "Opciones:"
             echo "  --postprocess-only, -p    Ejecuta únicamente la Fase 4 (postprocess y evaluate_nodal_crossing_1d)"
-            echo "                            sobre los archivos .h5 existentes sin re-entrenar ni muestrear."
+            echo "                            sobre los archivos .h5 (o CSVs) existentes sin re-entrenar ni muestrear."
             echo "  --system, -s [N4|N6|all]  Selecciona el sistema físico a procesar:"
             echo "                              N4: Wigner N=4, g=4.0 (barreras profundas, 4 electrones)"
             echo "                              N6: CASSCF N=6, g=1.0 (20 det, base 256, 6 electrones)"
             echo "                              all: ejecuta ambos sistemas en secuencia (default)"
+            echo "  --top-k, -k K             Número de mejores modelos MALA vs mejores RL-MALA a graficar en"
+            echo "                            las figuras comparativas (default: 2)."
             echo "  [CARPETA_SALIDA]          Directorio raíz de salida (default: results_nodal_crossing_search)"
             exit 0
             ;;
@@ -176,10 +182,18 @@ RL_BATCH_SIZE="${RL_BATCH_SIZE:-256}"
 EVAL_INIT_MODE="${EVAL_INIT_MODE:-spin_ordered_offset}"
 EVAL_BURN_IN="${EVAL_BURN_IN:-200}"
 MEASURE_STEPS="${MEASURE_STEPS:-40000}"
-N_EVAL_CHAINS="${N_EVAL_CHAINS:-1}"
+N_EVAL_CHAINS="${N_EVAL_CHAINS:-3}"
 JIT_CHUNK_SIZE="${JIT_CHUNK_SIZE:-2000}"
 ELOC_CHUNK_SIZE="${ELOC_CHUNK_SIZE:-4096}"
 SAVE_WALKERS_MAX_BATCH="${SAVE_WALKERS_MAX_BATCH:-128}"
+
+# --- 1.5b Parámetros de Filtrado Top-K y Barras de Error en Post-Procesamiento ---
+# TOP_K_MODELS      : Número de mejores samplers MALA vs mejores RL-MALA a mostrar en las
+#                     figuras comparativas (ej. 2 -> Top-2 MALA vs Top-2 RL-MALA).
+# N_EVAL_SUBBLOCKS  : Número de sub-bloques independientes de caminantes/tiempo para calcular
+#                     barras de error Jackknife cuando un archivo .h5 tiene 1 sola cadena.
+TOP_K_MODELS="${TOP_K_MODELS:-2}"
+N_EVAL_SUBBLOCKS="${N_EVAL_SUBBLOCKS:-5}"
 
 # --- 1.6 Fase 3 (Opcional): Entrenamiento Acoplado Multi-SJB + TD3 ---
 # Activar con RUN_PHASE3_MULTISJB=1 si además del muestreo sobre CASSCF congelado
@@ -583,8 +597,8 @@ run_system_pipeline() {
             log_msg "  [${idx}] ${h5_labels[$idx]} -> ${h5_files[$idx]}"
         done
 
-        # 4.1 Post-procesamiento general (tablas de autocorrelación, ESS/s, energías)
-        log_msg "[${sys_tag} - FASE 4.1] Ejecutando cli/postprocess.py..."
+        # 4.1 Post-procesamiento general (tablas de autocorrelación, ESS/s, energías + Top-K + Evolución de hiperparámetros)
+        log_msg "[${sys_tag} - FASE 4.1] Ejecutando cli/postprocess.py (Top-${TOP_K_MODELS} MALA vs Top-${TOP_K_MODELS} RL-MALA)..."
         python3 -u cli/postprocess.py \
             --inputs "${h5_files[@]}" \
             --labels "${h5_labels[@]}" \
@@ -593,10 +607,12 @@ run_system_pipeline() {
             --csv_collect_dir "$CSV_SUMMARY_DIR" \
             --system_tag "$sys_tag" \
             --figure_format "$FIGURE_FORMAT" \
+            --top_k_models "$TOP_K_MODELS" \
+            --n_eval_subblocks "$N_EVAL_SUBBLOCKS" \
             2>&1 | tee "${LOG_DIR}/postprocess_${sys_tag}.log" || log_msg "[AVISO] postprocess reportó advertencias en ${sys_tag}"
 
-        # 4.2 Evaluador especializado de Cruce de Barreras Nodales (réplica Article_plots_11 + Ranking)
-        log_msg "[${sys_tag} - FASE 4.2] Ejecutando cli/evaluate_nodal_crossing_1d.py..."
+        # 4.2 Evaluador especializado de Cruce de Barreras Nodales (réplica Article_plots_11 + Evolución Hiperparámetros)
+        log_msg "[${sys_tag} - FASE 4.2] Ejecutando cli/evaluate_nodal_crossing_1d.py (Top-${TOP_K_MODELS} MALA vs Top-${TOP_K_MODELS} RL-MALA)..."
         python3 -u cli/evaluate_nodal_crossing_1d.py \
             --inputs "${h5_files[@]}" \
             --labels "${h5_labels[@]}" \
@@ -605,11 +621,26 @@ run_system_pipeline() {
             --csv_collect_dir "$CSV_SUMMARY_DIR" \
             --system_tag "$sys_tag" \
             --figure_format "$FIGURE_FORMAT" \
+            --top_k_models "$TOP_K_MODELS" \
+            --n_eval_subblocks "$N_EVAL_SUBBLOCKS" \
             2>&1 | tee "${LOG_DIR}/nodal_crossing_eval_${sys_tag}.log" || log_msg "[AVISO] evaluate_nodal_crossing_1d reportó advertencias en ${sys_tag}"
 
         log_msg "[OK] Figuras y tablas CSV de ${sys_tag} guardadas exitosamente en: ${sys_fig} y ${CSV_SUMMARY_DIR}"
+    elif [[ -d "${sys_fig}/postprocess_standard" ]]; then
+        log_msg "[${sys_tag} - FASE 4.2 (Modo CSV)] Reconstruyendo figuras desde ${sys_fig}/postprocess_standard (Top-${TOP_K_MODELS})..."
+        python3 -u cli/evaluate_nodal_crossing_1d.py \
+            --from_postprocess_dir "${sys_fig}/postprocess_standard" \
+            --casscf_npz_path "$npz_path" \
+            --out_dir "$sys_fig" \
+            --csv_collect_dir "$CSV_SUMMARY_DIR" \
+            --system_tag "$sys_tag" \
+            --figure_format "$FIGURE_FORMAT" \
+            --top_k_models "$TOP_K_MODELS" \
+            --n_eval_subblocks "$N_EVAL_SUBBLOCKS" \
+            2>&1 | tee "${LOG_DIR}/nodal_crossing_eval_${sys_tag}.log" || log_msg "[AVISO] evaluate_nodal_crossing_1d reportó advertencias en ${sys_tag}"
+        log_msg "[OK] Figuras y tablas CSV de ${sys_tag} reconstruidas en: ${sys_fig}"
     else
-        log_msg "[AVISO] No se encontraron archivos run_bundle.h5 para post-procesar en ${sys_out} ni en ${OUT_ROOT}."
+        log_msg "[AVISO] No se encontraron archivos run_bundle.h5 ni CSVs en ${sys_out} / ${sys_fig}."
     fi
 }
 
