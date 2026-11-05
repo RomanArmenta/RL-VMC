@@ -295,6 +295,22 @@ export PYTHONUNBUFFERED=1
 export XLA_PYTHON_CLIENT_PREALLOCATE=false
 export XLA_PYTHON_CLIENT_ALLOCATOR=platform
 
+# --- Detección de binarios de CUDA y configuración de estabilidad JAX/XLA ---
+for cuda_cand in /usr/local/cuda /usr/local/cuda-12* /usr/local/cuda-11*; do
+    if [[ -d "$cuda_cand/bin" ]]; then
+        export PATH="${cuda_cand}/bin:$PATH"
+        export LD_LIBRARY_PATH="${cuda_cand}/lib64:${LD_LIBRARY_PATH:-}"
+        break
+    fi
+done
+
+# Estabilización de JAX XLA en GPU: desactiva el autotuner experimental de Triton GEMM
+# que provoca 'INTERNAL: Failed to launch ptxas' bajo concurrencia multi-GPU en Ayler
+export XLA_FLAGS="--xla_gpu_autotune_level=2 --xla_gpu_enable_triton_gemm=false ${XLA_FLAGS:-}"
+
+# Resolución y validación robusta del ejecutable Python
+PYTHON_BIN="${PYTHON_BIN:-$(command -v python3 || command -v python || echo "python3")}"
+
 AVAILABLE_GPUS=()
 TOTAL_VRAM_MB=0
 
@@ -394,6 +410,25 @@ log_msg "Grilla TD3 (penalty)   : ${PENALTY_GRID[*]}"
 log_msg "Grilla TD3 (sigma_sc)  : ${SIGMA_SCALE_GRID[*]}"
 log_msg "=============================================================================="
 
+# Validar disponibilidad del ejecutable de Python y JAX
+if ! "$PYTHON_BIN" -c "import jax" >/dev/null 2>&1; then
+    log_msg "[ALERTA ENTORNO] '$PYTHON_BIN' no puede importar JAX."
+    log_msg "                 Si estás en Ayler/Baker, ejecuta antes: 'conda activate jax-gpu'"
+    if [[ "$POSTPROCESS_ONLY" -eq 0 ]]; then
+        log_msg "[ERROR FATAL] JAX es requerido para el muestreo VMC/RL. Abortando ejecución."
+        exit 1
+    fi
+else
+    JAX_VER="$("$PYTHON_BIN" -c "import jax; print(jax.__version__)" 2>/dev/null || echo "ok")"
+    log_msg "[ENTORNO] Python: $PYTHON_BIN | JAX: v${JAX_VER}"
+fi
+
+if command -v ptxas >/dev/null 2>&1; then
+    log_msg "[ENTORNO] CUDA ptxas detectado en: $(command -v ptxas)"
+else
+    log_msg "[AVISO] ptxas no detectado en PATH (Triton GEMM desactivado; cuBLAS activo para máxima estabilidad)."
+fi
+
 # ==============================================================================
 # SECCIÓN 3: COMPILACIÓN DE FIGURAS EN TIEMPO REAL Y COLA DE TRABAJOS GPU
 # ==============================================================================
@@ -419,7 +454,7 @@ update_global_all_models_figures() {
 
     if [[ -n "$target_csv" ]]; then
         CUDA_VISIBLE_DEVICES="" JAX_PLATFORMS=cpu \
-            python3 -u scripts/plot_param_search_results.py \
+            "$PYTHON_BIN" -u scripts/plot_param_search_results.py \
             --csv "$target_csv" \
             --out_dir "$GLOBAL_FIG_DIR" \
             "${PLOT_STYLE_ARGS[@]}" \
@@ -472,7 +507,7 @@ compile_system_figures() {
             log_msg "[${sys_tag} - POSTPROCESS] Compilando las 8 figuras estándar y métricas (${#h5_files[@]} modelos)..."
         fi
         CUDA_VISIBLE_DEVICES="" JAX_PLATFORMS=cpu \
-            python3 -u cli/postprocess.py \
+            "$PYTHON_BIN" -u cli/postprocess.py \
             --inputs "${h5_files[@]}" \
             --labels "${h5_labels[@]}" \
             --casscf_npz_path "$npz_path" \
@@ -489,7 +524,7 @@ compile_system_figures() {
             # En modo final del sistema, evaluar cruce nodal completo desde .h5 (con trazas de 1 walker)
             log_msg "[${sys_tag} - NODAL CROSSING] Compilando figuras de cruce nodal y trazas de 1 walker (Top-${WALKER_TRACE_TOP_K})..."
             CUDA_VISIBLE_DEVICES="" JAX_PLATFORMS=cpu \
-                python3 -u cli/evaluate_nodal_crossing_1d.py \
+                "$PYTHON_BIN" -u cli/evaluate_nodal_crossing_1d.py \
                 --inputs "${h5_files[@]}" \
                 --labels "${h5_labels[@]}" \
                 --casscf_npz_path "$npz_path" \
@@ -504,7 +539,7 @@ compile_system_figures() {
         else
             # En modo incremental en vivo, usar --from_postprocess_dir (instantáneo, <2s en CPU)
             CUDA_VISIBLE_DEVICES="" JAX_PLATFORMS=cpu \
-                python3 -u cli/evaluate_nodal_crossing_1d.py \
+                "$PYTHON_BIN" -u cli/evaluate_nodal_crossing_1d.py \
                 --from_postprocess_dir "${sys_fig}/postprocess_standard" \
                 --casscf_npz_path "$npz_path" \
                 --out_dir "$sys_fig" \
@@ -522,7 +557,7 @@ compile_system_figures() {
     elif [[ -d "${sys_fig}/postprocess_standard" ]]; then
         log_msg "[${sys_tag} - MODO CSV] Reconstruyendo figuras desde ${sys_fig}/postprocess_standard..."
         CUDA_VISIBLE_DEVICES="" JAX_PLATFORMS=cpu \
-            python3 -u cli/evaluate_nodal_crossing_1d.py \
+            "$PYTHON_BIN" -u cli/evaluate_nodal_crossing_1d.py \
             --from_postprocess_dir "${sys_fig}/postprocess_standard" \
             --casscf_npz_path "$npz_path" \
             --out_dir "$sys_fig" \
@@ -541,10 +576,13 @@ compile_system_figures() {
 
 declare -a SLOT_PIDS=()
 declare -a SLOT_NAMES=()
+declare -a SLOT_RUN_DIRS=()
 for (( s=0; s<MAX_CONCURRENT_JOBS; s++ )); do
     SLOT_PIDS[$s]=0
     SLOT_NAMES[$s]=""
+    SLOT_RUN_DIRS[$s]=""
 done
+CONSECUTIVE_INSTANT_FAILURES=0
 
 is_run_completed() {
     local dir="$1"
@@ -568,9 +606,30 @@ wait_for_free_slot() {
             fi
             if ! kill -0 "$pid" 2>/dev/null; then
                 wait "$pid" 2>/dev/null || true
-                log_msg "[FIN] Slot #${s} (GPU='${SLOT_GPUS[$s]}') liberado por '${SLOT_NAMES[$s]}'"
+                local prev_run="${SLOT_NAMES[$s]}"
+                local prev_rdir="${SLOT_RUN_DIRS[$s]:-}"
+                log_msg "[FIN] Slot #${s} (GPU='${SLOT_GPUS[$s]}') liberado por '${prev_run}'"
+
+                # Comprobación de fallo instantáneo / Circuit Breaker de seguridad
+                if [[ -n "$prev_rdir" && -f "${prev_rdir}/.instant_failure" ]]; then
+                    local fail_code
+                    fail_code=$(cat "${prev_rdir}/.instant_failure" 2>/dev/null || echo "1")
+                    rm -f "${prev_rdir}/.instant_failure" 2>/dev/null || true
+                    CONSECUTIVE_INSTANT_FAILURES=$(( CONSECUTIVE_INSTANT_FAILURES + 1 ))
+                    log_msg "[ALERTA CRÍTICA] '${prev_run}' falló instantáneamente (<5s) con código de salida ${fail_code} (racha: ${CONSECUTIVE_INSTANT_FAILURES}/3)"
+                    if [[ "$CONSECUTIVE_INSTANT_FAILURES" -ge 3 ]]; then
+                        log_msg "[ERROR FATAL] Se detectaron 3 fallos instantáneos consecutivos."
+                        log_msg "[ERROR FATAL] Revisa el log de error en: ${LOG_DIR}/${prev_run}.log"
+                        log_msg "[ERROR FATAL] Deteniendo la búsqueda para proteger la cola y no generar logs vacíos."
+                        exit 1
+                    fi
+                else
+                    CONSECUTIVE_INSTANT_FAILURES=0
+                fi
+
                 SLOT_PIDS[$s]=0
                 SLOT_NAMES[$s]=""
+                SLOT_RUN_DIRS[$s]=""
                 FREE_SLOT=$s
                 return 0
             fi
@@ -587,6 +646,7 @@ wait_all_slots() {
             log_msg "[FIN] Slot #${s} (GPU='${SLOT_GPUS[$s]}') liberado por '${SLOT_NAMES[$s]}'"
             SLOT_PIDS[$s]=0
             SLOT_NAMES[$s]=""
+            SLOT_RUN_DIRS[$s]=""
         fi
     done
 }
@@ -616,13 +676,19 @@ launch_job() {
         if [[ -n "$gpu_id" ]]; then
             export CUDA_VISIBLE_DEVICES="$gpu_id"
         fi
+        local t0=$(date +%s)
         "${cmd[@]}" > "$log_file" 2>&1
         local exit_code=$?
+        local t_elapsed=$(( $(date +%s) - t0 ))
+
+        if [[ "$exit_code" -ne 0 && "$t_elapsed" -lt 5 ]]; then
+            echo "$exit_code" > "${run_dir}/.instant_failure"
+        fi
 
         if [[ "$exit_code" -eq 0 && -f "${run_dir}/run_bundle.h5" ]]; then
             # 1. Post-procesamiento individual del modelo recién terminado (en CPU)
             CUDA_VISIBLE_DEVICES="" JAX_PLATFORMS=cpu \
-                python3 -u cli/postprocess.py \
+                "$PYTHON_BIN" -u cli/postprocess.py \
                 --inputs "${run_dir}/run_bundle.h5" \
                 --labels "${run_name#${sys_tag}_}" \
                 --casscf_npz_path "$npz_path" \
@@ -646,6 +712,7 @@ launch_job() {
     ) &
     SLOT_PIDS[$slot]=$!
     SLOT_NAMES[$slot]="$run_name"
+    SLOT_RUN_DIRS[$slot]="$run_dir"
 }
 
 # ==============================================================================
@@ -714,7 +781,7 @@ run_system_pipeline() {
             local rname="${sys_tag}_MALA_tau${tau}"
             local rdir="${sys_out}/${rname}"
             launch_job "$sys_tag" "$npz_path" "$rname" "$rdir" \
-                python3 -u cli/run_1d.py \
+                "$PYTHON_BIN" -u cli/run_1d.py \
                 "${common_args[@]}" \
                 --method MALA \
                 --train_mode eval_only \
@@ -744,7 +811,7 @@ run_system_pipeline() {
                         local rname="${sys_tag}_RL_MALA_tau${tau}_amp${amp}_pen${pen}_sig${sig}"
                         local rdir="${sys_out}/${rname}"
                         launch_job "$sys_tag" "$npz_path" "$rname" "$rdir" \
-                            python3 -u cli/run_1d.py \
+                            "$PYTHON_BIN" -u cli/run_1d.py \
                             "${common_args[@]}" \
                             --method TD3 \
                             --train_mode rl_only \
