@@ -73,6 +73,8 @@ TOP_K_MODELS="${TOP_K_MODELS:-2}"
 WALKER_TRACE_TOP_K="${WALKER_TRACE_TOP_K:-1}"
 N_EVAL_SUBBLOCKS="${N_EVAL_SUBBLOCKS:-5}"
 REALTIME_PLOT_UPDATES="${REALTIME_PLOT_UPDATES:-1}"
+FORCE_POSTPROCESS="${FORCE_POSTPROCESS:-0}"
+RUNS_LAUNCHED_FOR_SYSTEM=0
 
 POSITIONAL_ARGS=()
 while [[ $# -gt 0 ]]; do
@@ -81,12 +83,32 @@ while [[ $# -gt 0 ]]; do
             POSTPROCESS_ONLY=1
             shift
             ;;
+        --force-postprocess|--force_postprocess)
+            FORCE_POSTPROCESS=1
+            shift
+            ;;
         --system|-s)
             SYSTEM="$2"
             shift 2
             ;;
+        --gpu|--gpus)
+            GPU_LIST="$2"
+            shift 2
+            ;;
         --preset|--grid-preset)
             GRID_PRESET="$2"
+            shift 2
+            ;;
+        --rl-steps|--train-steps)
+            RL_TRAIN_STEPS="$2"
+            shift 2
+            ;;
+        --eval-chains|--chains)
+            N_EVAL_CHAINS="$2"
+            shift 2
+            ;;
+        --measure-steps|--steps)
+            MEASURE_STEPS="$2"
             shift 2
             ;;
         --top-k|--top_k_models|-k)
@@ -149,7 +171,12 @@ while [[ $# -gt 0 ]]; do
             echo "                                  ayler: Nueva región complementaria (41 modelos/sistema, ~10h en 3 GPUs, default)"
             echo "                                  baker: Región compacta original (16 modelos/sistema para 1 GPU)"
             echo "  --system, -s [N4|N6|all]      Sistema físico a evaluar (N4, N6, o all; default: all)"
+            echo "  --gpu, --gpus [ID|'ID1 ID2']  Limita la ejecución a GPU(s) específica(s), ej. --gpu 2"
+            echo "  --rl-steps N                  Barridos RL TD3 por modelo (default: 6000; para N=6 2500 es óptimo)"
+            echo "  --chains N                    Número de cadenas independientes MCMC en evaluación (default: 3)"
+            echo "  --measure-steps N             Pasos MCMC por cadena de producción (default: 40000)"
             echo "  --postprocess-only, -p        Solo ejecuta el post-procesamiento y gráficas sobre resultados existentes"
+            echo "  --force-postprocess           Fuerza la regeneración de la Fase 3 aunque todos los modelos estén hechos"
             echo "  --top-k, -k K                 Número de mejores MALA vs mejores RL-MALA en curvas comparativas (default: 2)"
             echo "  --walker-top-k K              Número de mejores modelos por clase en trazas de 1 walker (default: 1)"
             echo ""
@@ -317,6 +344,9 @@ TOTAL_VRAM_MB=0
 discover_hardware() {
     if [[ -n "${GPU_LIST:-}" ]]; then
         read -r -a AVAILABLE_GPUS <<< "$GPU_LIST"
+        if command -v nvidia-smi >/dev/null 2>&1; then
+            TOTAL_VRAM_MB=$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits 2>/dev/null | head -n 1 | tr -d ' ' || echo 0)
+        fi
     elif command -v nvidia-smi >/dev/null 2>&1; then
         while IFS= read -r line; do
             [[ -n "$line" ]] && AVAILABLE_GPUS+=("$line")
@@ -505,22 +535,20 @@ compile_system_figures() {
     if [[ "${#h5_files[@]}" -gt 0 ]]; then
         if [[ "$mode" == "full" ]]; then
             log_msg "[${sys_tag} - POSTPROCESS] Compilando las 8 figuras estándar y métricas (${#h5_files[@]} modelos)..."
-        fi
-        CUDA_VISIBLE_DEVICES="" JAX_PLATFORMS=cpu \
-            "$PYTHON_BIN" -u cli/postprocess.py \
-            --inputs "${h5_files[@]}" \
-            --labels "${h5_labels[@]}" \
-            --casscf_npz_path "$npz_path" \
-            --out_dir "${sys_fig}/postprocess_standard" \
-            --csv_collect_dir "$CSV_SUMMARY_DIR" \
-            --system_tag "$sys_tag" \
-            --top_k_models "$TOP_K_MODELS" \
-            --walker_trace_top_k "$WALKER_TRACE_TOP_K" \
-            --n_eval_subblocks "$N_EVAL_SUBBLOCKS" \
-            "${PLOT_STYLE_ARGS[@]}" \
-            >> "${LOG_DIR}/postprocess_${sys_tag}.log" 2>&1 || log_msg "[AVISO] postprocess reportó advertencias en ${sys_tag}"
+            CUDA_VISIBLE_DEVICES="" JAX_PLATFORMS=cpu \
+                "$PYTHON_BIN" -u cli/postprocess.py \
+                --inputs "${h5_files[@]}" \
+                --labels "${h5_labels[@]}" \
+                --casscf_npz_path "$npz_path" \
+                --out_dir "${sys_fig}/postprocess_standard" \
+                --csv_collect_dir "$CSV_SUMMARY_DIR" \
+                --system_tag "$sys_tag" \
+                --top_k_models "$TOP_K_MODELS" \
+                --walker_trace_top_k "$WALKER_TRACE_TOP_K" \
+                --n_eval_subblocks "$N_EVAL_SUBBLOCKS" \
+                "${PLOT_STYLE_ARGS[@]}" \
+                >> "${LOG_DIR}/postprocess_${sys_tag}.log" 2>&1 || log_msg "[AVISO] postprocess reportó advertencias en ${sys_tag}"
 
-        if [[ "$mode" == "full" ]]; then
             # En modo final del sistema, evaluar cruce nodal completo desde .h5 (con trazas de 1 walker)
             log_msg "[${sys_tag} - NODAL CROSSING] Compilando figuras de cruce nodal y trazas de 1 walker (Top-${WALKER_TRACE_TOP_K})..."
             CUDA_VISIBLE_DEVICES="" JAX_PLATFORMS=cpu \
@@ -537,19 +565,23 @@ compile_system_figures() {
                 "${PLOT_STYLE_ARGS[@]}" \
                 >> "${LOG_DIR}/nodal_crossing_eval_${sys_tag}.log" 2>&1 || log_msg "[AVISO] evaluate_nodal_crossing_1d reportó advertencias en ${sys_tag}"
         else
-            # En modo incremental en vivo, usar --from_postprocess_dir (instantáneo, <2s en CPU)
-            CUDA_VISIBLE_DEVICES="" JAX_PLATFORMS=cpu \
-                "$PYTHON_BIN" -u cli/evaluate_nodal_crossing_1d.py \
-                --from_postprocess_dir "${sys_fig}/postprocess_standard" \
-                --casscf_npz_path "$npz_path" \
-                --out_dir "$sys_fig" \
-                --csv_collect_dir "$CSV_SUMMARY_DIR" \
-                --system_tag "$sys_tag" \
-                --top_k_models "$TOP_K_MODELS" \
-                --walker_trace_top_k "$WALKER_TRACE_TOP_K" \
-                --n_eval_subblocks "$N_EVAL_SUBBLOCKS" \
-                "${PLOT_STYLE_ARGS[@]}" \
-                >> "${LOG_DIR}/nodal_crossing_eval_${sys_tag}.log" 2>&1 || true
+            # En modo incremental en vivo:
+            # Cada modelo recién terminado ya ejecutó su post-proceso individual (<20s) y exportó su métrica CSV.
+            # Aquí solo regeneramos figuras ligeras si ya existe el directorio postprocess_standard (<2s).
+            if [[ -d "${sys_fig}/postprocess_standard" ]]; then
+                CUDA_VISIBLE_DEVICES="" JAX_PLATFORMS=cpu \
+                    "$PYTHON_BIN" -u cli/evaluate_nodal_crossing_1d.py \
+                    --from_postprocess_dir "${sys_fig}/postprocess_standard" \
+                    --casscf_npz_path "$npz_path" \
+                    --out_dir "$sys_fig" \
+                    --csv_collect_dir "$CSV_SUMMARY_DIR" \
+                    --system_tag "$sys_tag" \
+                    --top_k_models "$TOP_K_MODELS" \
+                    --walker_trace_top_k "$WALKER_TRACE_TOP_K" \
+                    --n_eval_subblocks "$N_EVAL_SUBBLOCKS" \
+                    "${PLOT_STYLE_ARGS[@]}" \
+                    >> "${LOG_DIR}/nodal_crossing_eval_${sys_tag}.log" 2>&1 || true
+            fi
         fi
 
         # Actualizar figuras globales de todos los modelos/sistemas
@@ -664,6 +696,8 @@ launch_job() {
         return 0
     fi
 
+    RUNS_LAUNCHED_FOR_SYSTEM=$(( RUNS_LAUNCHED_FOR_SYSTEM + 1 ))
+
     mkdir -p "$run_dir"
     local log_file="${LOG_DIR}/${run_name}.log"
 
@@ -686,13 +720,14 @@ launch_job() {
         fi
 
         if [[ "$exit_code" -eq 0 && -f "${run_dir}/run_bundle.h5" ]]; then
-            # 1. Post-procesamiento individual del modelo recién terminado (en CPU)
+            # 1. Post-procesamiento individual del modelo recién terminado (en CPU, <20s)
             CUDA_VISIBLE_DEVICES="" JAX_PLATFORMS=cpu \
                 "$PYTHON_BIN" -u cli/postprocess.py \
                 --inputs "${run_dir}/run_bundle.h5" \
                 --labels "${run_name#${sys_tag}_}" \
                 --casscf_npz_path "$npz_path" \
                 --out_dir "${run_dir}/postprocess" \
+                --csv_collect_dir "$CSV_SUMMARY_DIR" \
                 --system_tag "$run_name" \
                 --top_k_models 1 \
                 --walker_trace_top_k 1 \
@@ -728,6 +763,7 @@ run_system_pipeline() {
     local omega="$6"
     local g_val="$7"
     local soft="$8"
+    RUNS_LAUNCHED_FOR_SYSTEM=0
 
     if [[ ! -f "$npz_path" ]]; then
         if [[ -f "${SCRIPT_DIR}/${npz_path}" ]]; then
@@ -849,9 +885,15 @@ run_system_pipeline() {
     #         + ACTUALIZACIÓN DE LAS FIGURAS GLOBALES DE TODOS LOS MODELOS
     # --------------------------------------------------------------------------
     rm -rf "$PLOT_LOCK_DIR" 2>/dev/null || true
-    log_msg "[${sys_tag} - FASE 3] Compilando post-producción completa del sistema y actualizando gráficos globales..."
-    compile_system_figures "$sys_tag" "$npz_path" "full"
-    log_msg "[OK] Post-producción de ${sys_tag} completada en: ${sys_fig} y ${GLOBAL_FIG_DIR}"
+    local summary_csv="${sys_fig}/postprocess_standard/summary_metrics_${sys_tag}.csv"
+    if [[ "$FORCE_POSTPROCESS" -eq 0 && "$POSTPROCESS_ONLY" -eq 0 && "$RUNS_LAUNCHED_FOR_SYSTEM" -eq 0 && -f "$summary_csv" ]]; then
+        log_msg "[SKIP] Post-producción completa de ${sys_tag} ya cuenta con métricas y figuras en ${sys_fig}. Saltando re-cálculo de Fase 3."
+        update_global_all_models_figures
+    else
+        log_msg "[${sys_tag} - FASE 3] Compilando post-producción completa del sistema y actualizando gráficos globales..."
+        compile_system_figures "$sys_tag" "$npz_path" "full"
+        log_msg "[OK] Post-producción de ${sys_tag} completada en: ${sys_fig} y ${GLOBAL_FIG_DIR}"
+    fi
 }
 
 # Ejecutar los sistemas habilitados (con actualización de figuras al terminar cada sistema)
