@@ -728,7 +728,8 @@ def plot_article_densities_comparison(
         x_max = float(obs.get("x_max", 15.0))
         n_chains = int(obs.get("n_chains_eval", 1))
         _, ls_model = _get_model_style(binfo, idx)
-        fam_tag = "RL-MALA [solid]" if ls_model == "-" else "MALA [dashed]"
+        is_neural = ls_model == "-"
+        fam_tag = "RL-MALA" if is_neural else "MALA"
 
         # Densidad total muestreada (discontinua para MALA, continua para RL-MALA)
         ax.plot(
@@ -737,7 +738,7 @@ def plot_article_densities_comparison(
             color="black",
             linestyle=ls_model,
             lw=2.5,
-            label=f"Sampled Total ({fam_tag}, $N_{{\\mathrm{{eval}}}}={max(n_chains, int(getattr(cfg, 'n_eval_subblocks', 5)))}$)",
+            label=f"Sampled Total ({fam_tag})",
         )
         if "rho_total_std" in obs and np.any(obs["rho_total_std"] > 0):
             ax.fill_between(
@@ -806,7 +807,21 @@ def plot_article_densities_comparison(
         ax_pot.set_yticks([])
 
         ax.set_xlim(-x_max, x_max)
-        ax.set_title(binfo["label"], fontsize=11.5, weight="bold")
+        d_sum_m = binfo.get("diagnostics", {}).get("summary", {})
+        e_mean_m = d_sum_m.get("E_mean", float("nan"))
+        se_e_m = d_sum_m.get("SE_E", float("nan"))
+        cas_e_m = binfo.get("casscf_energy", float("nan"))
+        title_lines_m = [binfo["label"]]
+        if np.isfinite(e_mean_m):
+            e_str_m = f"$\\langle E \\rangle = {e_mean_m:.6f}"
+            if np.isfinite(se_e_m) and se_e_m > 0:
+                e_str_m += f" \\pm {se_e_m:.6f}"
+            e_str_m += "$ Ha"
+            if np.isfinite(cas_e_m):
+                de_mha = (e_mean_m - cas_e_m) * 1e3
+                e_str_m += f" ($\\Delta E = {de_mha:+.2f}$ mHa)"
+            title_lines_m.append(e_str_m)
+        ax.set_title("\n".join(title_lines_m), fontsize=10.0, weight="bold")
         ax.set_xlabel("x (Bohr)")
         if idx % ncols == 0:
             ax.set_ylabel(r"One-Body Density $\rho(x)$")
@@ -1114,7 +1129,19 @@ def plot_efficiency_bars(
         return
 
     _apply_plot_style(cfg)
-    labels = [b["label"] for b in valid]
+    labels = []
+    for b in valid:
+        lbl = b["label"]
+        d_s = b["diagnostics"]["summary"]
+        e_v = d_s.get("E_mean", float("nan"))
+        se_v = d_s.get("SE_E", float("nan"))
+        if np.isfinite(e_v):
+            if np.isfinite(se_v) and se_v > 0:
+                labels.append(f"{lbl}\n($\\langle E \\rangle={e_v:.5f} \\pm {se_v:.5f}$ Ha)")
+            else:
+                labels.append(f"{lbl}\n($\\langle E \\rangle={e_v:.5f}$ Ha)")
+        else:
+            labels.append(lbl)
     taus = [b["diagnostics"]["summary"].get("tau_int_E", 1.0) for b in valid]
     taus_err = [b.get("uncertainties", {}).get("tau_int_E_std", 0.0) for b in valid]
     ess_s = [b["diagnostics"]["summary"].get("ESS_per_sec", 0.0) for b in valid]
@@ -1630,12 +1657,12 @@ def plot_walker_trace(
 
     _apply_plot_style(cfg)
     n_models = len(valid)
-    fig = plt.figure(figsize=(14.0, 4.8 * n_models))
-    outer_gs = gridspec.GridSpec(n_models, 1, hspace=0.34)
+    fig = plt.figure(figsize=(15.0, 5.2 * n_models))
+    outer_gs = gridspec.GridSpec(n_models, 1, hspace=0.48)
 
     for idx, binfo in enumerate(valid):
         inner_gs = gridspec.GridSpecFromSubplotSpec(
-            1, 2, subplot_spec=outer_gs[idx], width_ratios=[4, 1], wspace=0.05
+            1, 2, subplot_spec=outer_gs[idx], width_ratios=[4.2, 1], wspace=0.06
         )
         ax_main = fig.add_subplot(inner_gs[0])
         ax_hist = fig.add_subplot(inner_gs[1], sharey=ax_main)
@@ -1667,38 +1694,58 @@ def plot_walker_trace(
         x_max = w_data["x_max"]
         _, ls_model = _get_model_style(binfo, idx)
         is_neural = ls_model == "-"
-        role_tag = "★ BEST RL-MALA (Solid)" if is_neural else "★ BEST MALA (Dashed)"
+        role_tag = "★ Best RL-MALA" if is_neural else "★ Best MALA"
 
         for e_i in range(n_elec):
             c_spin = "#2980b9" if e_i < n_up else "#e74c3c"
             lbl = (
-                r"Spin $\uparrow$ (Single Walker #0)"
+                r"Spin $\uparrow$ (Walker #0)"
                 if e_i == 0
-                else (r"Spin $\downarrow$ (Single Walker #0)" if e_i == n_up else None)
+                else (r"Spin $\downarrow$ (Walker #0)" if e_i == n_up else None)
             )
             ax_main.plot(
                 steps_sub,
                 w_single_sub[:, e_i],
                 color=c_spin,
                 linestyle=ls_model,
-                alpha=0.78 if is_neural else 0.72,
-                lw=0.95,
+                alpha=0.82 if is_neural else 0.75,
+                lw=1.0,
                 label=lbl,
             )
 
         summary = binfo.get("diagnostics", {}).get("summary", {})
         unc = binfo.get("uncertainties", {})
+        e_mean = summary.get("E_mean", float("nan"))
+        se_e = summary.get("SE_E", float("nan"))
+        cas_e = binfo.get("casscf_energy", float("nan"))
         tau_val = summary.get("tau_int_E", float("nan"))
         kl_spin_val = unc.get("kl_spin_mean", float("nan"))
-        metrics_str = f"$\\tau_{{\\mathrm{{int}}}}(E)={tau_val:.1f}$"
+
+        metrics_parts = []
+        if np.isfinite(e_mean):
+            e_part = f"$\\langle E \\rangle = {e_mean:.6f}"
+            if np.isfinite(se_e) and se_e > 0:
+                e_part += f" \\pm {se_e:.6f}"
+            e_part += "$ Ha"
+            if np.isfinite(cas_e):
+                de_mha = (e_mean - cas_e) * 1e3
+                e_part += f" ($\\Delta E = {de_mha:+.2f}$ mHa)"
+            metrics_parts.append(e_part)
+        if np.isfinite(tau_val):
+            metrics_parts.append(f"$\\tau_{{\\mathrm{{int}}}}(E) = {tau_val:.1f}$")
         if np.isfinite(kl_spin_val):
-            metrics_str += f", $D_{{\\mathrm{{KL}}}}^{{\\mathrm{{spin}}}}={kl_spin_val:.4f}$"
+            metrics_parts.append(f"$D_{{\\mathrm{{KL}}}}^{{\\mathrm{{spin}}}} = {kl_spin_val:.4f}$")
+
+        title_line1 = f"{role_tag}: {binfo['label']}"
+        title_line2 = " | ".join(metrics_parts)
+        title_full = f"{title_line1}\n{title_line2}" if metrics_parts else title_line1
 
         ax_main.set_title(
-            f"{role_tag}: Single-Walker Trace — {binfo['label']} ({metrics_str})",
+            title_full,
             loc="left",
-            fontsize=11.0,
+            fontsize=10.0,
             weight="bold",
+            pad=8.0,
         )
         ax_main.set_xlabel("MCMC Production Steps")
         ax_main.set_ylabel("Electron Position $x_i(t)$ (Bohr)")
@@ -1750,7 +1797,7 @@ def plot_walker_trace(
                     label=r"Exact $\downarrow$",
                 )
 
-        ax_hist.set_title("Marginal Density", weight="bold")
+        ax_hist.set_title(r"Marginal $\rho(x)$", weight="bold")
         ax_hist.set_xlabel(r"Normalized $p_\sigma(x)$")
         ax_hist.tick_params(axis="y", labelleft=False)
         ax_hist.grid(True, alpha=0.3)
@@ -2112,6 +2159,37 @@ def run_postprocessing_pipeline(cfg: PostProcessConfig) -> pd.DataFrame:
                 }
                 with open(indiv_summary_path, "w", encoding="utf-8") as f_out:
                     json.dump(indiv_data, f_out, indent=2)
+            else:
+                fallback_summary = {
+                    "run_name": r.get("label", ""),
+                    "system_tag": getattr(cfg, "system_tag", ""),
+                    "pipeline_stage": "sampling_evaluation",
+                    "output_h5": r.get("h5_path", ""),
+                    "observables": {
+                        "E_mean": r.get("E_mean", float("nan")),
+                        "SE_E": r.get("SE_E", float("nan")),
+                        "acceptance": r.get("acceptance", float("nan")),
+                        "ESJD": r.get("ESJD", float("nan")),
+                        "tau_int_E": r.get("tau_int_E", float("nan")),
+                        "ESS": r.get("ESS", float("nan")),
+                        "ESS_per_sec": r.get("ESS_per_sec", float("nan")),
+                    },
+                    "casscf_comparison": {
+                        "has_casscf_baseline": bool(casscf_ref is not None),
+                        "casscf_energy": r.get("casscf_energy", float("nan")),
+                        "delta_E_vs_CASSCF": r.get("delta_E_vs_CASSCF", float("nan")),
+                        "kl_casscf_total_mean": r.get("kl_casscf_total_mean", float("nan")),
+                        "kl_casscf_spin_mean": r.get("kl_casscf_spin_mean", float("nan")),
+                    },
+                    "comparative_postprocess": {
+                        "G_RL_speedup": r.get("G_RL_speedup", 1.0),
+                        "ESS_speedup_vs_baseline": r.get("ESS_speedup_vs_baseline", 1.0),
+                        "delta_E_vs_baseline": r.get("delta_E_vs_baseline", 0.0),
+                        "postprocess_out_dir": str(cfg.out_dir),
+                    },
+                }
+                with open(indiv_summary_path, "w", encoding="utf-8") as f_out:
+                    json.dump(fallback_summary, f_out, indent=2)
         except Exception:
             pass
 

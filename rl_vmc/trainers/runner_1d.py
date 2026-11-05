@@ -60,6 +60,25 @@ def _load_legacy_checkpoints(legacy_dir: str | Path) -> dict:
     return out
 
 
+def _safe_float(val: Any, default: float = float("nan")) -> float:
+    if val is None:
+        return default
+    try:
+        f = float(val)
+        return f if np.isfinite(f) else default
+    except (TypeError, ValueError):
+        return default
+
+
+def _safe_int(val: Any, default: int = 0) -> int:
+    if val is None:
+        return default
+    try:
+        return int(val)
+    except (TypeError, ValueError):
+        return default
+
+
 def run_experiment_1d(cfg: Experiment1DConfig) -> str:
     """
     Pipeline Maestro 1D de RL-VMC:
@@ -606,14 +625,18 @@ def run_experiment_1d(cfg: Experiment1DConfig) -> str:
             obs = None
             w_all = production_data.get("walkers", None) if production_data else None
             if w_all is not None and np.asarray(w_all).size > 0:
-                obs = compute_1d_observables(
-                    np.asarray(w_all),
-                    n_up=cfg.system.n_up,
-                    n_down=cfg.system.n_dn,
-                    n_bins=160,
-                    x_max=None,
-                    omega=cfg.system.omega,
-                )
+                try:
+                    obs = compute_1d_observables(
+                        np.asarray(w_all),
+                        n_up=cfg.system.n_up,
+                        n_down=cfg.system.n_dn,
+                        n_bins=160,
+                        x_max=15.0,
+                        omega=cfg.system.omega,
+                    )
+                except Exception as _exc_obs:
+                    print(f"  [Aviso] No se pudieron calcular observables 1D completos: {_exc_obs}")
+                    obs = None
 
             # Resolver referencia CASSCF (explícita o descubierta automáticamente)
             ref_npz = cfg.io.reference_casscf_npz
@@ -621,7 +644,7 @@ def run_experiment_1d(cfg: Experiment1DConfig) -> str:
                 ref_npz = cfg.ansatz.casscf_npz_path
 
             casscf_ref = None
-            eff_xmax = float(obs["x_max"]) if obs is not None else 15.0
+            eff_xmax = _safe_float(obs["x_max"], 15.0) if obs is not None else 15.0
             if ref_npz and os.path.exists(ref_npz):
                 try:
                     casscf_ref = compute_exact_casscf_1body_density(
@@ -652,31 +675,34 @@ def run_experiment_1d(cfg: Experiment1DConfig) -> str:
             kl_up_mean = float("nan")
             kl_dn_mean = float("nan")
             if casscf_ref is not None and w_all is not None and np.asarray(w_all).size > 0:
-                w_5d = np.asarray(w_all)
-                if w_5d.ndim == 4:
-                    w_5d = w_5d[None, ...]
-                kls_t, kls_u, kls_d = [], [], []
-                for c_i in range(w_5d.shape[0]):
-                    kd = compute_spin_kl_divergences(
-                        w_5d[c_i], casscf_ref, n_bins=160, x_max=eff_xmax
-                    )
-                    kls_t.append(kd["kl_total"])
-                    kls_u.append(kd["kl_up"])
-                    kls_d.append(kd["kl_down"])
-                kl_tot_mean = float(np.mean(kls_t))
-                kl_tot_std = float(np.std(kls_t))
-                kl_up_mean = float(np.mean(kls_u))
-                kl_dn_mean = float(np.mean(kls_d))
+                try:
+                    w_5d = np.asarray(w_all)
+                    if w_5d.ndim == 4:
+                        w_5d = w_5d[None, ...]
+                    kls_t, kls_u, kls_d = [], [], []
+                    for c_i in range(w_5d.shape[0]):
+                        kd = compute_spin_kl_divergences(
+                            w_5d[c_i], casscf_ref, n_bins=160, x_max=eff_xmax
+                        )
+                        kls_t.append(kd["kl_total"])
+                        kls_u.append(kd["kl_up"])
+                        kls_d.append(kd["kl_down"])
+                    kl_tot_mean = float(np.mean(kls_t))
+                    kl_tot_std = float(np.std(kls_t))
+                    kl_up_mean = float(np.mean(kls_u))
+                    kl_dn_mean = float(np.mean(kls_d))
+                except Exception as _exc_kl:
+                    print(f"  [Aviso] Falló cómputo de divergencias KL: {_exc_kl}")
 
-            e_mean_val = float(d_sum.get("E_mean", float("nan")))
-            t_mean_val = float(d_sum.get("T_mean", float("nan")))
-            v_mean_val = float(d_sum.get("V_mean", float("nan")))
+            e_mean_val = _safe_float(d_sum.get("E_mean"))
+            t_mean_val = _safe_float(d_sum.get("T_mean"))
+            v_mean_val = _safe_float(d_sum.get("V_mean"))
             virial_ratio = (
                 float(2.0 * t_mean_val / v_mean_val)
                 if (np.isfinite(t_mean_val) and np.isfinite(v_mean_val) and abs(v_mean_val) > 1e-12)
                 else float("nan")
             )
-            cas_e_val = float(casscf_ref["energy"]) if casscf_ref is not None else float("nan")
+            cas_e_val = _safe_float(casscf_ref["energy"]) if casscf_ref is not None else float("nan")
             delta_e_cas = (
                 float(e_mean_val - cas_e_val)
                 if (np.isfinite(e_mean_val) and np.isfinite(cas_e_val))
@@ -689,25 +715,28 @@ def run_experiment_1d(cfg: Experiment1DConfig) -> str:
             safe_run_tag = "".join(c if c.isalnum() or c in ("_", "-", ".") else "_" for c in run_tag)
 
             if training_history and isinstance(training_history, list) and len(training_history) > 0:
-                df_train_hist = pd.DataFrame(training_history)
-                tail = min(20, len(df_train_hist))
-                train_summary = {
-                    "n_recorded_steps": int(len(df_train_hist)),
-                    "final_train_energy_mean": float(df_train_hist["Energy_Mean"].tail(tail).mean()) if "Energy_Mean" in df_train_hist else float("nan"),
-                    "final_train_energy_var": float(df_train_hist["Energy_Var"].tail(tail).mean()) if "Energy_Var" in df_train_hist else float("nan"),
-                    "final_train_acceptance": float(df_train_hist["Acceptance"].tail(tail).mean()) if "Acceptance" in df_train_hist else float("nan"),
-                    "final_train_esjd": float(df_train_hist["ESJD"].tail(tail).mean()) if "ESJD" in df_train_hist else float("nan"),
-                    "final_actor_loss": float(df_train_hist["Actor_Loss"].iloc[-1]) if "Actor_Loss" in df_train_hist else float("nan"),
-                    "final_critic_loss": float(df_train_hist["Critic_Loss"].iloc[-1]) if "Critic_Loss" in df_train_hist else float("nan"),
-                }
-                if getattr(cfg.io, "save_training_csv", True) or getattr(cfg.io, "save_training_history", True):
-                    train_csv_sys = saved_path.parent / f"training_history_{safe_run_tag}.csv"
-                    df_train_hist.to_csv(train_csv_sys, index=False)
-                    if getattr(cfg.io, "csv_collect_dir", ""):
-                        import shutil
-                        cdir = Path(cfg.io.csv_collect_dir)
-                        cdir.mkdir(parents=True, exist_ok=True)
-                        shutil.copy2(train_csv_sys, cdir / train_csv_sys.name)
+                try:
+                    df_train_hist = pd.DataFrame(training_history)
+                    tail = min(20, len(df_train_hist))
+                    train_summary = {
+                        "n_recorded_steps": int(len(df_train_hist)),
+                        "final_train_energy_mean": _safe_float(df_train_hist["Energy_Mean"].tail(tail).mean()) if "Energy_Mean" in df_train_hist else float("nan"),
+                        "final_train_energy_var": _safe_float(df_train_hist["Energy_Var"].tail(tail).mean()) if "Energy_Var" in df_train_hist else float("nan"),
+                        "final_train_acceptance": _safe_float(df_train_hist["Acceptance"].tail(tail).mean()) if "Acceptance" in df_train_hist else float("nan"),
+                        "final_train_esjd": _safe_float(df_train_hist["ESJD"].tail(tail).mean()) if "ESJD" in df_train_hist else float("nan"),
+                        "final_actor_loss": _safe_float(df_train_hist["Actor_Loss"].iloc[-1]) if "Actor_Loss" in df_train_hist else float("nan"),
+                        "final_critic_loss": _safe_float(df_train_hist["Critic_Loss"].iloc[-1]) if "Critic_Loss" in df_train_hist else float("nan"),
+                    }
+                    if getattr(cfg.io, "save_training_csv", True) or getattr(cfg.io, "save_training_history", True):
+                        train_csv_sys = saved_path.parent / f"training_history_{safe_run_tag}.csv"
+                        df_train_hist.to_csv(train_csv_sys, index=False)
+                        if getattr(cfg.io, "csv_collect_dir", ""):
+                            import shutil
+                            cdir = Path(cfg.io.csv_collect_dir)
+                            cdir.mkdir(parents=True, exist_ok=True)
+                            shutil.copy2(train_csv_sys, cdir / train_csv_sys.name)
+                except Exception as _exc_th:
+                    print(f"  [Aviso] No se pudo exportar training_history.csv: {_exc_th}")
 
             summary_payload = {
                 "run_name": run_tag,
@@ -729,25 +758,25 @@ def run_experiment_1d(cfg: Experiment1DConfig) -> str:
                 },
                 "evaluation_config": asdict(cfg.eval),
                 "observables": {
-                    "n_chains": int(d_sum.get("n_chains", 0)),
+                    "n_chains": _safe_int(d_sum.get("n_chains", 0)),
                     "E_mean": e_mean_val,
-                    "SE_E": float(d_sum.get("SE_E", float("nan"))),
-                    "E_var": float(d_sum.get("E_var", float("nan"))),
+                    "SE_E": _safe_float(d_sum.get("SE_E")),
+                    "E_var": _safe_float(d_sum.get("E_var")),
                     "T_mean": t_mean_val,
                     "V_mean": v_mean_val,
                     "virial_ratio_2T_over_V": virial_ratio,
-                    "acceptance": float(d_sum.get("acceptance", float("nan"))),
-                    "ESJD": float(d_sum.get("ESJD", float("nan"))),
-                    "accepted_disp": float(d_sum.get("accepted_disp", float("nan"))),
-                    "tau_int_E": float(d_sum.get("tau_int_E", float("nan"))),
-                    "tau_int_pos": float(d_sum.get("tau_int_pos", float("nan"))),
-                    "ESS": float(d_sum.get("ESS", float("nan"))),
-                    "ESS_per_sec": float(d_sum.get("ESS_per_sec", float("nan"))),
-                    "wall_time_sec": float(d_sum.get("wall_time_sec", float("nan"))),
-                    "time_to_solution_sec": float(d_sum.get("time_to_solution_sec", float("nan"))),
-                    "n_wigner_peaks": int(obs["n_wigner_peaks"]) if obs else -1,
-                    "rms_radius": float(obs["rms_radius"]) if obs else float("nan"),
-                    "mean_pair_dist": float(obs["mean_pair_dist"]) if obs else float("nan"),
+                    "acceptance": _safe_float(d_sum.get("acceptance")),
+                    "ESJD": _safe_float(d_sum.get("ESJD")),
+                    "accepted_disp": _safe_float(d_sum.get("accepted_disp")),
+                    "tau_int_E": _safe_float(d_sum.get("tau_int_E")),
+                    "tau_int_pos": _safe_float(d_sum.get("tau_int_pos")),
+                    "ESS": _safe_float(d_sum.get("ESS")),
+                    "ESS_per_sec": _safe_float(d_sum.get("ESS_per_sec")),
+                    "wall_time_sec": _safe_float(d_sum.get("wall_time_sec")),
+                    "time_to_solution_sec": _safe_float(d_sum.get("time_to_solution_sec")),
+                    "n_wigner_peaks": _safe_int(obs["n_wigner_peaks"], -1) if obs else -1,
+                    "rms_radius": _safe_float(obs["rms_radius"]) if obs else float("nan"),
+                    "mean_pair_dist": _safe_float(obs["mean_pair_dist"]) if obs else float("nan"),
                 },
                 "casscf_comparison": {
                     "has_casscf_baseline": bool(casscf_ref is not None),
@@ -762,13 +791,16 @@ def run_experiment_1d(cfg: Experiment1DConfig) -> str:
             }
 
             if cfg.io.save_summary_json:
-                summary_json_path = saved_path.parent / "summary.json"
-                summary_sys_json_path = saved_path.parent / f"summary_{safe_run_tag}.json"
-                with summary_json_path.open("w", encoding="utf-8") as f_json:
-                    json.dump(summary_payload, f_json, indent=2)
-                with summary_sys_json_path.open("w", encoding="utf-8") as f_json_sys:
-                    json.dump(summary_payload, f_json_sys, indent=2)
-                print(f"[IO] Resumen estructurado guardado en: {summary_sys_json_path}")
+                try:
+                    summary_json_path = saved_path.parent / "summary.json"
+                    summary_sys_json_path = saved_path.parent / f"summary_{safe_run_tag}.json"
+                    with summary_json_path.open("w", encoding="utf-8") as f_json:
+                        json.dump(summary_payload, f_json, indent=2)
+                    with summary_sys_json_path.open("w", encoding="utf-8") as f_json_sys:
+                        json.dump(summary_payload, f_json_sys, indent=2)
+                    print(f"[IO] Resumen estructurado guardado en: {summary_sys_json_path}")
+                except Exception as _exc_sj:
+                    print(f"  [Aviso IO] No se pudo guardar summary.json: {_exc_sj}")
 
             flat_row = {
                 "run_name": run_tag,
@@ -788,23 +820,23 @@ def run_experiment_1d(cfg: Experiment1DConfig) -> str:
                 "softening": cfg.system.softening,
                 "tau": cfg.proposal.tau,
                 "n_walkers": cfg.sampler.batch_size,
-                "n_eval_chains": int(d_sum.get("n_chains", 0)),
+                "n_eval_chains": _safe_int(d_sum.get("n_chains", 0)),
                 "E_mean": e_mean_val,
-                "SE_E": float(d_sum.get("SE_E", float("nan"))),
-                "E_var": float(d_sum.get("E_var", float("nan"))),
+                "SE_E": _safe_float(d_sum.get("SE_E")),
+                "E_var": _safe_float(d_sum.get("E_var")),
                 "T_mean": t_mean_val,
                 "V_mean": v_mean_val,
-                "acceptance": float(d_sum.get("acceptance", float("nan"))),
-                "ESJD": float(d_sum.get("ESJD", float("nan"))),
-                "tau_int_E": float(d_sum.get("tau_int_E", float("nan"))),
-                "tau_int_pos": float(d_sum.get("tau_int_pos", float("nan"))),
-                "ESS": float(d_sum.get("ESS", float("nan"))),
-                "ESS_per_sec": float(d_sum.get("ESS_per_sec", float("nan"))),
-                "wall_time_sec": float(d_sum.get("wall_time_sec", float("nan"))),
-                "time_to_solution_sec": float(d_sum.get("time_to_solution_sec", float("nan"))),
-                "n_wigner_peaks": int(obs["n_wigner_peaks"]) if obs else -1,
-                "rms_radius": float(obs["rms_radius"]) if obs else float("nan"),
-                "mean_pair_dist": float(obs["mean_pair_dist"]) if obs else float("nan"),
+                "acceptance": _safe_float(d_sum.get("acceptance")),
+                "ESJD": _safe_float(d_sum.get("ESJD")),
+                "tau_int_E": _safe_float(d_sum.get("tau_int_E")),
+                "tau_int_pos": _safe_float(d_sum.get("tau_int_pos")),
+                "ESS": _safe_float(d_sum.get("ESS")),
+                "ESS_per_sec": _safe_float(d_sum.get("ESS_per_sec")),
+                "wall_time_sec": _safe_float(d_sum.get("wall_time_sec")),
+                "time_to_solution_sec": _safe_float(d_sum.get("time_to_solution_sec")),
+                "n_wigner_peaks": _safe_int(obs["n_wigner_peaks"], -1) if obs else -1,
+                "rms_radius": _safe_float(obs["rms_radius"]) if obs else float("nan"),
+                "mean_pair_dist": _safe_float(obs["mean_pair_dist"]) if obs else float("nan"),
                 "has_casscf_baseline": bool(casscf_ref is not None),
                 "casscf_energy": cas_e_val,
                 "delta_E_vs_CASSCF": delta_e_cas,
@@ -814,33 +846,36 @@ def run_experiment_1d(cfg: Experiment1DConfig) -> str:
                 "kl_casscf_down_mean": kl_dn_mean,
                 "output_h5": str(saved_path),
             }
-            df_row = pd.DataFrame([flat_row])
-            indiv_csv_path = saved_path.parent / f"production_metrics_{safe_run_tag}.csv"
-            df_row.to_csv(indiv_csv_path, index=False)
+            try:
+                df_row = pd.DataFrame([flat_row])
+                indiv_csv_path = saved_path.parent / f"production_metrics_{safe_run_tag}.csv"
+                df_row.to_csv(indiv_csv_path, index=False)
 
-            if cfg.io.master_csv_path:
-                csv_file = Path(cfg.io.master_csv_path)
-                csv_file.parent.mkdir(parents=True, exist_ok=True)
-                lock_path = csv_file.with_suffix(".csv.lock")
-                with lock_path.open("w") as f_lock:
-                    fcntl.flock(f_lock, fcntl.LOCK_EX)
-                    try:
-                        write_header = not csv_file.exists() or csv_file.stat().st_size == 0
-                        df_row.to_csv(csv_file, mode="a", header=write_header, index=False)
-                        if getattr(cfg.io, "csv_collect_dir", ""):
-                            import shutil
-                            cdir = Path(cfg.io.csv_collect_dir)
-                            cdir.mkdir(parents=True, exist_ok=True)
-                            shutil.copy2(csv_file, cdir / csv_file.name)
-                            shutil.copy2(indiv_csv_path, cdir / indiv_csv_path.name)
-                    finally:
-                        fcntl.flock(f_lock, fcntl.LOCK_UN)
-                print(f"[IO] Fila agregada en vivo a tabla maestra: {csv_file}")
-            elif getattr(cfg.io, "csv_collect_dir", ""):
-                import shutil
-                cdir = Path(cfg.io.csv_collect_dir)
-                cdir.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(indiv_csv_path, cdir / indiv_csv_path.name)
+                if cfg.io.master_csv_path:
+                    csv_file = Path(cfg.io.master_csv_path)
+                    csv_file.parent.mkdir(parents=True, exist_ok=True)
+                    lock_path = csv_file.with_suffix(".csv.lock")
+                    with lock_path.open("w") as f_lock:
+                        fcntl.flock(f_lock, fcntl.LOCK_EX)
+                        try:
+                            write_header = not csv_file.exists() or csv_file.stat().st_size == 0
+                            df_row.to_csv(csv_file, mode="a", header=write_header, index=False)
+                            if getattr(cfg.io, "csv_collect_dir", ""):
+                                import shutil
+                                cdir = Path(cfg.io.csv_collect_dir)
+                                cdir.mkdir(parents=True, exist_ok=True)
+                                shutil.copy2(csv_file, cdir / csv_file.name)
+                                shutil.copy2(indiv_csv_path, cdir / indiv_csv_path.name)
+                        finally:
+                            fcntl.flock(f_lock, fcntl.LOCK_UN)
+                    print(f"[IO] Fila agregada en vivo a tabla maestra: {csv_file}")
+                elif getattr(cfg.io, "csv_collect_dir", ""):
+                    import shutil
+                    cdir = Path(cfg.io.csv_collect_dir)
+                    cdir.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(indiv_csv_path, cdir / indiv_csv_path.name)
+            except Exception as _exc_csv:
+                print(f"  [Aviso IO] No se pudo escribir fila CSV: {_exc_csv}")
         except Exception as exc:
             print(f"[Aviso IO] No se pudo completar exportación de summary.json / master_csv: {exc}")
 

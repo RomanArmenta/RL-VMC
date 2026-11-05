@@ -440,21 +440,29 @@ compile_system_figures() {
     local h5_labels=()
 
     for d in "${sys_out}"/*; do
-        if [[ -d "$d" && -f "${d}/run_bundle.h5" && -f "${d}/summary.json" ]]; then
-            h5_files+=("${d}/run_bundle.h5")
-            local bname
-            bname="$(basename "$d")"
-            h5_labels+=("${bname#${sys_tag}_}")
+        if [[ -d "$d" && -f "${d}/run_bundle.h5" ]]; then
+            local fsz=0
+            fsz=$(wc -c < "${d}/run_bundle.h5" 2>/dev/null || echo 0)
+            if [[ "$fsz" -gt 10000 ]]; then
+                h5_files+=("${d}/run_bundle.h5")
+                local bname
+                bname="$(basename "$d")"
+                h5_labels+=("${bname#${sys_tag}_}")
+            fi
         fi
     done
 
     if [[ "${#h5_files[@]}" -eq 0 ]]; then
         for d in "${OUT_ROOT}"/*; do
-            if [[ -d "$d" && -f "${d}/run_bundle.h5" && -f "${d}/summary.json" ]]; then
-                local bname
-                bname="$(basename "$d")"
-                h5_files+=("${d}/run_bundle.h5")
-                h5_labels+=("${bname#${sys_tag}_}")
+            if [[ -d "$d" && -f "${d}/run_bundle.h5" ]]; then
+                local fsz=0
+                fsz=$(wc -c < "${d}/run_bundle.h5" 2>/dev/null || echo 0)
+                if [[ "$fsz" -gt 10000 ]]; then
+                    local bname
+                    bname="$(basename "$d")"
+                    h5_files+=("${d}/run_bundle.h5")
+                    h5_labels+=("${bname#${sys_tag}_}")
+                fi
             fi
         done
     fi
@@ -540,8 +548,12 @@ done
 
 is_run_completed() {
     local dir="$1"
-    if [[ "$SKIP_EXISTING" -eq 1 && -f "${dir}/run_bundle.h5" && -f "${dir}/summary.json" ]]; then
-        return 0
+    if [[ "$SKIP_EXISTING" -eq 1 && -f "${dir}/run_bundle.h5" ]]; then
+        local fsz=0
+        fsz=$(wc -c < "${dir}/run_bundle.h5" 2>/dev/null || echo 0)
+        if [[ "$fsz" -gt 10000 ]]; then
+            return 0
+        fi
     fi
     return 1
 }
@@ -588,7 +600,7 @@ launch_job() {
     local cmd=("$@")
 
     if is_run_completed "$run_dir"; then
-        log_msg "[SKIP] '${run_name}' ya cuenta con run_bundle.h5 y summary.json en ${run_dir}."
+        log_msg "[SKIP] '${run_name}' ya cuenta con run_bundle.h5 completado en ${run_dir}."
         return 0
     fi
 

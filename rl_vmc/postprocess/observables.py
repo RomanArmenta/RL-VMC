@@ -48,7 +48,7 @@ def compute_1d_observables(
     x_all = w.reshape(-1)
 
     # Adaptar x_max automáticamente para regímenes de trampa débil (ej. omega=0.1 -> [-15, 15])
-    eff_x_max = float(x_max)
+    eff_x_max = float(x_max) if x_max is not None else 15.0
     if omega is not None and omega <= 0.25:
         eff_x_max = max(eff_x_max, 15.0)
     if x_all.size > 0:

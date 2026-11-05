@@ -1161,9 +1161,22 @@ def main(argv: Optional[list[str]] = None) -> None:
             ax = axes_flat[idx]
             d = mod["densities"]
             is_n = bool(mod["is_neural"])
-            kind_prefix = "RL-MALA [solid]" if is_n else "Standard MALA [dashed]"
+            kind_prefix = "RL-MALA" if is_n else "MALA"
             ls_tot = "-" if is_n else "--"
-            title = f"{kind_prefix}: {mod['label']}"
+            e_mean_m = mod.get("E_mean", float("nan"))
+            se_e_m = mod.get("SE_E", float("nan"))
+            cas_e_m = mod.get("casscf_energy", float("nan"))
+            title_lines_m = [f"{kind_prefix}: {mod['label']}"]
+            if np.isfinite(e_mean_m):
+                e_str_m = f"$\\langle E \\rangle = {e_mean_m:.6f}"
+                if np.isfinite(se_e_m) and se_e_m > 0:
+                    e_str_m += f" \\pm {se_e_m:.6f}"
+                e_str_m += "$ Ha"
+                if np.isfinite(cas_e_m):
+                    de_mha = (e_mean_m - cas_e_m) * 1e3
+                    e_str_m += f" ($\\Delta E = {de_mha:+.2f}$ mHa)"
+                title_lines_m.append(e_str_m)
+            title = "\n".join(title_lines_m)
 
             ax.plot(
                 d["x"],
@@ -1171,7 +1184,7 @@ def main(argv: Optional[list[str]] = None) -> None:
                 color="black",
                 linestyle=ls_tot,
                 lw=2.5,
-                label=f"Sampled Total ({'RL-MALA -' if is_n else 'MALA --'})",
+                label=f"Sampled Total ({kind_prefix})",
             )
             if "rho_tot_std" in d and np.any(d["rho_tot_std"] > 0):
                 ax.fill_between(
@@ -1542,10 +1555,11 @@ def main(argv: Optional[list[str]] = None) -> None:
                     shutil.copy2(kl_src, kl_dst)
 
     # =========================================================================
+    # =========================================================================
     # FIGURA 6: Parameter_Search_Comparison (Ranking de todos los modelos con barras de error)
     # =========================================================================
     if len(df_summary) >= 2:
-        fig, axes = plt.subplots(2, 2, figsize=(16, 10.5))
+        fig, axes = plt.subplots(2, 3, figsize=(21.0, 11.0))
         labels_s = df_summary["label"].tolist()
         is_n_list = [bool(x) for x in df_summary["is_neural"]]
         colors_s = ["#2ecc71" if is_n else "#e74c3c" for is_n in is_n_list]
@@ -1558,60 +1572,100 @@ def main(argv: Optional[list[str]] = None) -> None:
             arr = df_summary[col_name].fillna(0.0).to_numpy(dtype=np.float64)
             return np.where(np.isfinite(arr) & (arr >= 0), arr, 0.0)
 
-        # Panel 1: Spin-Resolved D_KL (cruce de barreras nodales)
-        ax = axes[0, 0]
+        # Panel (0, 0): Energía Final <E> +/- SE(E) con referencia CASSCF
+        ax_e = axes[0, 0]
+        e_vals = df_summary["E_mean"].fillna(0.0).to_numpy(dtype=np.float64)
+        se_vals = _clean_err("SE_E")
+        b_e = ax_e.bar(x_pos, e_vals, yerr=se_vals, capsize=3.5, color=colors_s, alpha=0.85, edgecolor="black")
+        if casscf_ref is not None and np.isfinite(casscf_ref.get("energy", float("nan"))):
+            cas_e_ref = float(casscf_ref["energy"])
+            ax_e.axhline(
+                cas_e_ref,
+                color="black",
+                linestyle="--",
+                lw=2.0,
+                label=f"Exact CASSCF ({cas_e_ref:.5f} Ha)",
+            )
+            ax_e.legend(loc="best", fontsize=9.0, frameon=True)
+            # Acotar y-limits para no aplastar barras si la energía es cercana
+            valid_e = e_vals[np.isfinite(e_vals) & (e_vals > 0)]
+            if len(valid_e) > 0:
+                y_min = min(float(np.min(valid_e)), cas_e_ref) - 0.015
+                y_max = max(float(np.max(valid_e)), cas_e_ref) + 0.015
+                ax_e.set_ylim(y_min, y_max)
+        ax_e.set_title(r"Final Energy $\langle E \rangle \pm \mathrm{SE}(E)$", fontweight="bold")
+        ax_e.set_ylabel(r"Energy $\langle E \rangle$ (Ha)")
+        ax_e.set_xticks(x_pos)
+        ax_e.set_xticklabels(labels_s, rotation=32, ha="right", fontsize=8.5)
+        ax_e.grid(True, axis="y", alpha=0.25)
+
+        # Panel (0, 1): Error de Energía Delta E +/- SE(E) en mHa
+        ax_de = axes[0, 1]
+        de_vals = (df_summary["delta_E_vs_CASSCF"].fillna(0.0).to_numpy(dtype=np.float64)) * 1e3
+        de_errs = se_vals * 1e3
+        b_de = ax_de.bar(x_pos, de_vals, yerr=de_errs, capsize=3.5, color=colors_s, alpha=0.85, edgecolor="black")
+        ax_de.axhline(0.0, color="black", linestyle="--", lw=1.8, label=r"CASSCF Reference ($\Delta E = 0$)")
+        ax_de.set_title(r"Energy Error $\Delta E = \langle E \rangle - E_{\mathrm{CASSCF}}$", fontweight="bold")
+        ax_de.set_ylabel(r"$\Delta E$ (mHa)")
+        ax_de.set_xticks(x_pos)
+        ax_de.set_xticklabels(labels_s, rotation=32, ha="right", fontsize=8.5)
+        ax_de.grid(True, axis="y", alpha=0.25)
+        ax_de.legend(loc="best", fontsize=9.0, frameon=True)
+
+        # Panel (0, 2): Spin-Resolved D_KL (cruce de barreras nodales)
+        ax_kl = axes[0, 2]
         kl_vals = np.maximum(df_summary["final_kl_spin_mean"].fillna(0.0).to_numpy(dtype=np.float64), 1e-7)
         kl_errs = np.minimum(_clean_err("final_kl_spin_std"), 0.85 * kl_vals)
-        b0 = ax.bar(x_pos, kl_vals, yerr=kl_errs, capsize=3.5, color=colors_s, alpha=0.85, edgecolor="black")
-        ax.set_yscale("log")
-        ax.set_title("Spin-Resolved KL Divergence (Lower = Better Nodal Crossing)", fontweight="bold")
-        ax.set_ylabel(r"$\frac{1}{2}(D_{\mathrm{KL}}^{\uparrow} + D_{\mathrm{KL}}^{\downarrow})$ (log)")
-        ax.set_xticks(x_pos)
-        ax.set_xticklabels(labels_s, rotation=32, ha="right", fontsize=8.5)
-        ax.grid(True, axis="y", alpha=0.25)
+        b0 = ax_kl.bar(x_pos, kl_vals, yerr=kl_errs, capsize=3.5, color=colors_s, alpha=0.85, edgecolor="black")
+        ax_kl.set_yscale("log")
+        ax_kl.set_title("Spin-Resolved KL Divergence (Nodal Crossing)", fontweight="bold")
+        ax_kl.set_ylabel(r"$\frac{1}{2}(D_{\mathrm{KL}}^{\uparrow} + D_{\mathrm{KL}}^{\downarrow})$ (log)")
+        ax_kl.set_xticks(x_pos)
+        ax_kl.set_xticklabels(labels_s, rotation=32, ha="right", fontsize=8.5)
+        ax_kl.grid(True, axis="y", alpha=0.25)
 
-        # Panel 2: Total Density D_KL
-        ax = axes[0, 1]
+        # Panel (1, 0): Total Density D_KL
+        ax_klt = axes[1, 0]
         klt_vals = np.maximum(df_summary["final_kl_tot"].fillna(0.0).to_numpy(dtype=np.float64), 1e-7)
         klt_errs = np.minimum(_clean_err("final_kl_tot_std"), 0.85 * klt_vals)
-        b1 = ax.bar(x_pos, klt_vals, yerr=klt_errs, capsize=3.5, color=colors_s, alpha=0.85, edgecolor="black")
-        ax.set_yscale("log")
-        ax.set_title("Total One-Body Density KL Divergence (Lower = Better)", fontweight="bold")
-        ax.set_ylabel(r"$D_{\mathrm{KL}}(\rho_{\mathrm{tot}} \parallel \rho_{\mathrm{CASSCF}})$ (log)")
-        ax.set_xticks(x_pos)
-        ax.set_xticklabels(labels_s, rotation=32, ha="right", fontsize=8.5)
-        ax.grid(True, axis="y", alpha=0.25)
+        b1 = ax_klt.bar(x_pos, klt_vals, yerr=klt_errs, capsize=3.5, color=colors_s, alpha=0.85, edgecolor="black")
+        ax_klt.set_yscale("log")
+        ax_klt.set_title("Total One-Body Density KL Divergence", fontweight="bold")
+        ax_klt.set_ylabel(r"$D_{\mathrm{KL}}(\rho_{\mathrm{tot}} \parallel \rho_{\mathrm{CASSCF}})$ (log)")
+        ax_klt.set_xticks(x_pos)
+        ax_klt.set_xticklabels(labels_s, rotation=32, ha="right", fontsize=8.5)
+        ax_klt.grid(True, axis="y", alpha=0.25)
 
-        # Panel 3: ESJD (Expected Squared Jump Distance)
-        ax = axes[1, 0]
+        # Panel (1, 1): ESJD (Expected Squared Jump Distance)
+        ax_esjd = axes[1, 1]
         esjd_vals = df_summary["ESJD"].fillna(0.0).to_numpy(dtype=np.float64)
         esjd_errs = _clean_err("ESJD_std")
-        b2 = ax.bar(x_pos, esjd_vals, yerr=esjd_errs, capsize=3.5, color=colors_s, alpha=0.85, edgecolor="black")
-        ax.set_title("Expected Squared Jump Distance (ESJD)", fontweight="bold")
-        ax.set_ylabel(r"ESJD ($\mathrm{Bohr}^2$/step)")
-        ax.set_xticks(x_pos)
-        ax.set_xticklabels(labels_s, rotation=32, ha="right", fontsize=8.5)
-        ax.grid(True, axis="y", alpha=0.25)
+        b2 = ax_esjd.bar(x_pos, esjd_vals, yerr=esjd_errs, capsize=3.5, color=colors_s, alpha=0.85, edgecolor="black")
+        ax_esjd.set_title("Expected Squared Jump Distance (ESJD)", fontweight="bold")
+        ax_esjd.set_ylabel(r"ESJD ($\mathrm{Bohr}^2$/step)")
+        ax_esjd.set_xticks(x_pos)
+        ax_esjd.set_xticklabels(labels_s, rotation=32, ha="right", fontsize=8.5)
+        ax_esjd.grid(True, axis="y", alpha=0.25)
 
-        # Panel 4: Integrated Autocorrelation Time tau_int(E)
-        ax = axes[1, 1]
+        # Panel (1, 2): Integrated Autocorrelation Time tau_int(E)
+        ax_tau = axes[1, 2]
         tau_vals = np.maximum(df_summary["tau_int_E"].fillna(0.0).to_numpy(dtype=np.float64), 1e-2)
         tau_errs = np.minimum(_clean_err("tau_int_E_std"), 0.85 * tau_vals)
-        b3 = ax.bar(x_pos, tau_vals, yerr=tau_errs, capsize=3.5, color=colors_s, alpha=0.85, edgecolor="black")
-        ax.set_yscale("log")
-        ax.set_title(r"Integrated Autocorrelation Time $\tau_{\mathrm{int}}(E)$ (Lower = Better)", fontweight="bold")
-        ax.set_ylabel(r"$\tau_{\mathrm{int}}(E)$ (steps, log)")
-        ax.set_xticks(x_pos)
-        ax.set_xticklabels(labels_s, rotation=32, ha="right", fontsize=8.5)
-        ax.grid(True, axis="y", which="both", alpha=0.25)
+        b3 = ax_tau.bar(x_pos, tau_vals, yerr=tau_errs, capsize=3.5, color=colors_s, alpha=0.85, edgecolor="black")
+        ax_tau.set_yscale("log")
+        ax_tau.set_title(r"Autocorrelation Time $\tau_{\mathrm{int}}(E)$ (Lower = Better)", fontweight="bold")
+        ax_tau.set_ylabel(r"$\tau_{\mathrm{int}}(E)$ (steps, log)")
+        ax_tau.set_xticks(x_pos)
+        ax_tau.set_xticklabels(labels_s, rotation=32, ha="right", fontsize=8.5)
+        ax_tau.grid(True, axis="y", which="both", alpha=0.25)
 
-        for bg in (b0, b1, b2, b3):
+        for bg in (b_e, b_de, b0, b1, b2, b3):
             for bar, ht in zip(bg, hatches_s):
                 if ht:
                     bar.set_hatch(ht)
 
         plt.suptitle(
-            f"Hyperparameter Search Comparison — {args.system_tag} (Red Hatched=MALA, Green Solid=RL-MALA)",
+            f"Hyperparameter Search Comparison — {args.system_tag} (Hatched=MALA, Filled=RL-MALA)",
             fontsize=14,
             fontweight="bold",
         )
