@@ -76,6 +76,14 @@ class MHSampler1D:
                 base_centers = jnp.linspace(-spread, spread, self.n_elec)[None, :, None]
             jitter_std = 0.35 * init_scale / jnp.sqrt(max(float(self.n_elec), 1.0))
             walkers = base_centers.astype(target_dtype) + jax.random.normal(key, (bs, self.n_elec, 1), dtype=target_dtype) * jitter_std
+        elif mode == "uniform":
+            u_half = float(getattr(self.cfg.sampler, "init_uniform_halfwidth", 0.0))
+            if u_half <= 0.0:
+                spread = init_scale * jnp.sqrt(max(float(self.n_elec), 2.0) / 2.5)
+                u_half = float(spread * 1.5)
+            walkers = jax.random.uniform(
+                key, (bs, self.n_elec, 1), dtype=target_dtype, minval=-u_half, maxval=u_half
+            )
         else:
             # symmetric_gaussian: isotrópico e invariante ante permutaciones de espín (como en Article_plots_11)
             std_val = float(getattr(self.cfg.sampler, "init_std", 3.0))
