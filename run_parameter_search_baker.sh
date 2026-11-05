@@ -50,21 +50,83 @@ cd "$SCRIPT_DIR"
 # SECCIÓN 1: PARÁMETROS MODULARES Y DESCRIPTIVOS (MODIFICABLES)
 # ==============================================================================
 
-# --- 1.1 Directorios de Salida y Reanudación ---
-# Puedes pasar la carpeta destino como primer argumento ($1) o vía OUT_ROOT.
-OUT_ROOT="${1:-${OUT_ROOT:-results_nodal_crossing_search}}"
+# --- 1.1 Opciones de Modo y Argumentos CLI ---
+POSTPROCESS_ONLY="${POSTPROCESS_ONLY:-0}"
+SYSTEM="${SYSTEM:-all}"
+
+POSITIONAL_ARGS=()
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --postprocess-only|--postprocess_only|--only-postprocess|-p)
+            POSTPROCESS_ONLY=1
+            shift
+            ;;
+        --system|-s)
+            SYSTEM="$2"
+            shift 2
+            ;;
+        --help|-h)
+            echo "Uso: $0 [OPCIONES] [CARPETA_SALIDA]"
+            echo ""
+            echo "Opciones:"
+            echo "  --postprocess-only, -p    Ejecuta únicamente la Fase 4 (postprocess y evaluate_nodal_crossing_1d)"
+            echo "                            sobre los archivos .h5 existentes sin re-entrenar ni muestrear."
+            echo "  --system, -s [N4|N6|all]  Selecciona el sistema físico a procesar:"
+            echo "                              N4: Wigner N=4, g=4.0 (barreras profundas, 4 electrones)"
+            echo "                              N6: CASSCF N=6, g=1.0 (20 det, base 256, 6 electrones)"
+            echo "                              all: ejecuta ambos sistemas en secuencia (default)"
+            echo "  [CARPETA_SALIDA]          Directorio raíz de salida (default: results_nodal_crossing_search)"
+            exit 0
+            ;;
+        *)
+            POSITIONAL_ARGS+=("$1")
+            shift
+            ;;
+    esac
+done
+
+if [[ ${#POSITIONAL_ARGS[@]} -gt 0 ]]; then
+    OUT_ROOT="${POSITIONAL_ARGS[0]}"
+else
+    OUT_ROOT="${OUT_ROOT:-results_nodal_crossing_search}"
+fi
 SKIP_EXISTING="${SKIP_EXISTING:-1}"  # 1 = saltar corridas ya terminadas; 0 = recalcular todo
 
-# --- 1.2 Selección de Sistemas Físicos a Evaluar ---
-# Sistema A (Recomendado Principal): Molécula de Wigner con barreras profundas
-# (N=4, g=4.0, omega=0.1, softening=0.1) — mismo sistema de Article_plots_11.
-RUN_SYSTEM_WIGNER_N4_G4="${RUN_SYSTEM_WIGNER_N4_G4:-1}"
+# Configurar sistemas activos según $SYSTEM
+SYSTEM_LOWER="$(echo "$SYSTEM" | tr '[:upper:]' '[:lower:]')"
+case "$SYSTEM_LOWER" in
+    n4|wigner_n4|wigner)
+        RUN_SYSTEM_WIGNER_N4_G4=1
+        RUN_SYSTEM_MULTIDET_N6_G1=0
+        ;;
+    n6|multidet_n6|multidet|b256)
+        RUN_SYSTEM_WIGNER_N4_G4=0
+        RUN_SYSTEM_MULTIDET_N6_G1=1
+        ;;
+    all)
+        RUN_SYSTEM_WIGNER_N4_G4="${RUN_SYSTEM_WIGNER_N4_G4:-1}"
+        RUN_SYSTEM_MULTIDET_N6_G1="${RUN_SYSTEM_MULTIDET_N6_G1:-1}"
+        ;;
+    *)
+        echo "[AVISO] Sistema desconocido '$SYSTEM'. Opciones válidas: N4, N6, all. Usando 'all'."
+        RUN_SYSTEM_WIGNER_N4_G4="${RUN_SYSTEM_WIGNER_N4_G4:-1}"
+        RUN_SYSTEM_MULTIDET_N6_G1="${RUN_SYSTEM_MULTIDET_N6_G1:-1}"
+        ;;
+esac
+
+# --- 1.2 Selección de Archivos CASSCF de Entrada ---
+# Sistema A: Molécula de Wigner (N=4, g=4.0, omega=0.1, softening=0.1)
 NPZ_WIGNER_N4_G4="${NPZ_WIGNER_N4_G4:-uhf_1d_ho_v270826_m-determinants/results_N4/g_4.0/cas_n4_g4_omega0.1_soft0.1_b32_c0-a4/casscf_state.npz}"
 
-# Sistema B (Opcional): Sistema multideterminante de 6 electrones
-# (N=6, g=1.0, omega=0.1, softening=0.1, 20 determinantes, base=256).
-RUN_SYSTEM_MULTIDET_N6_G1="${RUN_SYSTEM_MULTIDET_N6_G1:-1}"
+# Sistema B: CASSCF Multideterminante N=6 (N=6, g=1.0, omega=0.1, softening=0.1, 20 det, base=256)
 NPZ_MULTIDET_N6_G1="${NPZ_MULTIDET_N6_G1:-figures/cas_n6_g1.0_omega0.1_soft0.1_b256_c0-a6_casscf_state_det-20.npz}"
+if [[ ! -f "$NPZ_MULTIDET_N6_G1" ]]; then
+    if [[ -f "figures_allmodels_benchmarks/cas_n6_g1.0_omega0.1_soft0.1_b256_c0-a6_casscf_state_det-20.npz" ]]; then
+        NPZ_MULTIDET_N6_G1="figures_allmodels_benchmarks/cas_n6_g1.0_omega0.1_soft0.1_b256_c0-a6_casscf_state_det-20.npz"
+    elif [[ -f "${SCRIPT_DIR}/figures/cas_n6_g1.0_omega0.1_soft0.1_b256_c0-a6_casscf_state_det-20.npz" ]]; then
+        NPZ_MULTIDET_N6_G1="${SCRIPT_DIR}/figures/cas_n6_g1.0_omega0.1_soft0.1_b256_c0-a6_casscf_state_det-20.npz"
+    fi
+fi
 
 # --- 1.3 Grillas de Búsqueda de Hiperparámetros (MALA vs RL-MALA TD3) ---
 # MALA_TAU_GRID   : Tamaños de paso temporal tau para el baseline MALA clásico.
@@ -339,8 +401,12 @@ run_system_pipeline() {
     local soft="$8"
 
     if [[ ! -f "$npz_path" ]]; then
-        log_msg "[AVISO] No se encontró el archivo CASSCF '${npz_path}' para ${sys_tag}. Saltando sistema."
-        return 0
+        if [[ -f "${SCRIPT_DIR}/${npz_path}" ]]; then
+            npz_path="${SCRIPT_DIR}/${npz_path}"
+        else
+            log_msg "[AVISO] No se encontró el archivo CASSCF '${npz_path}' para ${sys_tag}. Saltando sistema."
+            return 0
+        fi
     fi
 
     local sys_out="${OUT_ROOT}/${sys_tag}"
@@ -375,107 +441,111 @@ run_system_pipeline() {
         --seed "$SEED"
     )
 
-    # --------------------------------------------------------------------------
-    # FASE 1: BARRIDO DE BASELINES MALA CLÁSICO (CASSCF CONGELADO)
-    # --------------------------------------------------------------------------
-    log_msg "[${sys_tag} - FASE 1] Muestreo MALA Clásico sobre CASSCF congelado..."
-    for tau in "${MALA_TAU_GRID[@]}"; do
-        local rname="${sys_tag}_MALA_tau${tau}"
-        local rdir="${sys_out}/${rname}"
-        launch_job "$rname" "$rdir" \
-            python3 -u cli/run_1d.py \
-            "${common_args[@]}" \
-            --method MALA \
-            --train_mode eval_only \
-            --ansatz_type casscf_npz \
-            --casscf_npz_path "$npz_path" \
-            --no-casscf_trainable \
-            --tau "$tau" \
-            --pipeline_stage "phase1_mala_baseline" \
-            --run_name "$rname" \
-            --results_out_dir "$rdir"
-    done
+    if [[ "$POSTPROCESS_ONLY" -eq 1 || "$POSTPROCESS_ONLY" == "true" ]]; then
+        log_msg "[MODO POSTPROCESS-ONLY] Omitiendo fases de simulación/entrenamiento para ${sys_tag}. Ejecutando directamente Fase 4..."
+    else
+        # --------------------------------------------------------------------------
+        # FASE 1: BARRIDO DE BASELINES MALA CLÁSICO (CASSCF CONGELADO)
+        # --------------------------------------------------------------------------
+        log_msg "[${sys_tag} - FASE 1] Muestreo MALA Clásico sobre CASSCF congelado..."
+        for tau in "${MALA_TAU_GRID[@]}"; do
+            local rname="${sys_tag}_MALA_tau${tau}"
+            local rdir="${sys_out}/${rname}"
+            launch_job "$rname" "$rdir" \
+                python3 -u cli/run_1d.py \
+                "${common_args[@]}" \
+                --method MALA \
+                --train_mode eval_only \
+                --ansatz_type casscf_npz \
+                --casscf_npz_path "$npz_path" \
+                --no-casscf_trainable \
+                --tau "$tau" \
+                --pipeline_stage "phase1_mala_baseline" \
+                --run_name "$rname" \
+                --results_out_dir "$rdir"
+        done
 
-    # --------------------------------------------------------------------------
-    # FASE 2: ENTRENAMIENTO Y EVALUACIÓN RL-MALA (TD3 CON CRUCE NODAL)
-    # ¡IMPORTANTE!: Usa `--train_mode rl_only` para entrenar el Actor TD3 sobre
-    # el estado CASSCF antes de correr la evaluación de cruce nodal.
-    # --------------------------------------------------------------------------
-    log_msg "[${sys_tag} - FASE 2] Entrenamiento TD3 (--train_mode rl_only) + Evaluación de Cruce Nodal..."
-    local sched_flag="--no-use_lr_scheduler"
-    if [[ "$RL_USE_LR_SCHEDULER" == "true" || "$RL_USE_LR_SCHEDULER" == "1" ]]; then
-        sched_flag="--use_lr_scheduler"
-    fi
+        # --------------------------------------------------------------------------
+        # FASE 2: ENTRENAMIENTO Y EVALUACIÓN RL-MALA (TD3 CON CRUCE NODAL)
+        # ¡IMPORTANTE!: Usa `--train_mode rl_only` para entrenar el Actor TD3 sobre
+        # el estado CASSCF antes de correr la evaluación de cruce nodal.
+        # --------------------------------------------------------------------------
+        log_msg "[${sys_tag} - FASE 2] Entrenamiento TD3 (--train_mode rl_only) + Evaluación de Cruce Nodal..."
+        local sched_flag="--no-use_lr_scheduler"
+        if [[ "$RL_USE_LR_SCHEDULER" == "true" || "$RL_USE_LR_SCHEDULER" == "1" ]]; then
+            sched_flag="--use_lr_scheduler"
+        fi
 
-    for tau in "${TD3_TAU_GRID[@]}"; do
-        for amp in "${ACTOR_AMP_GRID[@]}"; do
-            for pen in "${PENALTY_GRID[@]}"; do
-                for sig in "${SIGMA_SCALE_GRID[@]}"; do
-                    local rname="${sys_tag}_RL_MALA_tau${tau}_amp${amp}_pen${pen}_sig${sig}"
-                    local rdir="${sys_out}/${rname}"
-                    launch_job "$rname" "$rdir" \
-                        python3 -u cli/run_1d.py \
-                        "${common_args[@]}" \
-                        --method TD3 \
-                        --train_mode rl_only \
-                        --train_steps "$RL_TRAIN_STEPS" \
-                        --n_burn_in "$N_BURN_IN_TRAIN" \
-                        --ansatz_type casscf_npz \
-                        --casscf_npz_path "$npz_path" \
-                        --no-casscf_trainable \
-                        --tau "$tau" \
-                        --actor_amplitude "$amp" \
-                        --sigma_action_scale "$sig" \
-                        --reward_type cdlb \
-                        --penalty_factor "$pen" \
-                        --max_phys_jump_factor "$MAX_PHYS_JUMP" \
-                        --lr_actor "$RL_LR_ACTOR" \
-                        --lr_critic "$RL_LR_CRITIC" \
-                        "$sched_flag" \
-                        --rl_replay_capacity "$RL_REPLAY_CAPACITY" \
-                        --rl_batch_size "$RL_BATCH_SIZE" \
-                        --use_actor_in_eval \
-                        --pipeline_stage "phase2_rl_nodal_crossing" \
-                        --run_name "$rname" \
-                        --results_out_dir "$rdir"
+        for tau in "${TD3_TAU_GRID[@]}"; do
+            for amp in "${ACTOR_AMP_GRID[@]}"; do
+                for pen in "${PENALTY_GRID[@]}"; do
+                    for sig in "${SIGMA_SCALE_GRID[@]}"; do
+                        local rname="${sys_tag}_RL_MALA_tau${tau}_amp${amp}_pen${pen}_sig${sig}"
+                        local rdir="${sys_out}/${rname}"
+                        launch_job "$rname" "$rdir" \
+                            python3 -u cli/run_1d.py \
+                            "${common_args[@]}" \
+                            --method TD3 \
+                            --train_mode rl_only \
+                            --train_steps "$RL_TRAIN_STEPS" \
+                            --n_burn_in "$N_BURN_IN_TRAIN" \
+                            --ansatz_type casscf_npz \
+                            --casscf_npz_path "$npz_path" \
+                            --no-casscf_trainable \
+                            --tau "$tau" \
+                            --actor_amplitude "$amp" \
+                            --sigma_action_scale "$sig" \
+                            --reward_type cdlb \
+                            --penalty_factor "$pen" \
+                            --max_phys_jump_factor "$MAX_PHYS_JUMP" \
+                            --lr_actor "$RL_LR_ACTOR" \
+                            --lr_critic "$RL_LR_CRITIC" \
+                            "$sched_flag" \
+                            --rl_replay_capacity "$RL_REPLAY_CAPACITY" \
+                            --rl_batch_size "$RL_BATCH_SIZE" \
+                            --use_actor_in_eval \
+                            --pipeline_stage "phase2_rl_nodal_crossing" \
+                            --run_name "$rname" \
+                            --results_out_dir "$rdir"
+                    done
                 done
             done
         done
-    done
 
-    # Esperar a que terminen Fase 1 y Fase 2 de este sistema
-    wait_all_slots
-
-    # --------------------------------------------------------------------------
-    # FASE 3 (OPCIONAL): ENTRENAMIENTO ACOPLADO MULTI-SJB + TD3
-    # --------------------------------------------------------------------------
-    if [[ "$RUN_PHASE3_MULTISJB" -eq 1 ]]; then
-        log_msg "[${sys_tag} - FASE 3] Entrenamiento acoplado Multi-SJB + TD3..."
-        local rname_p3="${sys_tag}_Coupled_MultiSJB_TD3"
-        local rdir_p3="${sys_out}/${rname_p3}"
-        launch_job "$rname_p3" "$rdir_p3" \
-            python3 -u cli/run_1d.py \
-            "${common_args[@]}" \
-            --method TD3 \
-            --train_mode coupled \
-            --ansatz_type multi_sjb \
-            --casscf_npz_path "$npz_path" \
-            --coupled_training_cycles "$COUPLED_CYCLES" \
-            --vmc_iterations_per_cycle "$VMC_ITERS_PER_CYCLE" \
-            --rl_sweeps_per_cycle "$RL_SWEEPS_PER_CYCLE" \
-            --lr_ansatz "$LR_ANSATZ" \
-            --lr_actor "$RL_LR_ACTOR" \
-            --lr_critic "$RL_LR_CRITIC" \
-            "$sched_flag" \
-            --tau "0.10" \
-            --actor_amplitude "0.15" \
-            --sigma_action_scale "1.1" \
-            --penalty_factor "0.25" \
-            --max_phys_jump_factor "$MAX_PHYS_JUMP" \
-            --pipeline_stage "phase3_coupled_multisjb" \
-            --run_name "$rname_p3" \
-            --results_out_dir "$rdir_p3"
+        # Esperar a que terminen Fase 1 y Fase 2 de este sistema
         wait_all_slots
+
+        # --------------------------------------------------------------------------
+        # FASE 3 (OPCIONAL): ENTRENAMIENTO ACOPLADO MULTI-SJB + TD3
+        # --------------------------------------------------------------------------
+        if [[ "$RUN_PHASE3_MULTISJB" -eq 1 ]]; then
+            log_msg "[${sys_tag} - FASE 3] Entrenamiento acoplado Multi-SJB + TD3..."
+            local rname_p3="${sys_tag}_Coupled_MultiSJB_TD3"
+            local rdir_p3="${sys_out}/${rname_p3}"
+            launch_job "$rname_p3" "$rdir_p3" \
+                python3 -u cli/run_1d.py \
+                "${common_args[@]}" \
+                --method TD3 \
+                --train_mode coupled \
+                --ansatz_type multi_sjb \
+                --casscf_npz_path "$npz_path" \
+                --coupled_training_cycles "$COUPLED_CYCLES" \
+                --vmc_iterations_per_cycle "$VMC_ITERS_PER_CYCLE" \
+                --rl_sweeps_per_cycle "$RL_SWEEPS_PER_CYCLE" \
+                --lr_ansatz "$LR_ANSATZ" \
+                --lr_actor "$RL_LR_ACTOR" \
+                --lr_critic "$RL_LR_CRITIC" \
+                "$sched_flag" \
+                --tau "0.10" \
+                --actor_amplitude "0.15" \
+                --sigma_action_scale "1.1" \
+                --penalty_factor "0.25" \
+                --max_phys_jump_factor "$MAX_PHYS_JUMP" \
+                --pipeline_stage "phase3_coupled_multisjb" \
+                --run_name "$rname_p3" \
+                --results_out_dir "$rdir_p3"
+            wait_all_slots
+        fi
     fi
 
     # --------------------------------------------------------------------------
@@ -485,19 +555,37 @@ run_system_pipeline() {
     local h5_files=()
     local h5_labels=()
 
+    # 1. Buscar en ${sys_out}/*
     for d in "${sys_out}"/*; do
         if [[ -d "$d" && -f "${d}/run_bundle.h5" ]]; then
             h5_files+=("${d}/run_bundle.h5")
             local bname
             bname="$(basename "$d")"
-            # Etiqueta corta quitando el prefijo del sistema
             h5_labels+=("${bname#${sys_tag}_}")
         fi
     done
 
+    # 2. Si no se encontraron en ${sys_out}/*, buscar en ${OUT_ROOT}/*
+    if [[ "${#h5_files[@]}" -eq 0 ]]; then
+        for d in "${OUT_ROOT}"/*; do
+            if [[ -d "$d" && -f "${d}/run_bundle.h5" ]]; then
+                local bname
+                bname="$(basename "$d")"
+                h5_files+=("${d}/run_bundle.h5")
+                h5_labels+=("${bname#${sys_tag}_}")
+            fi
+        done
+    fi
+
     if [[ "${#h5_files[@]}" -gt 0 ]]; then
+        log_msg "[${sys_tag} - FASE 4] Modelos encontrados para análisis (${#h5_files[@]}):"
+        for idx in "${!h5_files[@]}"; do
+            log_msg "  [${idx}] ${h5_labels[$idx]} -> ${h5_files[$idx]}"
+        done
+
         # 4.1 Post-procesamiento general (tablas de autocorrelación, ESS/s, energías)
-        python3 -u cli/postprocess_1d.py \
+        log_msg "[${sys_tag} - FASE 4.1] Ejecutando cli/postprocess.py..."
+        python3 -u cli/postprocess.py \
             --inputs "${h5_files[@]}" \
             --labels "${h5_labels[@]}" \
             --casscf_npz_path "$npz_path" \
@@ -505,9 +593,10 @@ run_system_pipeline() {
             --csv_collect_dir "$CSV_SUMMARY_DIR" \
             --system_tag "$sys_tag" \
             --figure_format "$FIGURE_FORMAT" \
-            > "${LOG_DIR}/postprocess_${sys_tag}.log" 2>&1 || log_msg "[AVISO] postprocess_1d reportó advertencias en ${sys_tag}"
+            2>&1 | tee "${LOG_DIR}/postprocess_${sys_tag}.log" || log_msg "[AVISO] postprocess reportó advertencias en ${sys_tag}"
 
         # 4.2 Evaluador especializado de Cruce de Barreras Nodales (réplica Article_plots_11 + Ranking)
+        log_msg "[${sys_tag} - FASE 4.2] Ejecutando cli/evaluate_nodal_crossing_1d.py..."
         python3 -u cli/evaluate_nodal_crossing_1d.py \
             --inputs "${h5_files[@]}" \
             --labels "${h5_labels[@]}" \
@@ -516,11 +605,11 @@ run_system_pipeline() {
             --csv_collect_dir "$CSV_SUMMARY_DIR" \
             --system_tag "$sys_tag" \
             --figure_format "$FIGURE_FORMAT" \
-            > "${LOG_DIR}/nodal_crossing_eval_${sys_tag}.log" 2>&1 || log_msg "[AVISO] evaluate_nodal_crossing_1d reportó advertencias en ${sys_tag}"
+            2>&1 | tee "${LOG_DIR}/nodal_crossing_eval_${sys_tag}.log" || log_msg "[AVISO] evaluate_nodal_crossing_1d reportó advertencias en ${sys_tag}"
 
-        log_msg "[OK] Figuras y tablas CSV de ${sys_tag} guardadas en: ${sys_fig} y ${CSV_SUMMARY_DIR}"
+        log_msg "[OK] Figuras y tablas CSV de ${sys_tag} guardadas exitosamente en: ${sys_fig} y ${CSV_SUMMARY_DIR}"
     else
-        log_msg "[AVISO] No se encontraron archivos .h5 para post-procesar en ${sys_out}."
+        log_msg "[AVISO] No se encontraron archivos run_bundle.h5 para post-procesar en ${sys_out} ni en ${OUT_ROOT}."
     fi
 }
 

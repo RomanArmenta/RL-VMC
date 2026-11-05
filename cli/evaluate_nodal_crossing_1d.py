@@ -44,7 +44,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from rl_vmc.io.h5_bundle import load_run_bundle_h5
+from rl_vmc.core.io_bundle import load_run_bundle_h5
 from rl_vmc.postprocess.casscf_baseline import (
     compute_exact_casscf_1body_density,
     discover_casscf_baselines,
