@@ -173,9 +173,10 @@ def run_casscf(cfg):
     if dim > cfg.max_ci_dimension:
         raise ValueError(f"CI dimension {dim} exceeds max_ci_dimension={cfg.max_ci_dimension}")
     history = {"iteration": [], "energy": []}; last = {}
+    nocc = cfg.n_core + cfg.n_active_orbitals
     def objective(parameters):
         c = _rotation(parameters, pairs, cfg.n_basis)
-        ht, et = _transform(h, eri, c)
+        ht, et = _transform(h, eri, c[:, :nocc])
         ecore, ha, ea = _core_active_integrals(ht, et, cfg.n_core, cfg.n_active_orbitals)
         eci, ci, dets = solve_fci(ha, ea, cfg.n_active_up, cfg.n_active_down, cfg.max_ci_dimension)
         total = ecore + eci

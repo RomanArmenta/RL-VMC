@@ -66,42 +66,42 @@ def get_advisor_safe_casscf_defaults(
     if n_elec == 2:
         n_core = 0
         n_active_orbitals = 4
-        n_basis = 24
-        quadrature_order = 80
+        n_basis = 36
+        quadrature_order = 100
         default_softening = 0.1
     elif n_elec == 4:
         n_core = 0
-        # 4 orbitales activos (36 determinantes) garantiza convergencia rápida sin bloqueos
+        # 4 orbitales activos (36 determinantes) con base expandida n_basis=48
         n_active_orbitals = 4
-        n_basis = 32
-        quadrature_order = 80
+        n_basis = 48
+        quadrature_order = 100
         default_softening = 0.1
     elif n_elec == 6:
         # En N=6 (3 up, 3 down), congelar n_core=1 deja 2 up y 2 down activos -> 36 dets
         n_core = 1
         n_active_orbitals = 4
-        n_basis = 32
-        quadrature_order = 80
+        n_basis = 48
+        quadrature_order = 100
         default_softening = 0.1
     elif n_elec == 8:
         # En N=8 (4 up, 4 down), congelar n_core=2 deja 2 up y 2 down activos -> 36 dets
         n_core = 2
         n_active_orbitals = 4
-        n_basis = 32
-        quadrature_order = 80
+        n_basis = 48
+        quadrature_order = 100
         default_softening = 0.1
     elif n_elec == 10:
-        # En N=10 (5 up, 5 down), n_core=4, n_active_orbitals=4 (16 dets), n_basis=32, quad=80
+        # En N=10 (5 up, 5 down), n_core=4, n_active_orbitals=4 (16 dets), n_basis=48, quad=100
         n_core = 4
         n_active_orbitals = 4
-        n_basis = 32
-        quadrature_order = 80
+        n_basis = 48
+        quadrature_order = 100
         default_softening = 0.25
     else:
         n_core = max(0, min(n_up, n_dn) - 2)
         n_active_orbitals = 4
-        n_basis = 24
-        quadrature_order = 80
+        n_basis = 40
+        quadrature_order = 100
         default_softening = 0.1
 
     softening = float(softening_override) if softening_override is not None else default_softening
@@ -263,7 +263,7 @@ def main() -> None:
     t0 = time.perf_counter()
     reused = False
 
-    # 1. Reutilizar si ya existe en outdir, se solicitó --reuse_existing y convergió genuinamente
+    # 1. Reutilizar si ya existe en outdir, se solicitó --reuse_existing y convergió genuinamente con base suficiente
     if args.reuse_existing and npz_target.exists() and summary_target.exists():
         try:
             with summary_target.open("r", encoding="utf-8") as f_chk:
@@ -271,20 +271,25 @@ def main() -> None:
             prev_conv = bool(prev_sum.get("converged", False))
             prev_it = int(prev_sum.get("iterations", 0))
             prev_msg = str(prev_sum.get("optimizer_message", ""))
-            prev_max_it = int(prev_sum.get("config", {}).get("casscf_max_iter", prev_it))
+            prev_cfg = prev_sum.get("config", {})
+            prev_max_it = int(prev_cfg.get("casscf_max_iter", prev_it))
+            prev_nbasis = int(prev_cfg.get("n_basis", 0))
+            prev_ncore = int(prev_cfg.get("n_core", -1))
+            prev_nact = int(prev_cfg.get("n_active_orbitals", -1))
             hit_old_cap = (prev_it >= 120 and prev_max_it <= 120) or ("Maximum number of iterations" in prev_msg and prev_max_it < params["casscf_max_iter"])
-            if prev_conv and not hit_old_cap:
-                print(f"[Pipeline 1 - CASSCF] Reutilizando estado convergido ({prev_it} iters) en: {npz_target}")
+            basis_ok = (prev_nbasis >= int(params["n_basis"])) and (prev_ncore == int(params["n_core"])) and (prev_nact == int(params["n_active_orbitals"]))
+            if prev_conv and not hit_old_cap and basis_ok:
+                print(f"[Pipeline 1 - CASSCF] Reutilizando estado convergido (b={prev_nbasis}, {prev_it} iters) en: {npz_target}")
                 reused = True
             else:
                 print(
-                    f"[Pipeline 1 - CASSCF] Estado previo en {outdir} alcanzó límite de iteraciones "
-                    f"(it={prev_it}/{prev_max_it}, conv={prev_conv}). Recalculando con max_iter={params['casscf_max_iter']}..."
+                    f"[Pipeline 1 - CASSCF] Estado previo en {outdir} requiere recálculo "
+                    f"(b={prev_nbasis} vs {params['n_basis']}, it={prev_it}/{prev_max_it}, conv={prev_conv}). Recalculando..."
                 )
         except Exception:
             pass
 
-    # 2. Copiar de uhf_1d_ho_v270826_m-determinants/results_* si se solicitó, coincide exactamente y convergió
+    # 2. Copiar de uhf_1d_ho_v270826_m-determinants/results_* si se solicitó, coincide exactamente, tiene base >= n_basis y convergió
     if not reused and args.copy_from_advisor_if_available:
         baselines = discover_casscf_baselines(search_root=ROOT_DIR)
         match = find_matching_casscf_baseline(
@@ -298,20 +303,24 @@ def main() -> None:
         if match is not None and os.path.abspath(match["npz_path"]) != os.path.abspath(npz_target):
             src_dir = Path(match["npz_path"]).parent
             src_sum_file = src_dir / "summary.json"
-            ok_to_copy = True
-            if src_sum_file.exists():
+            ok_to_copy = int(match.get("n_basis", 0)) >= int(params["n_basis"])
+            if ok_to_copy and src_sum_file.exists():
                 try:
                     with src_sum_file.open("r", encoding="utf-8") as fs:
                         s_meta = json.load(fs)
                     s_it = int(s_meta.get("iterations", 0))
-                    s_max = int(s_meta.get("config", {}).get("casscf_max_iter", 500))
+                    s_cfg = s_meta.get("config", {})
+                    s_max = int(s_cfg.get("casscf_max_iter", 500))
+                    s_nbasis = int(s_cfg.get("n_basis", match.get("n_basis", 0)))
+                    s_ncore = int(s_cfg.get("n_core", match.get("n_core", -1)))
+                    s_nact = int(s_cfg.get("n_active_orbitals", match.get("n_active", -1)))
                     s_conv = bool(s_meta.get("converged", True))
-                    if not s_conv or (s_it >= 120 and s_max <= 120):
+                    if (not s_conv) or (s_it >= 120 and s_max <= 120) or (s_nbasis < int(params["n_basis"])) or (s_ncore != int(params["n_core"])) or (s_nact != int(params["n_active_orbitals"])):
                         ok_to_copy = False
                 except Exception:
-                    pass
+                    ok_to_copy = False
             if ok_to_copy:
-                print(f"[Pipeline 1 - CASSCF] Copiando referencia ya convergida desde: {src_dir}")
+                print(f"[Pipeline 1 - CASSCF] Copiando referencia ya convergida (b={match.get('n_basis')}) desde: {src_dir}")
                 for item in src_dir.iterdir():
                     if item.is_file():
                         shutil.copy2(item, outdir / item.name)
