@@ -1,43 +1,47 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# RL-VMC 1D: ORQUESTADOR UNIVERSAL DE CRUCE DE BARRERAS NODALES (BAKER & AYLER)
+# RL-VMC 1D: ORQUESTADOR DE MUESTREO PURO CASSCF Y CRUCE NODAL (AYLER & BAKER)
 # ==============================================================================
 # Propósito:
-#   Entrenar y evaluar samplers neuronales RL-MALA (TD3 con arquitectura DeepSet)
-#   que superen al algoritmo MALA clásico mediante el cruce activo de barreras
-#   nodales y de repulsión de Wigner, replicando y sistematizando el mecanismo
-#   físico de `Article_plots_11/evaluar_wigner_casscf.py`.
+#   Evaluar y comparar el muestreo puro de funciones de onda CASSCF congeladas
+#   entre el algoritmo MALA clásico y samplers neuronales RL-MALA (TD3 con
+#   arquitectura DeepSet), enfocándose en el cruce activo de barreras nodales
+#   y de repulsión de Wigner (sin entrenar el ansatz variacional).
 #
 # Características de Diseño:
-#   1. AUTO-ADAPTACIÓN BAKER (1 GPU) / AYLER (Multi-GPU):
-#      Detecta automáticamente el número de GPUs y la VRAM disponible sin
-#      cambiar una sola línea de código.
-#      - En Baker (1 GPU): ejecuta hasta 2 trabajos ligeros en paralelo sobre la
-#        misma GPU (si VRAM >= 15 GB) con XLA_PYTHON_CLIENT_MEM_FRACTION=0.40
-#        y asignación bajo demanda (`platform`), aprovechando al máximo los
-#        núcleos CUDA sin agotar la memoria ni colgar el servidor.
-#      - En Ayler (3 GPUs): distribuye 1 trabajo por GPU en paralelo.
-#   2. CORRECCIÓN CRÍTICA DE ENTRENAMIENTO (`--train_mode rl_only`):
-#      Entrena genuinamente los pesos del Actor TD3 sobre la función de onda
-#      CASSCF congelada antes de evaluar (evitando el modo `eval_only` que
-#      dejaba los pesos del Actor en cero = MALA puro).
-#   3. HIPERPARÁMETROS DESBLOQUEADOS PARA CRUCE NODAL:
-#      - `sigma_action_scale = 1.1` (permite expandir la varianza de propuesta
-#        sigma = sqrt(2*tau)*exp(a_sigma) hasta ~2.7x cerca de las barreras).
-#      - `penalty_factor (lambda) = 0.15, 0.25` (recompensa CDLB calibrada).
-#      - `lr_actor = 1e-5`, `lr_critic = 3e-5` (aprendizaje TD3 estable).
-#      - `eval_init_mode = spin_ordered_offset` (prueba explícita de cruce de
-#        barreras nodales entre sectores de espín: up-up-down-down -> simétrico).
-#   4. REANUDACIÓN AUTOMÁTICA (CHECKPOINT-SKIP):
-#      Si una corrida ya cuenta con `run_bundle.h5` y `summary.json` válidos,
-#      se salta automáticamente al reanudar.
-#
-# Uso directo (en Baker o Ayler):
-#   chmod +x run_parameter_search_baker.sh
-#   ./run_parameter_search_baker.sh [CARPETA_SALIDA]
-#
-# Uso sobrescribiendo parámetros desde la terminal:
-#   RL_TRAIN_STEPS=10000 MEASURE_STEPS=100000 ./run_parameter_search_baker.sh
+#   1. NUEVA REGIÓN DE HIPERPARÁMETROS COMPLEMENTARIA (AYLER 3 GPUs, ~10h):
+#      Basada en los hallazgos de N=4 (donde el óptimo se ubicó cerca de
+#      tau=0.10, A in [0.10, 0.15], lambda=0.25 y MALA seguía bajando en tau=0.12),
+#      explora una grilla más amplia y fina sin repetir ninguna corrida de Baker:
+#      - MALA tau       : (0.06 0.14 0.16 0.20 0.25) -> localiza el quiebre exacto de MALA
+#      - RL-MALA tau    : (0.10 0.12 0.14)           -> explora pasos base mayores
+#      - RL-MALA amp (A): (0.06 0.08 0.12 0.18)      -> refina alrededor del sweet spot
+#      - RL-MALA penalty: (0.20 0.30 0.40)           -> refina y extiende lambda >= 0.20
+#      - RL-MALA sigma  : (1.15)                     -> expansión adaptativa de varianza
+#      Total: 5 MALA + 36 RL-MALA = 41 modelos/sistema (82 modelos entre N=4 y N=6).
+#      (Se puede volver a la grilla original de Baker con `--preset baker`).
+#   2. MUESTREO PURO DE CASSCF CONGELADO (`--no-casscf_trainable`):
+#      - Fase 1 (MALA): `--train_mode eval_only` sobre el estado CASSCF exacto.
+#      - Fase 2 (RL-MALA): `--train_mode rl_only` (adapta únicamente el Actor TD3
+#        sobre el CASSCF congelado) seguido de evaluación MCMC larga.
+#      - No realiza entrenamiento VMC del ansatz en ningún punto.
+#   3. LOGS Y COMPILACIÓN DE FIGURAS EN TIEMPO REAL:
+#      - Los logs se escriben en tiempo real (`python3 -u`, `PYTHONUNBUFFERED=1`).
+#      - Cada vez que converge un modelo o termina una fase/sistema, se compilan
+#        en tiempo real (en CPU, sin robar VRAM) las 8 figuras estándar del sistema,
+#        las figuras de cruce nodal (incluyendo trazas de 1 solo walker del Mejor MALA
+#        vs Mejor RL-MALA) y el resumen global de todos los modelos/sistemas.
+#   4. ESTILO VISUAL Y FORMATO DE ARTÍCULO CONFIGURABLE:
+#      - Líneas discontinuas (`--`) para MALA y líneas continuas (`-`) para RL-MALA.
+#      - Guardado por defecto en `.png` (ahorro de espacio), con banderas para
+#        cambiar a `.pdf`, ajustar `--ppi`/`--dpi`, títulos (`--title-prefix`,
+#        `--custom-suptitle`, `--no-titles`) y escalas de fuente/línea.
+#   5. PROTECCIÓN ESTRICTA DE MEMORIA (VRAM + RAM HOST) EN AYLER Y BAKER:
+#      - `XLA_PYTHON_CLIENT_PREALLOCATE=false`, `XLA_PYTHON_CLIENT_ALLOCATOR=platform`.
+#      - En Ayler (3 GPUs): 1 trabajo por GPU (`MAX_CONCURRENT_JOBS=3`),
+#        `XLA_PYTHON_CLIENT_MEM_FRACTION=0.45`, `ELOC_CHUNK_SIZE=2048`.
+#      - Todo el post-procesamiento corre con `CUDA_VISIBLE_DEVICES="" JAX_PLATFORMS=cpu`
+#        y libera los caminantes `.h5` tras cada modelo (`gc.collect()`).
 # ==============================================================================
 
 set -u
@@ -50,9 +54,25 @@ cd "$SCRIPT_DIR"
 # SECCIÓN 1: PARÁMETROS MODULARES Y DESCRIPTIVOS (MODIFICABLES)
 # ==============================================================================
 
-# --- 1.1 Opciones de Modo y Argumentos CLI ---
 POSTPROCESS_ONLY="${POSTPROCESS_ONLY:-0}"
 SYSTEM="${SYSTEM:-all}"
+GRID_PRESET="${GRID_PRESET:-ayler}"
+
+# Formato y estilo de figuras (por defecto solo PNG para ahorrar espacio)
+FIGURE_FORMAT="${FIGURE_FORMAT:-png}"
+FIGURE_DPI="${FIGURE_DPI:-300}"
+TITLE_PREFIX="${TITLE_PREFIX:-}"
+CUSTOM_SUPTITLE="${CUSTOM_SUPTITLE:-}"
+NO_TITLES="${NO_TITLES:-0}"
+FONT_SCALE="${FONT_SCALE:-1.0}"
+LINE_WIDTH_SCALE="${LINE_WIDTH_SCALE:-1.0}"
+TRANSPARENT_BG="${TRANSPARENT_BG:-0}"
+
+# Filtrado Top-K y trazas de 1 solo caminante (Mejor MALA vs Mejor RL-MALA)
+TOP_K_MODELS="${TOP_K_MODELS:-2}"
+WALKER_TRACE_TOP_K="${WALKER_TRACE_TOP_K:-1}"
+N_EVAL_SUBBLOCKS="${N_EVAL_SUBBLOCKS:-5}"
+REALTIME_PLOT_UPDATES="${REALTIME_PLOT_UPDATES:-1}"
 
 POSITIONAL_ARGS=()
 while [[ $# -gt 0 ]]; do
@@ -65,23 +85,85 @@ while [[ $# -gt 0 ]]; do
             SYSTEM="$2"
             shift 2
             ;;
+        --preset|--grid-preset)
+            GRID_PRESET="$2"
+            shift 2
+            ;;
         --top-k|--top_k_models|-k)
             TOP_K_MODELS="$2"
             shift 2
             ;;
+        --walker-top-k|--walker_trace_top_k)
+            WALKER_TRACE_TOP_K="$2"
+            shift 2
+            ;;
+        --figure-format|--figure_format|--format|-f)
+            FIGURE_FORMAT="$2"
+            shift 2
+            ;;
+        --pdf)
+            FIGURE_FORMAT="pdf"
+            shift
+            ;;
+        --png)
+            FIGURE_FORMAT="png"
+            shift
+            ;;
+        --dpi|--ppi)
+            FIGURE_DPI="$2"
+            shift 2
+            ;;
+        --title-prefix|--title_prefix)
+            TITLE_PREFIX="$2"
+            shift 2
+            ;;
+        --custom-suptitle|--custom_suptitle)
+            CUSTOM_SUPTITLE="$2"
+            shift 2
+            ;;
+        --no-titles|--no_titles|--hide-titles)
+            NO_TITLES=1
+            shift
+            ;;
+        --font-scale|--font_scale)
+            FONT_SCALE="$2"
+            shift 2
+            ;;
+        --line-width-scale|--line_width_scale)
+            LINE_WIDTH_SCALE="$2"
+            shift 2
+            ;;
+        --transparent-bg|--transparent_bg)
+            TRANSPARENT_BG=1
+            shift
+            ;;
+        --no-realtime-plots)
+            REALTIME_PLOT_UPDATES=0
+            shift
+            ;;
         --help|-h)
             echo "Uso: $0 [OPCIONES] [CARPETA_SALIDA]"
             echo ""
-            echo "Opciones:"
-            echo "  --postprocess-only, -p    Ejecuta únicamente la Fase 4 (postprocess y evaluate_nodal_crossing_1d)"
-            echo "                            sobre los archivos .h5 (o CSVs) existentes sin re-entrenar ni muestrear."
-            echo "  --system, -s [N4|N6|all]  Selecciona el sistema físico a procesar:"
-            echo "                              N4: Wigner N=4, g=4.0 (barreras profundas, 4 electrones)"
-            echo "                              N6: CASSCF N=6, g=1.0 (20 det, base 256, 6 electrones)"
-            echo "                              all: ejecuta ambos sistemas en secuencia (default)"
-            echo "  --top-k, -k K             Número de mejores modelos MALA vs mejores RL-MALA a graficar en"
-            echo "                            las figuras comparativas (default: 2)."
-            echo "  [CARPETA_SALIDA]          Directorio raíz de salida (default: results_nodal_crossing_search)"
+            echo "Opciones principales:"
+            echo "  --preset [ayler|baker]        Selecciona la región de búsqueda de hiperparámetros:"
+            echo "                                  ayler: Nueva región complementaria (41 modelos/sistema, ~10h en 3 GPUs, default)"
+            echo "                                  baker: Región compacta original (16 modelos/sistema para 1 GPU)"
+            echo "  --system, -s [N4|N6|all]      Sistema físico a evaluar (N4, N6, o all; default: all)"
+            echo "  --postprocess-only, -p        Solo ejecuta el post-procesamiento y gráficas sobre resultados existentes"
+            echo "  --top-k, -k K                 Número de mejores MALA vs mejores RL-MALA en curvas comparativas (default: 2)"
+            echo "  --walker-top-k K              Número de mejores modelos por clase en trazas de 1 walker (default: 1)"
+            echo ""
+            echo "Opciones de formato de figuras (para espacio o publicación):"
+            echo "  --figure-format, -f [png|pdf|both]  Formato de salida de gráficas (default: png)"
+            echo "  --pdf                         Atajo para --figure-format pdf"
+            echo "  --ppi, --dpi N                Resolución en puntos por pulgada (default: 300)"
+            echo "  --title-prefix TEXTO          Prefijo para los títulos de todas las figuras"
+            echo "  --custom-suptitle TEXTO       Título global personalizado"
+            echo "  --no-titles                   Oculta títulos superiores (ideal para insertar en LaTeX)"
+            echo "  --font-scale ESCALA           Factor de escala tipográfica (default: 1.0)"
+            echo "  --line-width-scale ESCALA     Factor de grosor de línea (default: 1.0)"
+            echo "  --transparent-bg              Fondo transparente al exportar figuras"
+            echo "  [CARPETA_SALIDA]              Directorio raíz de salida (default: results_nodal_crossing_search)"
             exit 0
             ;;
         *)
@@ -97,6 +179,26 @@ else
     OUT_ROOT="${OUT_ROOT:-results_nodal_crossing_search}"
 fi
 SKIP_EXISTING="${SKIP_EXISTING:-1}"  # 1 = saltar corridas ya terminadas; 0 = recalcular todo
+
+# Construir banderas comunes de estilo de figuras para todos los scripts de post-procesamiento
+PLOT_STYLE_ARGS=(
+    --figure_format "$FIGURE_FORMAT"
+    --dpi "$FIGURE_DPI"
+    --font_scale "$FONT_SCALE"
+    --line_width_scale "$LINE_WIDTH_SCALE"
+)
+if [[ -n "$TITLE_PREFIX" ]]; then
+    PLOT_STYLE_ARGS+=(--title_prefix "$TITLE_PREFIX")
+fi
+if [[ -n "$CUSTOM_SUPTITLE" ]]; then
+    PLOT_STYLE_ARGS+=(--custom_suptitle "$CUSTOM_SUPTITLE")
+fi
+if [[ "$NO_TITLES" -eq 1 || "$NO_TITLES" == "true" ]]; then
+    PLOT_STYLE_ARGS+=(--no_titles)
+fi
+if [[ "$TRANSPARENT_BG" -eq 1 || "$TRANSPARENT_BG" == "true" ]]; then
+    PLOT_STYLE_ARGS+=(--transparent_bg)
+fi
 
 # Configurar sistemas activos según $SYSTEM
 SYSTEM_LOWER="$(echo "$SYSTEM" | tr '[:upper:]' '[:lower:]')"
@@ -135,27 +237,27 @@ if [[ ! -f "$NPZ_MULTIDET_N6_G1" ]]; then
 fi
 
 # --- 1.3 Grillas de Búsqueda de Hiperparámetros (MALA vs RL-MALA TD3) ---
-# MALA_TAU_GRID   : Tamaños de paso temporal tau para el baseline MALA clásico.
-# TD3_TAU_GRID    : Tamaños de paso base tau para el sampler neuronal RL-MALA.
-# ACTOR_AMP_GRID  : Amplitud máxima del empuje direccional del Actor (A * tanh).
-# PENALTY_GRID    : Factor lambda de la recompensa CDLB (controla aceptación vs exploración).
-# SIGMA_SCALE_GRID: Escala máxima del segundo canal del Actor para expandir sigma.
-MALA_TAU_GRID=(${MALA_TAU_GRID_STR:-0.04 0.08 0.10 0.12})
-TD3_TAU_GRID=(${TD3_TAU_GRID_STR:-0.08 0.10})
-ACTOR_AMP_GRID=(${ACTOR_AMP_GRID_STR:-0.10 0.15 0.25})
-PENALTY_GRID=(${PENALTY_GRID_STR:-0.15 0.25})
-SIGMA_SCALE_GRID=(${SIGMA_SCALE_GRID_STR:-1.1})
+# Selección por preset:
+#   - 'ayler' (default): Nueva región complementaria (0 traslape con Baker),
+#     diseñada a partir de los resultados de N=4 para 3 GPUs (~9-10 horas total).
+#   - 'baker': Región original ejecutada en Baker (1 GPU).
+PRESET_LOWER="$(echo "$GRID_PRESET" | tr '[:upper:]' '[:lower:]')"
+if [[ "$PRESET_LOWER" == "baker" ]]; then
+    MALA_TAU_GRID=(${MALA_TAU_GRID_STR:-0.04 0.08 0.10 0.12})
+    TD3_TAU_GRID=(${TD3_TAU_GRID_STR:-0.08 0.10})
+    ACTOR_AMP_GRID=(${ACTOR_AMP_GRID_STR:-0.10 0.15 0.25})
+    PENALTY_GRID=(${PENALTY_GRID_STR:-0.15 0.25})
+    SIGMA_SCALE_GRID=(${SIGMA_SCALE_GRID_STR:-1.1})
+else
+    # Región complementaria para Ayler (5 MALA + 36 RL-MALA = 41 modelos/sistema)
+    MALA_TAU_GRID=(${MALA_TAU_GRID_STR:-0.06 0.14 0.16 0.20 0.25})
+    TD3_TAU_GRID=(${TD3_TAU_GRID_STR:-0.10 0.12 0.14})
+    ACTOR_AMP_GRID=(${ACTOR_AMP_GRID_STR:-0.06 0.08 0.12 0.18})
+    PENALTY_GRID=(${PENALTY_GRID_STR:-0.20 0.30 0.40})
+    SIGMA_SCALE_GRID=(${SIGMA_SCALE_GRID_STR:-1.15})
+fi
 
-# --- 1.4 Hiperparámetros de Entrenamiento RL (TD3 sobre CASSCF congelado) ---
-# RL_TRAIN_STEPS     : Barridos MCMC de entrenamiento TD3 (6000 es rápido y converge
-#                      el cruce nodal; en Article_plots_11 se usaron 20000).
-# N_WALKERS_TRAIN    : Número de caminantes paralelos durante entrenamiento y evaluación.
-#                      (100-128 caminantes replican Article_plots_11 con bajo uso de VRAM).
-# N_BURN_IN_TRAIN    : Pasos de termalización previos al entrenamiento del Actor.
-# RL_LR_ACTOR        : Learning rate del Actor (1e-5 evita saturación prematura de tanh).
-# RL_LR_CRITIC       : Learning rate de los Críticos (3e-5 mantiene MSE estable ~0.1).
-# RL_USE_LR_SCHEDULER: false = mantiene LR constante como en Article_plots_11.
-# MAX_PHYS_JUMP      : Cota física de salto en múltiplos de sqrt(tau) (2.0 en Article_plots_11).
+# --- 1.4 Hiperparámetros de Adaptación del Sampler RL (TD3 sobre CASSCF congelado) ---
 RL_TRAIN_STEPS="${RL_TRAIN_STEPS:-6000}"
 N_WALKERS="${N_WALKERS:-128}"
 N_BURN_IN_TRAIN="${N_BURN_IN_TRAIN:-2000}"
@@ -166,53 +268,22 @@ MAX_PHYS_JUMP="${MAX_PHYS_JUMP:-2.0}"
 RL_REPLAY_CAPACITY="${RL_REPLAY_CAPACITY:-50000}"
 RL_BATCH_SIZE="${RL_BATCH_SIZE:-256}"
 
-# --- 1.5 Configuración de la Fase de Evaluación / Cruce de Barreras Nodales ---
-# EVAL_INIT_MODE     : Modo de inicialización de caminantes al evaluar:
-#                      - 'spin_ordered_offset': inicializa electrones ordenados por espín
-#                        (up a la izquierda, down a la derecha, desplazados en +5 Bohr),
-#                        replicando exactamente Article_plots_11 para medir cuántos pasos
-#                        tarda el sampler en cruzar las barreras nodales y despolarizar el espín.
-#                      - 'symmetric_gaussian': inicialización Gaussiana isotrópica.
-# EVAL_BURN_IN       : Pasos descartados antes de medir en evaluación (200 pasos bastan para
-#                      caer al pozo armónico y observar toda la dinámica de cruce nodal).
-# MEASURE_STEPS      : Pasos MCMC de producción por cadena (40000 para barrido rápido;
-#                      subir a 200000-500000 para réplica larga de artículo).
-# N_EVAL_CHAINS      : Cadenas independientes de evaluación.
-# JIT_CHUNK_SIZE     : Tamaño de bloque compilado lax.scan (protege VRAM).
+# --- 1.5 Configuración de Evaluación de Muestreo Puro y Cruce de Barreras Nodales ---
 EVAL_INIT_MODE="${EVAL_INIT_MODE:-spin_ordered_offset}"
 EVAL_BURN_IN="${EVAL_BURN_IN:-200}"
 MEASURE_STEPS="${MEASURE_STEPS:-40000}"
 N_EVAL_CHAINS="${N_EVAL_CHAINS:-3}"
 JIT_CHUNK_SIZE="${JIT_CHUNK_SIZE:-2000}"
-ELOC_CHUNK_SIZE="${ELOC_CHUNK_SIZE:-4096}"
+ELOC_CHUNK_SIZE="${ELOC_CHUNK_SIZE:-2048}"
 SAVE_WALKERS_MAX_BATCH="${SAVE_WALKERS_MAX_BATCH:-128}"
 
-# --- 1.5b Parámetros de Filtrado Top-K y Barras de Error en Post-Procesamiento ---
-# TOP_K_MODELS      : Número de mejores samplers MALA vs mejores RL-MALA a mostrar en las
-#                     figuras comparativas (ej. 2 -> Top-2 MALA vs Top-2 RL-MALA).
-# N_EVAL_SUBBLOCKS  : Número de sub-bloques independientes de caminantes/tiempo para calcular
-#                     barras de error Jackknife cuando un archivo .h5 tiene 1 sola cadena.
-TOP_K_MODELS="${TOP_K_MODELS:-2}"
-N_EVAL_SUBBLOCKS="${N_EVAL_SUBBLOCKS:-5}"
-
-# --- 1.6 Fase 3 (Opcional): Entrenamiento Acoplado Multi-SJB + TD3 ---
-# Activar con RUN_PHASE3_MULTISJB=1 si además del muestreo sobre CASSCF congelado
-# deseas entrenar el ansatz variacional Multi-SJB con el mejor Actor encontrado.
-RUN_PHASE3_MULTISJB="${RUN_PHASE3_MULTISJB:-0}"
-COUPLED_CYCLES="${COUPLED_CYCLES:-6}"
-VMC_ITERS_PER_CYCLE="${VMC_ITERS_PER_CYCLE:-400}"
-RL_SWEEPS_PER_CYCLE="${RL_SWEEPS_PER_CYCLE:-300}"
-LR_ANSATZ="${LR_ANSATZ:-2e-4}"
-
-# --- 1.7 Semilla Global y Formatos de Gráficas ---
 SEED="${SEED:-42}"
-FIGURE_FORMAT="${FIGURE_FORMAT:-both}"  # png, pdf, o both
 
 # ==============================================================================
-# SECCIÓN 2: PROTECCIÓN DE MEMORIA Y AUTO-DETECCIÓN DE GPUs (BAKER / AYLER)
+# SECCIÓN 2: PROTECCIÓN DE MEMORIA Y AUTO-DETECCIÓN DE GPUs (AYLER / BAKER)
 # ==============================================================================
 
-# Limitar hilos de CPU por proceso para no saturar RAM ni núcleos del host
+# Limitar hilos de CPU por proceso para evitar agotamiento de RAM en Ayler
 export OMP_NUM_THREADS="${OMP_NUM_THREADS:-2}"
 export MKL_NUM_THREADS="${MKL_NUM_THREADS:-2}"
 export OPENBLAS_NUM_THREADS="${OPENBLAS_NUM_THREADS:-2}"
@@ -220,7 +291,7 @@ export NUMEXPR_NUM_THREADS="${NUMEXPR_NUM_THREADS:-2}"
 export TF_CPP_MIN_LOG_LEVEL=2
 export PYTHONUNBUFFERED=1
 
-# Desactivar pre-asignación masiva de VRAM en JAX/XLA (obligatorio para no colgar Baker/Ayler)
+# Desactivar pre-asignación masiva de VRAM en JAX/XLA (crítico para no colgar Ayler)
 export XLA_PYTHON_CLIENT_PREALLOCATE=false
 export XLA_PYTHON_CLIENT_ALLOCATOR=platform
 
@@ -243,8 +314,7 @@ discover_hardware() {
         JOBS_PER_GPU="${JOBS_PER_GPU:-1}"
         export XLA_PYTHON_CLIENT_MEM_FRACTION="${XLA_MEM_FRACTION:-0.70}"
     elif [[ "$n_gpus" -eq 1 ]]; then
-        # Modo BAKER (1 sola GPU): si tiene >= 15 GB de VRAM y N_WALKERS <= 256,
-        # podemos correr 2 trabajos ligeros simultáneos en la misma GPU sin riesgo de OOM.
+        # Modo BAKER (1 sola GPU)
         if [[ -z "${JOBS_PER_GPU:-}" ]]; then
             if [[ "${TOTAL_VRAM_MB:-0}" -ge 15000 && "$N_WALKERS" -le 256 ]]; then
                 JOBS_PER_GPU=2
@@ -258,7 +328,7 @@ discover_hardware() {
             export XLA_PYTHON_CLIENT_MEM_FRACTION="${XLA_MEM_FRACTION:-0.75}"
         fi
     else
-        # Modo AYLER (Múltiples GPUs): 1 trabajo por GPU por defecto
+        # Modo AYLER (3 GPUs): 1 trabajo por GPU por defecto (3 procesos simultáneos seguros)
         JOBS_PER_GPU="${JOBS_PER_GPU:-1}"
         export XLA_PYTHON_CLIENT_MEM_FRACTION="${XLA_MEM_FRACTION:-0.45}"
     fi
@@ -291,10 +361,13 @@ fi
 LOG_DIR="${OUT_ROOT}/logs"
 CSV_SUMMARY_DIR="${OUT_ROOT}/csv_summary"
 FIG_DIR="${OUT_ROOT}/figures"
+GLOBAL_FIG_DIR="${FIG_DIR}/all_models_global"
 MASTER_CSV="${CSV_SUMMARY_DIR}/all_models_master.csv"
 MASTER_LOG="${LOG_DIR}/master_search.log"
+PLOT_LOCK_DIR="${LOG_DIR}/.realtime_plot.lock"
 
-mkdir -p "$LOG_DIR" "$CSV_SUMMARY_DIR" "$FIG_DIR"
+mkdir -p "$LOG_DIR" "$CSV_SUMMARY_DIR" "$FIG_DIR" "$GLOBAL_FIG_DIR"
+rm -rf "$PLOT_LOCK_DIR" 2>/dev/null || true
 touch "$MASTER_LOG"
 
 log_msg() {
@@ -304,15 +377,17 @@ log_msg() {
 }
 
 log_msg "=============================================================================="
-log_msg "INICIANDO BÚSQUEDA DE PARÁMETROS Y CRUCE DE BARRERAS NODALES (BAKER / AYLER)"
+log_msg "INICIANDO BÚSQUEDA DE PARÁMETROS DE MUESTREO PURO CASSCF (AYLER / BAKER)"
 log_msg "=============================================================================="
 log_msg "Directorio raíz        : ${OUT_ROOT}"
+log_msg "Preset de grilla       : ${GRID_PRESET}"
 log_msg "GPUs físicas detectadas: ${NUM_GPUS} (${AVAILABLE_GPUS[*]:-CPU}) | VRAM por GPU: ${TOTAL_VRAM_MB} MB"
 log_msg "Trabajos por GPU       : ${JOBS_PER_GPU} | Concurrencia total: ${MAX_CONCURRENT_JOBS}"
-log_msg "XLA_MEM_FRACTION       : ${XLA_PYTHON_CLIENT_MEM_FRACTION}"
-log_msg "Entrenamiento TD3      : rl_only (${RL_TRAIN_STEPS} sweeps, N_walkers=${N_WALKERS}, lr_act=${RL_LR_ACTOR}, lr_crit=${RL_LR_CRITIC})"
-log_msg "Evaluación MCMC        : init=${EVAL_INIT_MODE}, burn_in=${EVAL_BURN_IN}, measure_steps=${MEASURE_STEPS}"
-log_msg "Grilla MALA (tau)      : ${MALA_TAU_GRID[*]}"
+log_msg "XLA_MEM_FRACTION       : ${XLA_PYTHON_CLIENT_MEM_FRACTION} (ELOC_CHUNK=${ELOC_CHUNK_SIZE})"
+log_msg "Muestreo RL-MALA TD3   : rl_only sobre CASSCF congelado (${RL_TRAIN_STEPS} sweeps, N_walkers=${N_WALKERS})"
+log_msg "Evaluación MCMC        : init=${EVAL_INIT_MODE}, chains=${N_EVAL_CHAINS}, burn_in=${EVAL_BURN_IN}, steps=${MEASURE_STEPS}"
+log_msg "Formato de figuras     : ${FIGURE_FORMAT} (${FIGURE_DPI} PPI) | Top-K=${TOP_K_MODELS} | WalkerTrace Top-K=${WALKER_TRACE_TOP_K}"
+log_msg "Grilla MALA (tau)      : ${MALA_TAU_GRID[*]} (${#MALA_TAU_GRID[@]} modelos)"
 log_msg "Grilla TD3 (tau)       : ${TD3_TAU_GRID[*]}"
 log_msg "Grilla TD3 (actor_amp) : ${ACTOR_AMP_GRID[*]}"
 log_msg "Grilla TD3 (penalty)   : ${PENALTY_GRID[*]}"
@@ -320,8 +395,141 @@ log_msg "Grilla TD3 (sigma_sc)  : ${SIGMA_SCALE_GRID[*]}"
 log_msg "=============================================================================="
 
 # ==============================================================================
-# SECCIÓN 3: COLA DE TRABAJOS CON ASIGNACIÓN DINÁMICA DE SLOTS GPU
+# SECCIÓN 3: COMPILACIÓN DE FIGURAS EN TIEMPO REAL Y COLA DE TRABAJOS GPU
 # ==============================================================================
+
+# Compila/actualiza las figuras globales de todos los sistemas/modelos en CPU
+update_global_all_models_figures() {
+    local nodal_csv="${CSV_SUMMARY_DIR}/master_nodal_crossing_comparison.csv"
+    local param_csv="${CSV_SUMMARY_DIR}/master_param_search_summary.csv"
+    local target_csv=""
+    if [[ -f "$nodal_csv" ]]; then
+        target_csv="$nodal_csv"
+    elif [[ -f "$param_csv" ]]; then
+        target_csv="$param_csv"
+    elif [[ -f "$MASTER_CSV" ]]; then
+        target_csv="$MASTER_CSV"
+    else
+        local first_nodal
+        first_nodal=$(ls "${CSV_SUMMARY_DIR}"/nodal_crossing_summary_*.csv 2>/dev/null | head -n 1 || true)
+        if [[ -n "$first_nodal" && -f "$first_nodal" ]]; then
+            target_csv="$first_nodal"
+        fi
+    fi
+
+    if [[ -n "$target_csv" ]]; then
+        CUDA_VISIBLE_DEVICES="" JAX_PLATFORMS=cpu \
+            python3 -u scripts/plot_param_search_results.py \
+            --csv "$target_csv" \
+            --out_dir "$GLOBAL_FIG_DIR" \
+            "${PLOT_STYLE_ARGS[@]}" \
+            >> "${LOG_DIR}/realtime_global_plots.log" 2>&1 || true
+    fi
+}
+
+# Compila/actualiza las 8 figuras estándar + cruce nodal de un sistema en CPU
+compile_system_figures() {
+    local sys_tag="$1"
+    local npz_path="$2"
+    local mode="${3:-full}"  # 'incremental' o 'full'
+    local sys_out="${OUT_ROOT}/${sys_tag}"
+    local sys_fig="${FIG_DIR}/${sys_tag}"
+    mkdir -p "$sys_fig"
+
+    local h5_files=()
+    local h5_labels=()
+
+    for d in "${sys_out}"/*; do
+        if [[ -d "$d" && -f "${d}/run_bundle.h5" && -f "${d}/summary.json" ]]; then
+            h5_files+=("${d}/run_bundle.h5")
+            local bname
+            bname="$(basename "$d")"
+            h5_labels+=("${bname#${sys_tag}_}")
+        fi
+    done
+
+    if [[ "${#h5_files[@]}" -eq 0 ]]; then
+        for d in "${OUT_ROOT}"/*; do
+            if [[ -d "$d" && -f "${d}/run_bundle.h5" && -f "${d}/summary.json" ]]; then
+                local bname
+                bname="$(basename "$d")"
+                h5_files+=("${d}/run_bundle.h5")
+                h5_labels+=("${bname#${sys_tag}_}")
+            fi
+        done
+    fi
+
+    if [[ "${#h5_files[@]}" -gt 0 ]]; then
+        if [[ "$mode" == "full" ]]; then
+            log_msg "[${sys_tag} - POSTPROCESS] Compilando las 8 figuras estándar y métricas (${#h5_files[@]} modelos)..."
+        fi
+        CUDA_VISIBLE_DEVICES="" JAX_PLATFORMS=cpu \
+            python3 -u cli/postprocess.py \
+            --inputs "${h5_files[@]}" \
+            --labels "${h5_labels[@]}" \
+            --casscf_npz_path "$npz_path" \
+            --out_dir "${sys_fig}/postprocess_standard" \
+            --csv_collect_dir "$CSV_SUMMARY_DIR" \
+            --system_tag "$sys_tag" \
+            --top_k_models "$TOP_K_MODELS" \
+            --walker_trace_top_k "$WALKER_TRACE_TOP_K" \
+            --n_eval_subblocks "$N_EVAL_SUBBLOCKS" \
+            "${PLOT_STYLE_ARGS[@]}" \
+            >> "${LOG_DIR}/postprocess_${sys_tag}.log" 2>&1 || log_msg "[AVISO] postprocess reportó advertencias en ${sys_tag}"
+
+        if [[ "$mode" == "full" ]]; then
+            # En modo final del sistema, evaluar cruce nodal completo desde .h5 (con trazas de 1 walker)
+            log_msg "[${sys_tag} - NODAL CROSSING] Compilando figuras de cruce nodal y trazas de 1 walker (Top-${WALKER_TRACE_TOP_K})..."
+            CUDA_VISIBLE_DEVICES="" JAX_PLATFORMS=cpu \
+                python3 -u cli/evaluate_nodal_crossing_1d.py \
+                --inputs "${h5_files[@]}" \
+                --labels "${h5_labels[@]}" \
+                --casscf_npz_path "$npz_path" \
+                --out_dir "$sys_fig" \
+                --csv_collect_dir "$CSV_SUMMARY_DIR" \
+                --system_tag "$sys_tag" \
+                --top_k_models "$TOP_K_MODELS" \
+                --walker_trace_top_k "$WALKER_TRACE_TOP_K" \
+                --n_eval_subblocks "$N_EVAL_SUBBLOCKS" \
+                "${PLOT_STYLE_ARGS[@]}" \
+                >> "${LOG_DIR}/nodal_crossing_eval_${sys_tag}.log" 2>&1 || log_msg "[AVISO] evaluate_nodal_crossing_1d reportó advertencias en ${sys_tag}"
+        else
+            # En modo incremental en vivo, usar --from_postprocess_dir (instantáneo, <2s en CPU)
+            CUDA_VISIBLE_DEVICES="" JAX_PLATFORMS=cpu \
+                python3 -u cli/evaluate_nodal_crossing_1d.py \
+                --from_postprocess_dir "${sys_fig}/postprocess_standard" \
+                --casscf_npz_path "$npz_path" \
+                --out_dir "$sys_fig" \
+                --csv_collect_dir "$CSV_SUMMARY_DIR" \
+                --system_tag "$sys_tag" \
+                --top_k_models "$TOP_K_MODELS" \
+                --walker_trace_top_k "$WALKER_TRACE_TOP_K" \
+                --n_eval_subblocks "$N_EVAL_SUBBLOCKS" \
+                "${PLOT_STYLE_ARGS[@]}" \
+                >> "${LOG_DIR}/nodal_crossing_eval_${sys_tag}.log" 2>&1 || true
+        fi
+
+        # Actualizar figuras globales de todos los modelos/sistemas
+        update_global_all_models_figures
+    elif [[ -d "${sys_fig}/postprocess_standard" ]]; then
+        log_msg "[${sys_tag} - MODO CSV] Reconstruyendo figuras desde ${sys_fig}/postprocess_standard..."
+        CUDA_VISIBLE_DEVICES="" JAX_PLATFORMS=cpu \
+            python3 -u cli/evaluate_nodal_crossing_1d.py \
+            --from_postprocess_dir "${sys_fig}/postprocess_standard" \
+            --casscf_npz_path "$npz_path" \
+            --out_dir "$sys_fig" \
+            --csv_collect_dir "$CSV_SUMMARY_DIR" \
+            --system_tag "$sys_tag" \
+            --top_k_models "$TOP_K_MODELS" \
+            --walker_trace_top_k "$WALKER_TRACE_TOP_K" \
+            --n_eval_subblocks "$N_EVAL_SUBBLOCKS" \
+            "${PLOT_STYLE_ARGS[@]}" \
+            >> "${LOG_DIR}/nodal_crossing_eval_${sys_tag}.log" 2>&1 || true
+        update_global_all_models_figures
+    else
+        log_msg "[AVISO] No se encontraron archivos run_bundle.h5 ni CSVs en ${sys_out} / ${sys_fig}."
+    fi
+}
 
 declare -a SLOT_PIDS=()
 declare -a SLOT_NAMES=()
@@ -372,9 +580,11 @@ wait_all_slots() {
 }
 
 launch_job() {
-    local run_name="$1"
-    local run_dir="$2"
-    shift 2
+    local sys_tag="$1"
+    local npz_path="$2"
+    local run_name="$3"
+    local run_dir="$4"
+    shift 4
     local cmd=("$@")
 
     if is_run_completed "$run_dir"; then
@@ -395,13 +605,39 @@ launch_job() {
             export CUDA_VISIBLE_DEVICES="$gpu_id"
         fi
         "${cmd[@]}" > "$log_file" 2>&1
+        local exit_code=$?
+
+        if [[ "$exit_code" -eq 0 && -f "${run_dir}/run_bundle.h5" ]]; then
+            # 1. Post-procesamiento individual del modelo recién terminado (en CPU)
+            CUDA_VISIBLE_DEVICES="" JAX_PLATFORMS=cpu \
+                python3 -u cli/postprocess.py \
+                --inputs "${run_dir}/run_bundle.h5" \
+                --labels "${run_name#${sys_tag}_}" \
+                --casscf_npz_path "$npz_path" \
+                --out_dir "${run_dir}/postprocess" \
+                --system_tag "$run_name" \
+                --top_k_models 1 \
+                --walker_trace_top_k 1 \
+                "${PLOT_STYLE_ARGS[@]}" \
+                >> "$log_file" 2>&1 || true
+
+            # 2. Compilación incremental en tiempo real de las gráficas del sistema y globales
+            #    (protegida con mkdir lock atómico para no duplicar procesos CPU si 2 GPUs terminan al mismo segundo)
+            if [[ "$REALTIME_PLOT_UPDATES" -eq 1 ]]; then
+                if mkdir "$PLOT_LOCK_DIR" 2>/dev/null; then
+                    compile_system_figures "$sys_tag" "$npz_path" "incremental"
+                    rmdir "$PLOT_LOCK_DIR" 2>/dev/null || true
+                fi
+            fi
+        fi
+        exit "$exit_code"
     ) &
     SLOT_PIDS[$slot]=$!
     SLOT_NAMES[$slot]="$run_name"
 }
 
 # ==============================================================================
-# SECCIÓN 4: EJECUCIÓN DEL PIPELINE POR SISTEMA FÍSICO
+# SECCIÓN 4: EJECUCIÓN DEL PIPELINE DE MUESTREO PURO POR SISTEMA FÍSICO
 # ==============================================================================
 
 run_system_pipeline() {
@@ -429,7 +665,7 @@ run_system_pipeline() {
 
     log_msg "------------------------------------------------------------------------------"
     log_msg "SISTEMA: ${sys_tag} (N=${n_elec}, up=${n_up}, dn=${n_dn}, g=${g_val}, omega=${omega})"
-    log_msg "Archivo CASSCF: ${npz_path}"
+    log_msg "Archivo CASSCF (congelado): ${npz_path}"
     log_msg "------------------------------------------------------------------------------"
 
     local common_args=(
@@ -456,16 +692,16 @@ run_system_pipeline() {
     )
 
     if [[ "$POSTPROCESS_ONLY" -eq 1 || "$POSTPROCESS_ONLY" == "true" ]]; then
-        log_msg "[MODO POSTPROCESS-ONLY] Omitiendo fases de simulación/entrenamiento para ${sys_tag}. Ejecutando directamente Fase 4..."
+        log_msg "[MODO POSTPROCESS-ONLY] Omitiendo simulación para ${sys_tag}. Compilando figuras directamente..."
     else
         # --------------------------------------------------------------------------
-        # FASE 1: BARRIDO DE BASELINES MALA CLÁSICO (CASSCF CONGELADO)
+        # FASE 1: BARRIDO DE BASELINES MALA CLÁSICO (MUESTREO PURO DE CASSCF)
         # --------------------------------------------------------------------------
-        log_msg "[${sys_tag} - FASE 1] Muestreo MALA Clásico sobre CASSCF congelado..."
+        log_msg "[${sys_tag} - FASE 1] Evaluando muestreo puro MALA Clásico sobre CASSCF congelado..."
         for tau in "${MALA_TAU_GRID[@]}"; do
             local rname="${sys_tag}_MALA_tau${tau}"
             local rdir="${sys_out}/${rname}"
-            launch_job "$rname" "$rdir" \
+            launch_job "$sys_tag" "$npz_path" "$rname" "$rdir" \
                 python3 -u cli/run_1d.py \
                 "${common_args[@]}" \
                 --method MALA \
@@ -480,11 +716,10 @@ run_system_pipeline() {
         done
 
         # --------------------------------------------------------------------------
-        # FASE 2: ENTRENAMIENTO Y EVALUACIÓN RL-MALA (TD3 CON CRUCE NODAL)
-        # ¡IMPORTANTE!: Usa `--train_mode rl_only` para entrenar el Actor TD3 sobre
-        # el estado CASSCF antes de correr la evaluación de cruce nodal.
+        # FASE 2: ADAPTACIÓN DEL SAMPLER RL-MALA (TD3) Y EVALUACIÓN DE MUESTREO PURO
+        # (El ansatz CASSCF permanece 100% congelado con `--no-casscf_trainable`).
         # --------------------------------------------------------------------------
-        log_msg "[${sys_tag} - FASE 2] Entrenamiento TD3 (--train_mode rl_only) + Evaluación de Cruce Nodal..."
+        log_msg "[${sys_tag} - FASE 2] Adaptando sampler RL-MALA (--train_mode rl_only) + Evaluación de Cruce Nodal..."
         local sched_flag="--no-use_lr_scheduler"
         if [[ "$RL_USE_LR_SCHEDULER" == "true" || "$RL_USE_LR_SCHEDULER" == "1" ]]; then
             sched_flag="--use_lr_scheduler"
@@ -496,7 +731,7 @@ run_system_pipeline() {
                     for sig in "${SIGMA_SCALE_GRID[@]}"; do
                         local rname="${sys_tag}_RL_MALA_tau${tau}_amp${amp}_pen${pen}_sig${sig}"
                         local rdir="${sys_out}/${rname}"
-                        launch_job "$rname" "$rdir" \
+                        launch_job "$sys_tag" "$npz_path" "$rname" "$rdir" \
                             python3 -u cli/run_1d.py \
                             "${common_args[@]}" \
                             --method TD3 \
@@ -526,125 +761,21 @@ run_system_pipeline() {
             done
         done
 
-        # Esperar a que terminen Fase 1 y Fase 2 de este sistema
+        # Esperar a que terminen todos los modelos de este sistema
         wait_all_slots
-
-        # --------------------------------------------------------------------------
-        # FASE 3 (OPCIONAL): ENTRENAMIENTO ACOPLADO MULTI-SJB + TD3
-        # --------------------------------------------------------------------------
-        if [[ "$RUN_PHASE3_MULTISJB" -eq 1 ]]; then
-            log_msg "[${sys_tag} - FASE 3] Entrenamiento acoplado Multi-SJB + TD3..."
-            local rname_p3="${sys_tag}_Coupled_MultiSJB_TD3"
-            local rdir_p3="${sys_out}/${rname_p3}"
-            launch_job "$rname_p3" "$rdir_p3" \
-                python3 -u cli/run_1d.py \
-                "${common_args[@]}" \
-                --method TD3 \
-                --train_mode coupled \
-                --ansatz_type multi_sjb \
-                --casscf_npz_path "$npz_path" \
-                --coupled_training_cycles "$COUPLED_CYCLES" \
-                --vmc_iterations_per_cycle "$VMC_ITERS_PER_CYCLE" \
-                --rl_sweeps_per_cycle "$RL_SWEEPS_PER_CYCLE" \
-                --lr_ansatz "$LR_ANSATZ" \
-                --lr_actor "$RL_LR_ACTOR" \
-                --lr_critic "$RL_LR_CRITIC" \
-                "$sched_flag" \
-                --tau "0.10" \
-                --actor_amplitude "0.15" \
-                --sigma_action_scale "1.1" \
-                --penalty_factor "0.25" \
-                --max_phys_jump_factor "$MAX_PHYS_JUMP" \
-                --pipeline_stage "phase3_coupled_multisjb" \
-                --run_name "$rname_p3" \
-                --results_out_dir "$rdir_p3"
-            wait_all_slots
-        fi
     fi
 
     # --------------------------------------------------------------------------
-    # FASE 4: POST-PROCESAMIENTO Y GRÁFICAS DE CRUCE NODAL (TIPO ARTICLE_PLOTS_11)
+    # FASE 3: COMPILACIÓN COMPLETA DE LAS 8 FIGURAS DEL SISTEMA + CRUCE NODAL
+    #         + ACTUALIZACIÓN DE LAS FIGURAS GLOBALES DE TODOS LOS MODELOS
     # --------------------------------------------------------------------------
-    log_msg "[${sys_tag} - FASE 4] Generando diagnósticos, D_KL por espín y figuras de artículo..."
-    local h5_files=()
-    local h5_labels=()
-
-    # 1. Buscar en ${sys_out}/*
-    for d in "${sys_out}"/*; do
-        if [[ -d "$d" && -f "${d}/run_bundle.h5" ]]; then
-            h5_files+=("${d}/run_bundle.h5")
-            local bname
-            bname="$(basename "$d")"
-            h5_labels+=("${bname#${sys_tag}_}")
-        fi
-    done
-
-    # 2. Si no se encontraron en ${sys_out}/*, buscar en ${OUT_ROOT}/*
-    if [[ "${#h5_files[@]}" -eq 0 ]]; then
-        for d in "${OUT_ROOT}"/*; do
-            if [[ -d "$d" && -f "${d}/run_bundle.h5" ]]; then
-                local bname
-                bname="$(basename "$d")"
-                h5_files+=("${d}/run_bundle.h5")
-                h5_labels+=("${bname#${sys_tag}_}")
-            fi
-        done
-    fi
-
-    if [[ "${#h5_files[@]}" -gt 0 ]]; then
-        log_msg "[${sys_tag} - FASE 4] Modelos encontrados para análisis (${#h5_files[@]}):"
-        for idx in "${!h5_files[@]}"; do
-            log_msg "  [${idx}] ${h5_labels[$idx]} -> ${h5_files[$idx]}"
-        done
-
-        # 4.1 Post-procesamiento general (tablas de autocorrelación, ESS/s, energías + Top-K + Evolución de hiperparámetros)
-        log_msg "[${sys_tag} - FASE 4.1] Ejecutando cli/postprocess.py (Top-${TOP_K_MODELS} MALA vs Top-${TOP_K_MODELS} RL-MALA)..."
-        python3 -u cli/postprocess.py \
-            --inputs "${h5_files[@]}" \
-            --labels "${h5_labels[@]}" \
-            --casscf_npz_path "$npz_path" \
-            --out_dir "${sys_fig}/postprocess_standard" \
-            --csv_collect_dir "$CSV_SUMMARY_DIR" \
-            --system_tag "$sys_tag" \
-            --figure_format "$FIGURE_FORMAT" \
-            --top_k_models "$TOP_K_MODELS" \
-            --n_eval_subblocks "$N_EVAL_SUBBLOCKS" \
-            2>&1 | tee "${LOG_DIR}/postprocess_${sys_tag}.log" || log_msg "[AVISO] postprocess reportó advertencias en ${sys_tag}"
-
-        # 4.2 Evaluador especializado de Cruce de Barreras Nodales (réplica Article_plots_11 + Evolución Hiperparámetros)
-        log_msg "[${sys_tag} - FASE 4.2] Ejecutando cli/evaluate_nodal_crossing_1d.py (Top-${TOP_K_MODELS} MALA vs Top-${TOP_K_MODELS} RL-MALA)..."
-        python3 -u cli/evaluate_nodal_crossing_1d.py \
-            --inputs "${h5_files[@]}" \
-            --labels "${h5_labels[@]}" \
-            --casscf_npz_path "$npz_path" \
-            --out_dir "$sys_fig" \
-            --csv_collect_dir "$CSV_SUMMARY_DIR" \
-            --system_tag "$sys_tag" \
-            --figure_format "$FIGURE_FORMAT" \
-            --top_k_models "$TOP_K_MODELS" \
-            --n_eval_subblocks "$N_EVAL_SUBBLOCKS" \
-            2>&1 | tee "${LOG_DIR}/nodal_crossing_eval_${sys_tag}.log" || log_msg "[AVISO] evaluate_nodal_crossing_1d reportó advertencias en ${sys_tag}"
-
-        log_msg "[OK] Figuras y tablas CSV de ${sys_tag} guardadas exitosamente en: ${sys_fig} y ${CSV_SUMMARY_DIR}"
-    elif [[ -d "${sys_fig}/postprocess_standard" ]]; then
-        log_msg "[${sys_tag} - FASE 4.2 (Modo CSV)] Reconstruyendo figuras desde ${sys_fig}/postprocess_standard (Top-${TOP_K_MODELS})..."
-        python3 -u cli/evaluate_nodal_crossing_1d.py \
-            --from_postprocess_dir "${sys_fig}/postprocess_standard" \
-            --casscf_npz_path "$npz_path" \
-            --out_dir "$sys_fig" \
-            --csv_collect_dir "$CSV_SUMMARY_DIR" \
-            --system_tag "$sys_tag" \
-            --figure_format "$FIGURE_FORMAT" \
-            --top_k_models "$TOP_K_MODELS" \
-            --n_eval_subblocks "$N_EVAL_SUBBLOCKS" \
-            2>&1 | tee "${LOG_DIR}/nodal_crossing_eval_${sys_tag}.log" || log_msg "[AVISO] evaluate_nodal_crossing_1d reportó advertencias en ${sys_tag}"
-        log_msg "[OK] Figuras y tablas CSV de ${sys_tag} reconstruidas en: ${sys_fig}"
-    else
-        log_msg "[AVISO] No se encontraron archivos run_bundle.h5 ni CSVs en ${sys_out} / ${sys_fig}."
-    fi
+    rm -rf "$PLOT_LOCK_DIR" 2>/dev/null || true
+    log_msg "[${sys_tag} - FASE 3] Compilando post-producción completa del sistema y actualizando gráficos globales..."
+    compile_system_figures "$sys_tag" "$npz_path" "full"
+    log_msg "[OK] Post-producción de ${sys_tag} completada en: ${sys_fig} y ${GLOBAL_FIG_DIR}"
 }
 
-# Ejecutar los sistemas habilitados
+# Ejecutar los sistemas habilitados (con actualización de figuras al terminar cada sistema)
 if [[ "$RUN_SYSTEM_WIGNER_N4_G4" -eq 1 ]]; then
     run_system_pipeline "Wigner_N4_g4.0" "$NPZ_WIGNER_N4_G4" 4 2 2 0.1 4.0 0.1
 fi
@@ -653,9 +784,13 @@ if [[ "$RUN_SYSTEM_MULTIDET_N6_G1" -eq 1 ]]; then
     run_system_pipeline "MultiDet_N6_g1.0" "$NPZ_MULTIDET_N6_G1" 6 3 3 0.1 1.0 0.1
 fi
 
+# Compilación final global de todos los modelos
+update_global_all_models_figures
+
 log_msg "=============================================================================="
-log_msg "PIPELINE COMPLETADO EXITOSAMENTE"
-log_msg "  -> Tablas CSV concentradas en : ${CSV_SUMMARY_DIR}"
-log_msg "  -> Figuras generadas en       : ${FIG_DIR}"
-log_msg "  -> Bitácora maestra en        : ${MASTER_LOG}"
+log_msg "PIPELINE DE MUESTREO PURO Y CRUCE NODAL COMPLETADO EXITOSAMENTE"
+log_msg "  -> Tablas CSV concentradas en      : ${CSV_SUMMARY_DIR}"
+log_msg "  -> Figuras por sistema en          : ${FIG_DIR}"
+log_msg "  -> Figuras globales de modelos en  : ${GLOBAL_FIG_DIR}"
+log_msg "  -> Bitácora maestra en             : ${MASTER_LOG}"
 log_msg "=============================================================================="

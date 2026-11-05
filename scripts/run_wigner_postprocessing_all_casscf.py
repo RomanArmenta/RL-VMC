@@ -124,13 +124,24 @@ def find_all_casscf_states(search_roots: List[str]) -> List[Path]:
     return sorted(found)
 
 
-def fallback_analytical_density(npz_meta: Dict[str, Any], out_dir: Path) -> Path:
+def fallback_analytical_density(
+    npz_meta: Dict[str, Any], out_dir: Path, args: Optional[argparse.Namespace] = None
+) -> Path:
     """Fallback analítico usando rl_vmc si wigner_post no está disponible en el entorno."""
     import numpy as np
     import pandas as pd
-    from rl_vmc.postprocess.casscf_baseline import load_casscf_reference_from_npz
+    import matplotlib
+    if "matplotlib.pyplot" not in sys.modules:
+        matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    from rl_vmc.postprocess.casscf_baseline import compute_exact_casscf_1body_density
 
-    ref = load_casscf_reference_from_npz(str(npz_meta["npz_path"]))
+    x_min = float(getattr(args, "x_min", -15.0)) if args else -15.0
+    x_max = float(getattr(args, "x_max", 15.0)) if args else 15.0
+    n_grid = int(getattr(args, "n_grid", 500)) if args else 500
+    ref = compute_exact_casscf_1body_density(
+        str(npz_meta["npz_path"]), x_min=x_min, x_max=x_max, n_grid=n_grid
+    )
     out_dir.mkdir(parents=True, exist_ok=True)
     df_out = pd.DataFrame({
         "x": ref["x"],
@@ -143,6 +154,35 @@ def fallback_analytical_density(npz_meta: Dict[str, Any], out_dir: Path) -> Path
     })
     csv_path = out_dir / "one_body_density.csv"
     df_out.to_csv(csv_path, index=False)
+
+    # Generar también figura de densidad analítica exacta de CASSCF
+    f_scale = float(getattr(args, "font_scale", 1.0)) if args else 1.0
+    lw_scale = float(getattr(args, "line_width_scale", 1.0)) if args else 1.0
+    fmt = str(getattr(args, "figure_format", "png")) if args else "png"
+    dpi = int(getattr(args, "dpi", 300)) if args else 300
+    transparent = bool(getattr(args, "transparent_bg", False)) if args else False
+
+    plots_dir = out_dir / "plots"
+    plots_dir.mkdir(parents=True, exist_ok=True)
+    fig, ax = plt.subplots(figsize=(8.0, 5.2))
+    ax.plot(ref["x"], ref["rho_total"], "k-", lw=2.4 * lw_scale, label="Exact CASSCF Total")
+    ax.fill_between(ref["x"], ref["rho_up"], color="#3498db", alpha=0.45, label=r"Exact Spin $\uparrow$")
+    ax.fill_between(ref["x"], ref["rho_down"], color="#e74c3c", alpha=0.45, label=r"Exact Spin $\downarrow$")
+    if not (args and getattr(args, "no_titles", False)):
+        t_prefix = str(getattr(args, "title_prefix", "") or "").strip() if args else ""
+        c_sup = str(getattr(args, "custom_suptitle", "") or "").strip() if args else ""
+        base_t = c_sup or f"Exact CASSCF 1-Body Density — {npz_meta['sys_tag']} (E={ref['energy']:.5f} Ha)"
+        ax.set_title(f"{t_prefix} — {base_t}" if t_prefix else base_t, fontsize=12.5 * f_scale, weight="bold")
+    ax.set_xlabel("x (Bohr)", fontsize=11.0 * f_scale)
+    ax.set_ylabel(r"One-Body Density $\rho(x)$", fontsize=11.0 * f_scale)
+    ax.grid(True, alpha=0.3)
+    ax.legend(fontsize=9.5 * f_scale, frameon=True)
+    fig.tight_layout()
+    if fmt in ("png", "both"):
+        fig.savefig(plots_dir / f"density_exact_{npz_meta['sys_tag']}.png", dpi=dpi, bbox_inches="tight", transparent=transparent)
+    if fmt in ("pdf", "both"):
+        fig.savefig(plots_dir / f"density_exact_{npz_meta['sys_tag']}.pdf", dpi=dpi, bbox_inches="tight", transparent=transparent)
+    plt.close(fig)
     return csv_path
 
 
@@ -151,6 +191,7 @@ def process_single_casscf(
     base_out_dir: Path,
     csv_collect_dir: Optional[Path] = None,
     grid_cfg: Optional[Any] = None,
+    args: Optional[argparse.Namespace] = None,
 ) -> Dict[str, Any]:
     """Ejecuta el post-procesamiento de Wigner sobre un archivo casscf_state.npz."""
     npz_path = meta["npz_path"]
@@ -186,14 +227,14 @@ def process_single_casscf(
             status = f"ERROR_WIGNER_POST: {e}"
             # Intentar fallback analítico
             try:
-                fallback_analytical_density(meta, out_dir)
+                fallback_analytical_density(meta, out_dir, args=args)
                 status += " (Fallback analítico generado)"
             except Exception as e2:
                 status += f" (Fallback failed: {e2})"
     else:
         # Fallback analítico directo
         try:
-            fallback_analytical_density(meta, out_dir)
+            fallback_analytical_density(meta, out_dir, args=args)
             status = "FALLBACK_ANALYTICAL"
         except Exception as e:
             status = f"ERROR_FALLBACK: {e}"
@@ -267,6 +308,41 @@ def main():
         default=500,
         help="Número de puntos en la grilla espacial de densidad.",
     )
+    parser.add_argument(
+        "--figure_format",
+        "--format",
+        dest="figure_format",
+        type=str,
+        default="png",
+        choices=["png", "pdf", "both"],
+        help="Formato de exportación gráfica ('png' por defecto para ahorrar espacio).",
+    )
+    parser.add_argument(
+        "--dpi",
+        "--ppi",
+        dest="dpi",
+        type=int,
+        default=300,
+        help="Resolución en píxeles/puntos por pulgada (PPI / DPI).",
+    )
+    parser.add_argument("--title_prefix", type=str, default="", help="Prefijo de título.")
+    parser.add_argument("--custom_suptitle", type=str, default="", help="Suptitle personalizado.")
+    parser.add_argument(
+        "--no_titles",
+        "--hide_titles",
+        dest="no_titles",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Ocultar títulos para LaTeX.",
+    )
+    parser.add_argument("--font_scale", type=float, default=1.0, help="Escala de fuente.")
+    parser.add_argument("--line_width_scale", type=float, default=1.0, help="Escala de grosor de línea.")
+    parser.add_argument(
+        "--transparent_bg",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Fondo transparente.",
+    )
     args = parser.parse_args()
 
     print("=" * 80)
@@ -294,7 +370,7 @@ def main():
         try:
             meta = extract_casscf_metadata(npz_path)
             print(f"[{i}/{len(npz_files)}] Procesando {meta['sys_tag']} ({npz_path.parent.name})...")
-            res = process_single_casscf(meta, base_out, csv_collect, grid_cfg)
+            res = process_single_casscf(meta, base_out, csv_collect, grid_cfg, args=args)
             results_summary.append(res)
             print(f"     -> Estado: {res['status']} | Tiempo: {res['elapsed_sec']}s | CSV: {res['has_density_csv']}")
         except Exception as e:

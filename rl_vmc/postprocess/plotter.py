@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import gc
 import json
 import os
 import re
@@ -46,25 +47,107 @@ PALETTE = [
     "#34495e",
 ]
 
+MALA_PALETTE = [
+    "#e74c3c",  # Rojo intenso
+    "#c0392b",  # Carmesí
+    "#d35400",  # Naranja oscuro
+    "#7f8c8d",  # Gris pizarra
+    "#8e44ad",  # Púrpura
+]
+
+RL_PALETTE = [
+    "#2ecc71",  # Verde esmeralda (#1 RL-MALA)
+    "#2980b9",  # Azul cobalto (#2 RL-MALA)
+    "#16a085",  # Turquesa oscuro
+    "#8e44ad",  # Violeta
+    "#f39c12",  # Ámbar
+]
+
+
+def _apply_plot_style(cfg: PostProcessConfig | None) -> None:
+    """Aplica escalamiento de fuentes y grosores de línea para figuras de artículo o reporte."""
+    f_scale = float(getattr(cfg, "font_scale", 1.0)) if cfg is not None else 1.0
+    lw_scale = float(getattr(cfg, "line_width_scale", 1.0)) if cfg is not None else 1.0
+    plt.rcParams.update(
+        {
+            "font.size": 10.5 * f_scale,
+            "axes.titlesize": 12.0 * f_scale,
+            "axes.labelsize": 10.5 * f_scale,
+            "legend.fontsize": 8.8 * f_scale,
+            "xtick.labelsize": 9.5 * f_scale,
+            "ytick.labelsize": 9.5 * f_scale,
+            "lines.linewidth": 1.8 * lw_scale,
+        }
+    )
+
+
+def _get_model_style(binfo: dict[str, Any], idx: int) -> tuple[str, str]:
+    """
+    Retorna `(color, linestyle)` garantizando que:
+    - MALA clásico se grafique SIEMPRE con línea discontinua (`"--"`).
+    - RL-MALA (sampler neuronal) se grafique SIEMPRE con línea continua (`"-"`).
+    """
+    hp = binfo.get("hyperparams", {})
+    if not hp:
+        hp = _extract_hyperparams(str(binfo.get("label", "")), binfo.get("bundle"))
+    is_neural = bool(hp.get("is_neural", False))
+    slot = int(binfo.get("_family_rank", idx))
+    if is_neural:
+        return RL_PALETTE[slot % len(RL_PALETTE)], "-"
+    return MALA_PALETTE[slot % len(MALA_PALETTE)], "--"
+
 
 def _save_fig(
     fig: plt.Figure,
     out_dir: str,
     stem: str,
-    fmt: str = "pdf",
+    fmt: str = "png",
     dpi: int = 300,
     sys_tag: str = "",
+    cfg: PostProcessConfig | None = None,
 ) -> None:
-    """Guarda la figura una única vez con nombre limpio (incluyendo sys_tag si se especifica)."""
+    """Guarda la figura una única vez con nombre limpio (por defecto en PNG; soporta PDF, PPI y títulos personalizados)."""
+    if cfg is not None:
+        if getattr(cfg, "no_titles", False):
+            if getattr(fig, "_suptitle", None) is not None:
+                fig._suptitle.set_text("")
+            for ax in fig.axes:
+                ax.set_title("")
+        else:
+            custom_sup = str(getattr(cfg, "custom_suptitle", "") or "").strip()
+            t_prefix = str(getattr(cfg, "title_prefix", "") or "").strip()
+            f_scale = float(getattr(cfg, "font_scale", 1.0))
+            if custom_sup:
+                full_sup = f"{t_prefix} — {custom_sup}" if t_prefix else custom_sup
+                fig.suptitle(full_sup, fontsize=14.0 * f_scale, weight="bold", y=1.02)
+            elif t_prefix:
+                if getattr(fig, "_suptitle", None) is not None and fig._suptitle.get_text():
+                    cur = fig._suptitle.get_text()
+                    if not cur.startswith(t_prefix):
+                        fig._suptitle.set_text(f"{t_prefix} — {cur}")
+                else:
+                    fig.suptitle(t_prefix, fontsize=13.5 * f_scale, weight="bold", y=1.02)
+
+    transparent = bool(getattr(cfg, "transparent_bg", False)) if cfg is not None else False
     final_stem = (
         f"{stem}_{sys_tag}"
         if (sys_tag and not stem.endswith(f"_{sys_tag}"))
         else stem
     )
     if fmt in ("png", "both"):
-        fig.savefig(os.path.join(out_dir, f"{final_stem}.png"), dpi=dpi, bbox_inches="tight")
+        fig.savefig(
+            os.path.join(out_dir, f"{final_stem}.png"),
+            dpi=dpi,
+            bbox_inches="tight",
+            transparent=transparent,
+        )
     if fmt in ("pdf", "both"):
-        fig.savefig(os.path.join(out_dir, f"{final_stem}.pdf"), bbox_inches="tight")
+        fig.savefig(
+            os.path.join(out_dir, f"{final_stem}.pdf"),
+            dpi=dpi,
+            bbox_inches="tight",
+            transparent=transparent,
+        )
     plt.close(fig)
 
 
@@ -230,12 +313,15 @@ def _select_top_k_bundles(
     bundles_info: list[dict[str, Any]],
     summary_rows: list[dict[str, Any]],
     top_k: int,
+    verbose: bool = True,
 ) -> list[dict[str, Any]]:
     """
     Selecciona los `top_k` mejores modelos clásicos (MALA) y los `top_k` mejores
     modelos neuronales (RL-MALA) para que las gráficas comparativas sean nítidas.
     """
-    if top_k <= 0 or len(bundles_info) <= 2 * top_k:
+    if top_k <= 0:
+        for i, b in enumerate(bundles_info):
+            b["_family_rank"] = i
         return bundles_info
 
     mala_pairs = []
@@ -255,21 +341,32 @@ def _select_top_k_bundles(
     mala_pairs.sort(key=lambda item: item[0])
     rl_pairs.sort(key=lambda item: item[0])
 
-    selected_mala = [item[1] for item in mala_pairs[:top_k]]
-    selected_rl = [item[1] for item in rl_pairs[:top_k]]
+    selected_mala = []
+    for r_idx, (_, b, _) in enumerate(mala_pairs[:top_k]):
+        b_copy = dict(b)
+        b_copy["_family_rank"] = r_idx
+        selected_mala.append(b_copy)
+
+    selected_rl = []
+    for r_idx, (_, b, _) in enumerate(rl_pairs[:top_k]):
+        b_copy = dict(b)
+        b_copy["_family_rank"] = r_idx
+        selected_rl.append(b_copy)
+
     selected = selected_mala + selected_rl
 
     if not selected:
         return bundles_info[: 2 * top_k]
 
-    print(
-        f"\n[PostProcess] Filtrando Top-{top_k} modelos por familia para figuras comparativas "
-        f"(de {len(bundles_info)} totales):"
-    )
-    for b in selected_mala:
-        print(f"  * [Top MALA]    {b['label']}")
-    for b in selected_rl:
-        print(f"  * [Top RL-MALA] {b['label']}")
+    if verbose and len(selected) < len(bundles_info):
+        print(
+            f"\n[PostProcess] Filtrando Top-{top_k} modelos por familia "
+            f"(de {len(bundles_info)} totales):"
+        )
+        for b in selected_mala:
+            print(f"  * [Top MALA --]    {b['label']}")
+        for b in selected_rl:
+            print(f"  * [Top RL-MALA -]  {b['label']}")
     return selected
 
 
@@ -283,21 +380,22 @@ def plot_training_dashboard(
     if not valid:
         return
 
+    _apply_plot_style(cfg)
     fig, axes = plt.subplots(2, 2, figsize=(13, 8.5))
     for idx, binfo in enumerate(valid):
         df_t = binfo["bundle"]["training_df"]
         label = binfo["label"]
-        color = PALETTE[idx % len(PALETTE)]
+        color, ls = _get_model_style(binfo, idx)
         steps = df_t["Step"] if "Step" in df_t.columns else np.arange(len(df_t))
 
         if "Energy_Mean" in df_t.columns:
-            axes[0, 0].plot(steps, df_t["Energy_Mean"], color=color, lw=1.6, label=label)
+            axes[0, 0].plot(steps, df_t["Energy_Mean"], color=color, linestyle=ls, lw=1.7, label=label)
         if "Energy_Var" in df_t.columns:
-            axes[0, 1].plot(steps, df_t["Energy_Var"], color=color, lw=1.6, label=label)
+            axes[0, 1].plot(steps, df_t["Energy_Var"], color=color, linestyle=ls, lw=1.7, label=label)
         if "Acceptance" in df_t.columns:
-            axes[1, 0].plot(steps, df_t["Acceptance"], color=color, lw=1.6, label=label)
+            axes[1, 0].plot(steps, df_t["Acceptance"], color=color, linestyle=ls, lw=1.7, label=label)
         if "ESJD" in df_t.columns:
-            axes[1, 1].plot(steps, df_t["ESJD"], color=color, lw=1.6, label=label)
+            axes[1, 1].plot(steps, df_t["ESJD"], color=color, linestyle=ls, lw=1.7, label=label)
 
     if casscf_ref is not None and np.isfinite(casscf_ref.get("energy", float("nan"))):
         axes[0, 0].axhline(
@@ -336,6 +434,7 @@ def plot_training_dashboard(
         fmt=cfg.figure_format,
         dpi=cfg.dpi,
         sys_tag=getattr(cfg, "system_tag", ""),
+        cfg=cfg,
     )
 
 
@@ -353,22 +452,24 @@ def plot_production_summary(
     if not valid:
         return
 
+    _apply_plot_style(cfg)
     fig, axes = plt.subplots(2, 2, figsize=(13, 8.5))
     for idx, binfo in enumerate(valid):
         summary = binfo["diagnostics"]["summary"]
         label = binfo["label"]
-        color = PALETTE[idx % len(PALETTE)]
+        color, ls = _get_model_style(binfo, idx)
         e_series = summary["e_step_series"]
         steps = np.arange(len(e_series))
 
         # 1. Traza y media acumulada
-        axes[0, 0].plot(steps, e_series, color=color, alpha=0.25, lw=0.8)
+        axes[0, 0].plot(steps, e_series, color=color, linestyle=ls, alpha=0.22, lw=0.8)
         cum_mean = np.cumsum(e_series) / (steps + 1)
         axes[0, 0].plot(
             steps,
             cum_mean,
             color=color,
-            lw=2.0,
+            linestyle=ls,
+            lw=2.2,
             label=f"{label} ($\\langle E\\rangle={summary['E_mean']:.5f}\\pm{summary['SE_E']:.5f}$)",
         )
 
@@ -379,7 +480,8 @@ def plot_production_summary(
             lags,
             acf_e,
             color=color,
-            lw=2.0,
+            linestyle=ls,
+            lw=2.2,
             label=f"{label} ($\\tau_{{\\mathrm{{int}},E}}={summary['tau_int_E']:.2f}$)",
         )
 
@@ -400,7 +502,7 @@ def plot_production_summary(
                             range=(q01, q99),
                             density=True,
                             color=color,
-                            alpha=0.45,
+                            alpha=0.40,
                             label=label,
                         )
         except Exception:
@@ -413,7 +515,14 @@ def plot_production_summary(
         se_curve = std_val * np.sqrt(tau_e / (steps + 1.0))
         valid_se = np.isfinite(se_curve) & (se_curve > 0)
         if np.any(valid_se):
-            axes[1, 1].plot(steps[valid_se] + 1, se_curve[valid_se], color=color, lw=2.0, label=label)
+            axes[1, 1].plot(
+                steps[valid_se] + 1,
+                se_curve[valid_se],
+                color=color,
+                linestyle=ls,
+                lw=2.2,
+                label=label,
+            )
 
     if casscf_ref is not None and np.isfinite(casscf_ref.get("energy", float("nan"))):
         e_cas = casscf_ref["energy"]
@@ -436,7 +545,7 @@ def plot_production_summary(
     axes[0, 0].set_xlabel("Paso de Producción")
     axes[0, 0].set_ylabel("$\\langle E_L \\rangle_w$ (Ha)")
 
-    axes[0, 1].axhline(0.0, color="gray", linestyle="--", lw=1.0)
+    axes[0, 1].axhline(0.0, color="gray", linestyle=":", lw=1.0)
     axes[0, 1].set_title("Autocorrelación de Energía Local $\\rho_E(k)$")
     axes[0, 1].set_xlabel("Lag $k$")
     axes[0, 1].set_ylabel("$\\rho_E(k)$")
@@ -466,6 +575,7 @@ def plot_production_summary(
         fmt=cfg.figure_format,
         dpi=cfg.dpi,
         sys_tag=getattr(cfg, "system_tag", ""),
+        cfg=cfg,
     )
 
 
@@ -479,11 +589,12 @@ def plot_observables_comparison(
     if not valid:
         return
 
+    _apply_plot_style(cfg)
     fig, axes = plt.subplots(1, 3, figsize=(16.5, 4.8))
     for idx, binfo in enumerate(valid):
         obs = binfo["observables"]
         label = binfo["label"]
-        color = PALETTE[idx % len(PALETTE)]
+        color, ls = _get_model_style(binfo, idx)
         x = obs["x_grid"]
         r = obs["r_grid"]
 
@@ -491,7 +602,8 @@ def plot_observables_comparison(
             x,
             obs["rho_total"],
             color=color,
-            lw=2.0,
+            linestyle=ls,
+            lw=2.2,
             label=f"{label} (picos={obs['n_wigner_peaks']})",
         )
         if obs.get("n_chains_eval", 1) > 1 and "rho_total_std" in obs:
@@ -500,20 +612,27 @@ def plot_observables_comparison(
                 np.maximum(0.0, obs["rho_total"] - obs["rho_total_std"]),
                 obs["rho_total"] + obs["rho_total_std"],
                 color=color,
-                alpha=0.18,
+                alpha=0.16,
             )
 
         axes[1].plot(
-            x, obs["rho_up"], color=color, lw=1.8, linestyle="-", label=f"{label} $\\uparrow$"
+            x, obs["rho_up"], color=color, lw=2.0, linestyle=ls, label=f"{label} $\\uparrow$"
         )
         axes[1].plot(
-            x, obs["rho_down"], color=color, lw=1.8, linestyle="--", label=f"{label} $\\downarrow$"
+            x,
+            obs["rho_down"],
+            color=color,
+            lw=1.5,
+            linestyle=ls,
+            alpha=0.65,
+            label=f"{label} $\\downarrow$",
         )
         axes[2].plot(
             r,
             obs["g_pair_total"],
             color=color,
-            lw=2.0,
+            linestyle=ls,
+            lw=2.2,
             label=f"{label} ($\\langle r_{{ij}}\\rangle={obs['mean_pair_dist']:.2f}$)",
         )
 
@@ -571,6 +690,7 @@ def plot_observables_comparison(
         fmt=cfg.figure_format,
         dpi=cfg.dpi,
         sys_tag=getattr(cfg, "system_tag", ""),
+        cfg=cfg,
     )
 
 
@@ -581,7 +701,7 @@ def plot_article_densities_comparison(
     casscf_ref: dict[str, Any] | None = None,
 ) -> None:
     """
-    Genera la gráfica comparativa de densidades estilo Artículo (`Article_Densities.pdf` de
+    Genera la gráfica comparativa de densidades estilo Artículo (`Article_Densities` de
     `scripts/evaluar_wigner_casscf_2.py`), incluyendo bandas de incertidumbre +/- 1 sigma
     entre corridas independientes y superponiendo la baseline CASSCF exacta si existe.
     Si no existe baseline CASSCF, grafica limpiamente las densidades muestreadas sin baseline.
@@ -590,6 +710,7 @@ def plot_article_densities_comparison(
     if not valid:
         return
 
+    _apply_plot_style(cfg)
     n_panels = len(valid)
     ncols = 2 if n_panels == 4 else min(n_panels, 3)
     nrows = int(np.ceil(n_panels / ncols))
@@ -606,14 +727,17 @@ def plot_article_densities_comparison(
         x = obs["x_grid"]
         x_max = float(obs.get("x_max", 15.0))
         n_chains = int(obs.get("n_chains_eval", 1))
+        _, ls_model = _get_model_style(binfo, idx)
+        fam_tag = "RL-MALA [solid]" if ls_model == "-" else "MALA [dashed]"
 
-        # Densidad total muestreada + banda +/- 1 sigma entre evaluaciones / sub-bloques
+        # Densidad total muestreada (discontinua para MALA, continua para RL-MALA)
         ax.plot(
             x,
             obs["rho_total"],
-            "k-",
+            color="black",
+            linestyle=ls_model,
             lw=2.5,
-            label=f"Sampled Total ($N_{{\\mathrm{{eval}}}}={max(n_chains, int(getattr(cfg, 'n_eval_subblocks', 5)))}$)",
+            label=f"Sampled Total ({fam_tag}, $N_{{\\mathrm{{eval}}}}={max(n_chains, int(getattr(cfg, 'n_eval_subblocks', 5)))}$)",
         )
         if "rho_total_std" in obs and np.any(obs["rho_total_std"] > 0):
             ax.fill_between(
@@ -625,7 +749,7 @@ def plot_article_densities_comparison(
                 label=r"Total $\pm 1\sigma$ (evals)",
             )
 
-        # Densidades resueltas por espín (rellenas como en evaluar_wigner_casscf_2.py)
+        # Densidades resueltas por espín
         ax.fill_between(
             x,
             obs["rho_up"],
@@ -677,17 +801,17 @@ def plot_article_densities_comparison(
         potencial = 0.5 * (omega ** 2) * (espacio ** 2)
         ax_pot = ax.twinx()
         ax_pot.plot(
-            espacio, potencial, "--", color="gray", lw=1.5, alpha=0.6, label="V(x)"
+            espacio, potencial, "--", color="gray", lw=1.5, alpha=0.5, label="V(x)"
         )
         ax_pot.set_yticks([])
 
         ax.set_xlim(-x_max, x_max)
-        ax.set_title(binfo["label"], fontsize=12, weight="bold")
+        ax.set_title(binfo["label"], fontsize=11.5, weight="bold")
         ax.set_xlabel("x (Bohr)")
         if idx % ncols == 0:
             ax.set_ylabel(r"One-Body Density $\rho(x)$")
         ax.grid(True, alpha=0.3)
-        ax.legend(loc="upper right", fontsize=8.5, frameon=True)
+        ax.legend(loc="upper right", fontsize=8.2, frameon=True)
 
     for extra_idx in range(n_panels, len(axes_flat)):
         axes_flat[extra_idx].set_visible(False)
@@ -700,7 +824,160 @@ def plot_article_densities_comparison(
         fmt=cfg.figure_format,
         dpi=cfg.dpi,
         sys_tag=getattr(cfg, "system_tag", ""),
+        cfg=cfg,
     )
+
+
+def _precompute_kl_curve_for_bundle(
+    w_all: np.ndarray | None,
+    casscf_ref: dict[str, Any] | None,
+    cfg: PostProcessConfig,
+    x_max: float,
+) -> dict[str, np.ndarray] | None:
+    """Precalcula la curva de convergencia D_KL(t) (20 puntos) para poder liberar w_all de RAM."""
+    if casscf_ref is None or w_all is None or w_all.size == 0:
+        return None
+    n_sub = max(2, int(getattr(cfg, "n_eval_subblocks", 5)))
+    w_5d = np.asarray(w_all, dtype=np.float64)
+    if w_5d.ndim == 4:
+        w_5d = w_5d[None, ...]
+    n_chains, n_steps, n_batch, _, _ = w_5d.shape
+
+    if n_chains > 1:
+        tot_curves, up_curves, dn_curves = [], [], []
+        steps_grid = None
+        for c_idx in range(n_chains):
+            curve = compute_kl_convergence_curve(
+                w_5d[c_idx],
+                casscf_ref,
+                n_checkpoints=20,
+                n_bins=cfg.n_density_bins,
+                x_max=x_max,
+            )
+            steps_grid = curve["steps"]
+            tot_curves.append(curve["kl_total"])
+            up_curves.append(curve["kl_up"])
+            dn_curves.append(curve["kl_down"])
+
+        arr_tot = np.stack(tot_curves, axis=0)
+        arr_up = np.stack(up_curves, axis=0)
+        arr_dn = np.stack(dn_curves, axis=0)
+
+        mean_tot, std_tot = np.mean(arr_tot, axis=0), np.std(arr_tot, axis=0)
+        mean_up, std_up = np.mean(arr_up, axis=0), np.std(arr_up, axis=0)
+        mean_dn, std_dn = np.mean(arr_dn, axis=0), np.std(arr_dn, axis=0)
+    else:
+        full_curve = compute_kl_convergence_curve(
+            w_5d[0],
+            casscf_ref,
+            n_checkpoints=20,
+            n_bins=cfg.n_density_bins,
+            x_max=x_max,
+        )
+        steps_grid = full_curve["steps"]
+        mean_tot = full_curve["kl_total"]
+        mean_up = full_curve["kl_up"]
+        mean_dn = full_curve["kl_down"]
+
+        if n_batch >= n_sub:
+            block_indices = np.array_split(np.arange(n_batch), n_sub)
+            jk_t, jk_u, jk_d = [], [], []
+            for b_idx in block_indices:
+                keep_mask = np.ones(n_batch, dtype=bool)
+                keep_mask[b_idx] = False
+                w_jk = w_5d[0, :, keep_mask, :, :]
+                if w_jk.shape[0] != n_steps:
+                    w_jk = np.swapaxes(w_jk, 0, 1)
+                c_jk = compute_kl_convergence_curve(
+                    w_jk,
+                    casscf_ref,
+                    n_checkpoints=20,
+                    n_bins=cfg.n_density_bins,
+                    x_max=x_max,
+                )
+                jk_t.append(c_jk["kl_total"])
+                jk_u.append(c_jk["kl_up"])
+                jk_d.append(c_jk["kl_down"])
+            k_f = float(len(jk_t))
+            jk_factor = np.sqrt((k_f - 1.0) / k_f)
+            std_tot = jk_factor * np.std(np.stack(jk_t, axis=0), axis=0)
+            std_up = jk_factor * np.std(np.stack(jk_u, axis=0), axis=0)
+            std_dn = jk_factor * np.std(np.stack(jk_d, axis=0), axis=0)
+        else:
+            std_tot = np.zeros_like(mean_tot)
+            std_up = np.zeros_like(mean_up)
+            std_dn = np.zeros_like(mean_dn)
+
+    return {
+        "steps": np.asarray(steps_grid),
+        "mean_tot": np.asarray(mean_tot),
+        "std_tot": np.asarray(std_tot),
+        "mean_up": np.asarray(mean_up),
+        "std_up": np.asarray(std_up),
+        "mean_dn": np.asarray(mean_dn),
+        "std_dn": np.asarray(std_dn),
+    }
+
+
+def _precompute_walker_trace_for_bundle(
+    w_all: np.ndarray | None,
+    n_up: int,
+    n_dn: int,
+    x_max: float,
+) -> dict[str, Any] | None:
+    """
+    Extrae la trayectoria de un solo caminante (caminante 0 de cadena 0) y los histogramas
+    marginales por espín, permitiendo liberar el arreglo completo de caminantes de la RAM.
+    """
+    if w_all is None or w_all.size == 0:
+        return None
+    w_arr = np.asarray(w_all)
+    if w_arr.ndim == 4:
+        w_arr = w_arr[None, ...]
+    w_single = w_arr[0, :, 0, :, 0]  # (n_steps, n_elec)
+    n_steps, n_elec = w_single.shape
+    stride = max(1, n_steps // 2500)
+    steps_sub = np.arange(0, n_steps, stride)
+    w_single_sub = np.array(w_single[::stride, :], dtype=np.float32, copy=True)
+
+    # Calcular saltos inter-pozo del caminante 0 (cambios de signo o cruces entre electrones)
+    sign_flips = int(np.sum(np.diff(np.sign(w_single), axis=0) != 0))
+
+    bins = np.linspace(-x_max, x_max, 120)
+    bin_centers = 0.5 * (bins[:-1] + bins[1:])
+    up_hist = np.zeros(len(bin_centers), dtype=np.float64)
+    dn_hist = np.zeros(len(bin_centers), dtype=np.float64)
+    try:
+        w_flat = w_arr.squeeze(-1).reshape(-1, n_elec)
+        if n_up > 0:
+            up_vals = w_flat[:, :n_up].reshape(-1)
+            up_vals = up_vals[np.isfinite(up_vals)]
+            up_vals = up_vals[(up_vals >= -x_max) & (up_vals <= x_max)]
+            if len(up_vals) > 0:
+                up_hist, _ = np.histogram(up_vals, bins=bins, density=True)
+        if n_dn > 0:
+            dn_vals = w_flat[:, n_up : n_up + n_dn].reshape(-1)
+            dn_vals = dn_vals[np.isfinite(dn_vals)]
+            dn_vals = dn_vals[(dn_vals >= -x_max) & (dn_vals <= x_max)]
+            if len(dn_vals) > 0:
+                dn_hist, _ = np.histogram(dn_vals, bins=bins, density=True)
+    except Exception:
+        pass
+
+    return {
+        "steps_sub": steps_sub,
+        "w_single_sub": w_single_sub,
+        "n_steps": int(n_steps),
+        "n_elec": int(n_elec),
+        "n_up": int(n_up),
+        "n_dn": int(n_dn),
+        "x_max": float(x_max),
+        "bins": bins,
+        "bin_centers": bin_centers,
+        "up_hist": up_hist,
+        "dn_hist": dn_hist,
+        "sign_flips": sign_flips,
+    }
 
 
 def plot_article_kl_divergence(
@@ -711,10 +988,8 @@ def plot_article_kl_divergence(
 ) -> None:
     """
     Si existe una baseline CASSCF pre-entrenada (`casscf_ref is not None`), genera la
-    evolución de la Divergencia KL resuelta por espín (`fig8_article_kl_divergence`,
-    equivalente a `Article_KL_Divergence.pdf` de `scripts/evaluar_wigner_casscf_2.py`),
-    promediando entre todas las corridas MCMC independientes (o bloques Jackknife)
-    y sombreando +/- 1 sigma.
+    evolución de la Divergencia KL resuelta por espín (`fig8_article_kl_divergence`),
+    graficando MALA con líneas discontinuas (`--`) y RL-MALA con líneas continuas (`-`).
     """
     if casscf_ref is None:
         return
@@ -722,106 +997,51 @@ def plot_article_kl_divergence(
     valid = [
         b
         for b in bundles_info
-        if "walkers" in b["bundle"].get("production", {})
-        and np.asarray(b["bundle"]["production"]["walkers"]).size > 0
+        if b.get("kl_curve_data") is not None
+        or (
+            "walkers" in b["bundle"].get("production", {})
+            and np.asarray(b["bundle"]["production"]["walkers"]).size > 0
+        )
     ]
     if not valid:
         return
 
+    _apply_plot_style(cfg)
     fig, axes = plt.subplots(1, 3, figsize=(17.5, 5.2), sharey=True)
     kl_records = []
-    n_sub = max(2, int(getattr(cfg, "n_eval_subblocks", 5)))
 
     for idx, binfo in enumerate(valid):
-        color = PALETTE[idx % len(PALETTE)]
+        color, ls = _get_model_style(binfo, idx)
         label = binfo["label"]
-        w_all = np.asarray(binfo["bundle"]["production"]["walkers"], dtype=np.float64)
-        if w_all.ndim == 4:
-            w_all = w_all[None, ...]  # (1, n_steps, batch_size, n_elec, 1)
-
-        n_chains, n_steps, n_batch, _, _ = w_all.shape
-        x_max = float(
-            binfo.get("observables", {}).get("x_max", cfg.density_x_max)
-            if binfo.get("observables")
-            else cfg.density_x_max
-        )
-
-        if n_chains > 1:
-            tot_curves, up_curves, dn_curves = [], [], []
-            steps_grid = None
-            for c_idx in range(n_chains):
-                curve = compute_kl_convergence_curve(
-                    w_all[c_idx],
-                    casscf_ref,
-                    n_checkpoints=20,
-                    n_bins=cfg.n_density_bins,
-                    x_max=x_max,
-                )
-                steps_grid = curve["steps"]
-                tot_curves.append(curve["kl_total"])
-                up_curves.append(curve["kl_up"])
-                dn_curves.append(curve["kl_down"])
-
-            arr_tot = np.stack(tot_curves, axis=0)
-            arr_up = np.stack(up_curves, axis=0)
-            arr_dn = np.stack(dn_curves, axis=0)
-
-            mean_tot, std_tot = np.mean(arr_tot, axis=0), np.std(arr_tot, axis=0)
-            mean_up, std_up = np.mean(arr_up, axis=0), np.std(arr_up, axis=0)
-            mean_dn, std_dn = np.mean(arr_dn, axis=0), np.std(arr_dn, axis=0)
-        else:
-            full_curve = compute_kl_convergence_curve(
-                w_all[0],
-                casscf_ref,
-                n_checkpoints=20,
-                n_bins=cfg.n_density_bins,
-                x_max=x_max,
+        kl_data = binfo.get("kl_curve_data")
+        if kl_data is None:
+            x_max = float(
+                binfo.get("observables", {}).get("x_max", cfg.density_x_max)
+                if binfo.get("observables")
+                else cfg.density_x_max
             )
-            steps_grid = full_curve["steps"]
-            mean_tot = full_curve["kl_total"]
-            mean_up = full_curve["kl_up"]
-            mean_dn = full_curve["kl_down"]
+            kl_data = _precompute_kl_curve_for_bundle(
+                binfo["bundle"]["production"]["walkers"], casscf_ref, cfg, x_max=x_max
+            )
+        if kl_data is None:
+            continue
 
-            if n_batch >= n_sub:
-                block_indices = np.array_split(np.arange(n_batch), n_sub)
-                jk_t, jk_u, jk_d = [], [], []
-                for b_idx in block_indices:
-                    keep_mask = np.ones(n_batch, dtype=bool)
-                    keep_mask[b_idx] = False
-                    w_jk = w_all[0, :, keep_mask, :, :]
-                    if w_jk.shape[0] != n_steps:
-                        w_jk = np.swapaxes(w_jk, 0, 1)
-                    c_jk = compute_kl_convergence_curve(
-                        w_jk,
-                        casscf_ref,
-                        n_checkpoints=20,
-                        n_bins=cfg.n_density_bins,
-                        x_max=x_max,
-                    )
-                    jk_t.append(c_jk["kl_total"])
-                    jk_u.append(c_jk["kl_up"])
-                    jk_d.append(c_jk["kl_down"])
-                k_f = float(len(jk_t))
-                jk_factor = np.sqrt((k_f - 1.0) / k_f)
-                std_tot = jk_factor * np.std(np.stack(jk_t, axis=0), axis=0)
-                std_up = jk_factor * np.std(np.stack(jk_u, axis=0), axis=0)
-                std_dn = jk_factor * np.std(np.stack(jk_d, axis=0), axis=0)
-            else:
-                std_tot = np.zeros_like(mean_tot)
-                std_up = np.zeros_like(mean_up)
-                std_dn = np.zeros_like(mean_dn)
+        steps_grid = kl_data["steps"]
+        mean_tot, std_tot = kl_data["mean_tot"], kl_data["std_tot"]
+        mean_up, std_up = kl_data["mean_up"], kl_data["std_up"]
+        mean_dn, std_dn = kl_data["mean_dn"], kl_data["std_dn"]
 
         for ax, m_arr, s_arr in zip(
             axes, (mean_tot, mean_up, mean_dn), (std_tot, std_up, std_dn)
         ):
-            ax.plot(steps_grid, m_arr, color=color, lw=2.4, label=label)
+            ax.plot(steps_grid, m_arr, color=color, linestyle=ls, lw=2.4, label=label)
             if np.any(s_arr > 0):
                 ax.fill_between(
                     steps_grid,
                     np.maximum(1e-8, m_arr - s_arr),
                     m_arr + s_arr,
                     color=color,
-                    alpha=0.20,
+                    alpha=0.18,
                 )
 
         for s_step, mt, st, mu, su, md, sd in zip(
@@ -850,7 +1070,7 @@ def plot_article_kl_divergence(
         ax.set_title(title, weight="bold", fontsize=13)
         ax.set_xlabel("MCMC Production Steps", fontsize=11)
         ax.grid(True, alpha=0.3, which="both")
-        ax.legend(fontsize=9.5, frameon=True)
+        ax.legend(fontsize=9.0, frameon=True)
 
     axes[0].set_ylabel(
         f"KL Divergence $D_{{\\mathrm{{KL}}}}(P_t \\parallel P_{{\\mathrm{{CASSCF}}}})$",
@@ -865,6 +1085,7 @@ def plot_article_kl_divergence(
         fmt=cfg.figure_format,
         dpi=cfg.dpi,
         sys_tag=sys_tag,
+        cfg=cfg,
     )
 
     if kl_records and cfg.save_observables_csv:
@@ -892,6 +1113,7 @@ def plot_efficiency_bars(
     if not valid:
         return
 
+    _apply_plot_style(cfg)
     labels = [b["label"] for b in valid]
     taus = [b["diagnostics"]["summary"].get("tau_int_E", 1.0) for b in valid]
     taus_err = [b.get("uncertainties", {}).get("tau_int_E_std", 0.0) for b in valid]
@@ -899,24 +1121,31 @@ def plot_efficiency_bars(
     ess_s_err = [b.get("uncertainties", {}).get("ESS_per_sec_std", 0.0) for b in valid]
     esjds = [b["diagnostics"]["summary"].get("ESJD", 0.0) for b in valid]
     esjds_err = [b.get("uncertainties", {}).get("ESJD_std", 0.0) for b in valid]
-    colors = [PALETTE[i % len(PALETTE)] for i in range(len(valid))]
+    styles = [_get_model_style(b, i) for i, b in enumerate(valid)]
+    colors = [s[0] for s in styles]
+    hatches = ["//" if s[1] == "--" else "" for s in styles]
 
     taus_err = [0.0 if not np.isfinite(v) else v for v in taus_err]
     ess_s_err = [0.0 if not np.isfinite(v) else v for v in ess_s_err]
     esjds_err = [0.0 if not np.isfinite(v) else v for v in esjds_err]
 
     fig, axes = plt.subplots(1, 3, figsize=(15.0, 4.8))
-    axes[0].bar(labels, taus, yerr=taus_err, capsize=4, color=colors, alpha=0.85, edgecolor="black")
+    bars0 = axes[0].bar(labels, taus, yerr=taus_err, capsize=4, color=colors, alpha=0.85, edgecolor="black")
     axes[0].set_title("Tiempo de Autocorrelación $\\tau_{\\mathrm{int}, E}$ (menor es mejor)")
     axes[0].set_ylabel("$\\tau_{\\mathrm{int}, E}$ (pasos)")
 
-    axes[1].bar(labels, ess_s, yerr=ess_s_err, capsize=4, color=colors, alpha=0.85, edgecolor="black")
+    bars1 = axes[1].bar(labels, ess_s, yerr=ess_s_err, capsize=4, color=colors, alpha=0.85, edgecolor="black")
     axes[1].set_title("Muestras Efectivas por Segundo (ESS/s)")
     axes[1].set_ylabel("ESS / s")
 
-    axes[2].bar(labels, esjds, yerr=esjds_err, capsize=4, color=colors, alpha=0.85, edgecolor="black")
+    bars2 = axes[2].bar(labels, esjds, yerr=esjds_err, capsize=4, color=colors, alpha=0.85, edgecolor="black")
     axes[2].set_title("Expected Squared Jump Distance (ESJD)")
     axes[2].set_ylabel("ESJD ($a_0^2$)")
+
+    for b_group in (bars0, bars1, bars2):
+        for bar, ht in zip(b_group, hatches):
+            if ht:
+                bar.set_hatch(ht)
 
     for ax in axes:
         ax.grid(True, axis="y", alpha=0.25)
@@ -932,6 +1161,7 @@ def plot_efficiency_bars(
         fmt=cfg.figure_format,
         dpi=cfg.dpi,
         sys_tag=getattr(cfg, "system_tag", ""),
+        cfg=cfg,
     )
 
 
@@ -946,10 +1176,12 @@ def plot_hyperparameter_evolution(
     (`actor_amplitude`, `tau`, `penalty_factor`) a través de TODOS los modelos evaluados,
     mostrando barras de error estadísticas (`errorbar`) obtenidas de múltiples evaluaciones
     / sub-bloques y remarcando los mejores modelos.
+    MALA se grafica con líneas discontinuas (`--`) y RL-MALA con líneas continuas (`-`).
     """
     if df is None or len(df) < 2:
         return
 
+    _apply_plot_style(cfg)
     df_plot = df.copy()
     if "is_neural" not in df_plot.columns:
         hp_list = [_extract_hyperparams(str(lbl)) for lbl in df_plot["label"]]
@@ -965,18 +1197,32 @@ def plot_hyperparameter_evolution(
     ax_kl_spin, ax_kl_tot, ax_de = axes[0]
     ax_tau, ax_esjd, ax_ess = axes[1]
 
-    # Estilos por combinación (tau, penalty_factor) para RL-MALA
+    # Estilos por combinación (tau, penalty_factor) para RL-MALA (SIEMPRE línea continua '-')
     rl_groups = list(df_rl.groupby(["tau", "penalty_factor"]))
-    group_colors = ["#1f77b4", "#d62728", "#2ca02c", "#9467bd", "#ff7f0e", "#17becf"]
-    group_markers = ["o", "s", "^", "D", "v", "P"]
+    group_colors = [
+        "#1f77b4",
+        "#2ca02c",
+        "#d62728",
+        "#9467bd",
+        "#ff7f0e",
+        "#17becf",
+        "#e377c2",
+        "#8c564b",
+        "#bcbd22",
+        "#0066cc",
+        "#00994d",
+        "#cc3300",
+    ]
+    group_markers = ["o", "s", "^", "D", "v", "P", "p", "*", "h", "<", ">", "d"]
 
     def _safe_err(series: pd.Series) -> np.ndarray:
         arr = np.asarray(series, dtype=np.float64)
         return np.where(np.isfinite(arr) & (arr >= 0), arr, 0.0)
 
-    # Paneles 1 a 5: Evolución vs Actor Amplitude A_mu (con MALA en A_mu = 0 o líneas horizontales)
+    # Paneles 1 a 5: Evolución vs Actor Amplitude A_mu (con MALA en A_mu = 0 y líneas horizontales discontinuas '--')
     mala_taus = sorted(df_mala["tau"].unique())
-    mala_colors = {t: c for t, c in zip(mala_taus, ["#555555", "#7f7f7f", "#8c564b", "#bcbd22"])}
+    mala_palette = ["#333333", "#7f7f7f", "#8c564b", "#c0392b", "#d35400", "#555555", "#990000"]
+    mala_colors = {t: mala_palette[i % len(mala_palette)] for i, t in enumerate(mala_taus)}
 
     # 1. D_KL Spin Promedio vs Actor Amplitude
     if "kl_casscf_spin_mean" in df_plot.columns and df_plot["kl_casscf_spin_mean"].notna().any():
@@ -986,7 +1232,7 @@ def plot_hyperparameter_evolution(
             y_e = float(m_row.get("kl_casscf_spin_std", 0.0))
             if np.isfinite(y_v):
                 ax_kl_spin.axhline(
-                    y_v, color=mala_colors.get(t_v, "gray"), linestyle="--", alpha=0.55, lw=1.3
+                    y_v, color=mala_colors.get(t_v, "gray"), linestyle="--", alpha=0.60, lw=1.4
                 )
                 ax_kl_spin.errorbar(
                     [0.0],
@@ -996,7 +1242,7 @@ def plot_hyperparameter_evolution(
                     color=mala_colors.get(t_v, "gray"),
                     markersize=8,
                     capsize=4,
-                    label=f"MALA ($\\tau={t_v:.2f}$)",
+                    label=f"MALA -- ($\\tau={t_v:.2f}$)",
                 )
 
         for g_idx, ((t_val, p_val), g_df) in enumerate(rl_groups):
@@ -1012,7 +1258,7 @@ def plot_hyperparameter_evolution(
                 fmt=f"-{mk}",
                 color=c,
                 lw=2.0,
-                markersize=7,
+                markersize=6.5,
                 capsize=4,
                 label=f"RL-MALA ($\\tau={t_val:.2f}, \\lambda={p_val:.2f}$)",
             )
@@ -1038,7 +1284,7 @@ def plot_hyperparameter_evolution(
         ax_kl_spin.set_xlabel(r"Actor Amplitude $A_\mu$ ($0 = \mathrm{MALA}$)")
         ax_kl_spin.set_ylabel(r"Spin-Averaged $D_{\mathrm{KL}}$ (log)")
         ax_kl_spin.grid(True, which="both", alpha=0.3)
-        ax_kl_spin.legend(fontsize=7.8, loc="best", frameon=True)
+        ax_kl_spin.legend(fontsize=7.2, loc="best", frameon=True, ncol=1 if len(rl_groups) <= 6 else 2)
 
     # 2. D_KL Total vs Actor Amplitude
     if "kl_casscf_total_mean" in df_plot.columns and df_plot["kl_casscf_total_mean"].notna().any():
@@ -1048,7 +1294,7 @@ def plot_hyperparameter_evolution(
             y_e = float(m_row.get("kl_casscf_total_std", 0.0))
             if np.isfinite(y_v):
                 ax_kl_tot.axhline(
-                    y_v, color=mala_colors.get(t_v, "gray"), linestyle="--", alpha=0.55, lw=1.3
+                    y_v, color=mala_colors.get(t_v, "gray"), linestyle="--", alpha=0.60, lw=1.4
                 )
                 ax_kl_tot.errorbar(
                     [0.0],
@@ -1058,7 +1304,7 @@ def plot_hyperparameter_evolution(
                     color=mala_colors.get(t_v, "gray"),
                     markersize=8,
                     capsize=4,
-                    label=f"MALA ($\\tau={t_v:.2f}$)",
+                    label=f"MALA -- ($\\tau={t_v:.2f}$)",
                 )
         for g_idx, ((t_val, p_val), g_df) in enumerate(rl_groups):
             c = group_colors[g_idx % len(group_colors)]
@@ -1073,7 +1319,7 @@ def plot_hyperparameter_evolution(
                 fmt=f"-{mk}",
                 color=c,
                 lw=2.0,
-                markersize=7,
+                markersize=6.5,
                 capsize=4,
                 label=f"RL-MALA ($\\tau={t_val:.2f}, \\lambda={p_val:.2f}$)",
             )
@@ -1101,7 +1347,7 @@ def plot_hyperparameter_evolution(
                 color=mala_colors.get(t_v, "gray"),
                 markersize=8,
                 capsize=4,
-                label=f"MALA ($\\tau={t_v:.2f}$)",
+                label=f"MALA -- ($\\tau={t_v:.2f}$)",
             )
     for g_idx, ((t_val, p_val), g_df) in enumerate(rl_groups):
         c = group_colors[g_idx % len(group_colors)]
@@ -1119,7 +1365,7 @@ def plot_hyperparameter_evolution(
             fmt=f"-{mk}",
             color=c,
             lw=2.0,
-            markersize=7,
+            markersize=6.5,
             capsize=4,
             label=f"RL-MALA ($\\tau={t_val:.2f}, \\lambda={p_val:.2f}$)",
         )
@@ -1138,7 +1384,7 @@ def plot_hyperparameter_evolution(
         y_e = float(m_row.get("tau_int_E_std", 0.0))
         if np.isfinite(y_v):
             ax_tau.axhline(
-                y_v, color=mala_colors.get(t_v, "gray"), linestyle="--", alpha=0.55, lw=1.3
+                y_v, color=mala_colors.get(t_v, "gray"), linestyle="--", alpha=0.60, lw=1.4
             )
             ax_tau.errorbar(
                 [0.0],
@@ -1162,7 +1408,7 @@ def plot_hyperparameter_evolution(
             fmt=f"-{mk}",
             color=c,
             lw=2.0,
-            markersize=7,
+            markersize=6.5,
             capsize=4,
             label=f"RL-MALA ($\\tau={t_val:.2f}, \\lambda={p_val:.2f}$)",
         )
@@ -1187,7 +1433,7 @@ def plot_hyperparameter_evolution(
     ax_tau.set_xlabel(r"Actor Amplitude $A_\mu$ ($0 = \mathrm{MALA}$)")
     ax_tau.set_ylabel(r"$\tau_{\mathrm{int}}(E)$ (pasos, log)")
     ax_tau.grid(True, which="both", alpha=0.3)
-    ax_tau.legend(fontsize=7.8, loc="best", frameon=True)
+    ax_tau.legend(fontsize=7.2, loc="best", frameon=True, ncol=1 if len(rl_groups) <= 6 else 2)
 
     # 5. ESJD vs Actor Amplitude
     for _, m_row in df_mala.iterrows():
@@ -1196,7 +1442,7 @@ def plot_hyperparameter_evolution(
         y_e = float(m_row.get("ESJD_std", 0.0))
         if np.isfinite(y_v):
             ax_esjd.axhline(
-                y_v, color=mala_colors.get(t_v, "gray"), linestyle="--", alpha=0.55, lw=1.3
+                y_v, color=mala_colors.get(t_v, "gray"), linestyle="--", alpha=0.60, lw=1.4
             )
             ax_esjd.errorbar(
                 [0.0],
@@ -1220,7 +1466,7 @@ def plot_hyperparameter_evolution(
             fmt=f"-{mk}",
             color=c,
             lw=2.0,
-            markersize=7,
+            markersize=6.5,
             capsize=4,
         )
     ax_esjd.set_title(
@@ -1231,18 +1477,18 @@ def plot_hyperparameter_evolution(
     ax_esjd.set_ylabel(r"$\mathrm{ESJD}$ ($\mathrm{Bohr}^2$)")
     ax_esjd.grid(True, alpha=0.3)
 
-    # 6. Comparativa Directa MALA vs RL-MALA en función del Paso Base tau (ESS/s)
+    # 6. Comparativa Directa MALA (discontinua '--') vs RL-MALA (continua '-') en función de tau (ESS/s)
     if len(df_mala) > 0:
         ax_ess.errorbar(
             df_mala["tau"].to_numpy(dtype=np.float64),
             df_mala["ESS_per_sec"].to_numpy(dtype=np.float64),
             yerr=_safe_err(df_mala.get("ESS_per_sec_std", pd.Series(np.zeros(len(df_mala))))),
-            fmt="-X",
-            color="#333333",
-            lw=2.4,
+            fmt="--X",
+            color="#e74c3c",
+            lw=2.5,
             markersize=9,
             capsize=5,
-            label="MALA Clásico (barrido en $\\tau$)",
+            label="MALA Clásico -- (barrido en $\\tau$)",
         )
     for g_idx, ((amp_val, p_val), g_df) in enumerate(
         df_rl.groupby(["actor_amplitude", "penalty_factor"])
@@ -1254,12 +1500,12 @@ def plot_hyperparameter_evolution(
             g_sorted["tau"].to_numpy(dtype=np.float64),
             g_sorted["ESS_per_sec"].to_numpy(dtype=np.float64),
             yerr=_safe_err(g_sorted.get("ESS_per_sec_std", pd.Series(np.zeros(len(g_sorted))))),
-            fmt=f"--{mk}",
+            fmt=f"-{mk}",
             color=c,
-            lw=1.9,
-            markersize=7,
+            lw=2.0,
+            markersize=6.5,
             capsize=4,
-            label=f"RL-MALA ($A_\\mu={amp_val:.2f}, \\lambda={p_val:.2f}$)",
+            label=f"RL-MALA - ($A_\\mu={amp_val:.2f}, \\lambda={p_val:.2f}$)",
         )
     best_ess_idx = df_plot["ESS_per_sec"].idxmax()
     if pd.notna(best_ess_idx):
@@ -1275,13 +1521,13 @@ def plot_hyperparameter_evolution(
             label=f"★ Máx ESS/s: {b_r['label']}",
         )
     ax_ess.set_title(
-        r"Velocidad Efectiva Real: $\mathrm{ESS/s}$ vs Paso Base $\tau$ (MALA vs RL-MALA)",
+        r"Velocidad Efectiva Real: $\mathrm{ESS/s}$ vs Paso Base $\tau$ (MALA -- vs RL-MALA -)",
         weight="bold",
     )
     ax_ess.set_xlabel(r"Paso Base de Propuesta $\tau$")
     ax_ess.set_ylabel(r"$\mathrm{ESS} / \mathrm{s}$ ($\mathrm{s}^{-1}$)")
     ax_ess.grid(True, alpha=0.3)
-    ax_ess.legend(fontsize=7.8, loc="best", frameon=True)
+    ax_ess.legend(fontsize=7.2, loc="best", frameon=True, ncol=1 if len(rl_groups) <= 6 else 2)
 
     sys_tag = getattr(cfg, "system_tag", "")
     fig.suptitle(
@@ -1298,6 +1544,7 @@ def plot_hyperparameter_evolution(
         fmt=cfg.figure_format,
         dpi=cfg.dpi,
         sys_tag=sys_tag,
+        cfg=cfg,
     )
 
 
@@ -1314,6 +1561,7 @@ def plot_time_to_solution(
     if not valid:
         return
 
+    _apply_plot_style(cfg)
     fig, ax = plt.subplots(figsize=(8.0, 4.8))
     for idx, binfo in enumerate(valid):
         summary = binfo["diagnostics"]["summary"]
@@ -1322,20 +1570,21 @@ def plot_time_to_solution(
         tau_e = max(1.0, summary.get("tau_int_E", 1.0))
         t_grid = np.linspace(wtime / len(e_series), wtime, len(e_series))
         se_t = np.std(e_series) * np.sqrt(tau_e / np.arange(1, len(e_series) + 1))
-        color = PALETTE[idx % len(PALETTE)]
+        color, ls = _get_model_style(binfo, idx)
         ax.plot(
             t_grid,
             se_t,
             color=color,
-            lw=2.0,
+            linestyle=ls,
+            lw=2.2,
             label=f"{binfo['label']} ($T_\\epsilon={summary['time_to_solution_sec']:.2f}$ s)",
         )
 
     ax.axhline(
         cfg.target_se_epsilon,
         color="black",
-        linestyle="--",
-        lw=1.2,
+        linestyle=":",
+        lw=1.4,
         label=f"Umbral $\\epsilon = {cfg.target_se_epsilon:.1e}$ Ha",
     )
     ax.set_xscale("log")
@@ -1352,6 +1601,7 @@ def plot_time_to_solution(
         fmt=cfg.figure_format,
         dpi=cfg.dpi,
         sys_tag=getattr(cfg, "system_tag", ""),
+        cfg=cfg,
     )
 
 
@@ -1362,22 +1612,26 @@ def plot_walker_trace(
     casscf_ref: dict[str, Any] | None = None,
 ) -> None:
     """
-    Grafica la trayectoria de un caminante individual junto con su histograma marginal de
-    densidad por espín (siguiendo el diseño `plot_walker_ergodicity` de `evaluar_wigner_casscf_2.py`),
-    superponiendo la densidad analítica CASSCF si existe para el sistema.
+    Grafica la trayectoria de un caminante individual (Best MALA vs Best RL-MALA por defecto)
+    junto con su histograma marginal de densidad por espín, superponiendo la densidad analítica
+    CASSCF si existe para el sistema.
     """
     valid = [
         b
         for b in bundles_info
-        if "walkers" in b["bundle"].get("production", {})
-        and np.asarray(b["bundle"]["production"]["walkers"]).size > 0
+        if b.get("walker_trace_data") is not None
+        or (
+            "walkers" in b["bundle"].get("production", {})
+            and np.asarray(b["bundle"]["production"]["walkers"]).size > 0
+        )
     ]
     if not valid:
         return
 
+    _apply_plot_style(cfg)
     n_models = len(valid)
-    fig = plt.figure(figsize=(13.5, 4.6 * n_models))
-    outer_gs = gridspec.GridSpec(n_models, 1, hspace=0.32)
+    fig = plt.figure(figsize=(14.0, 4.8 * n_models))
+    outer_gs = gridspec.GridSpec(n_models, 1, hspace=0.34)
 
     for idx, binfo in enumerate(valid):
         inner_gs = gridspec.GridSpecFromSubplotSpec(
@@ -1386,81 +1640,93 @@ def plot_walker_trace(
         ax_main = fig.add_subplot(inner_gs[0])
         ax_hist = fig.add_subplot(inner_gs[1], sharey=ax_main)
 
-        sys_cfg = binfo["bundle"].get("config", {}).get("system", {})
-        n_up = int(sys_cfg.get("n_up", 2))
-        n_dn = int(sys_cfg.get("n_dn", sys_cfg.get("n_down", 2)))
-        w_arr = np.asarray(binfo["bundle"]["production"]["walkers"])
-        if w_arr.ndim == 4:
-            w_arr = w_arr[None, ...]
-        # Tomar el caminante 0 de la cadena 0 para la traza temporal
-        w_single = w_arr[0, :, 0, :, 0]  # (n_steps, n_elec)
-        n_steps, n_elec = w_single.shape
-        stride = max(1, n_steps // 2000)
-        steps_sub = np.arange(0, n_steps, stride)
+        w_data = binfo.get("walker_trace_data")
+        if w_data is None:
+            sys_cfg = binfo["bundle"].get("config", {}).get("system", {})
+            n_up_tmp = int(sys_cfg.get("n_up", 2))
+            n_dn_tmp = int(sys_cfg.get("n_dn", sys_cfg.get("n_down", 2)))
+            x_max_tmp = float(
+                binfo.get("observables", {}).get("x_max", 15.0)
+                if binfo.get("observables")
+                else 15.0
+            )
+            w_data = _precompute_walker_trace_for_bundle(
+                binfo["bundle"]["production"]["walkers"],
+                n_up=n_up_tmp,
+                n_dn=n_dn_tmp,
+                x_max=x_max_tmp,
+            )
+        if w_data is None:
+            continue
+
+        steps_sub = w_data["steps_sub"]
+        w_single_sub = w_data["w_single_sub"]
+        n_elec = w_data["n_elec"]
+        n_up = w_data["n_up"]
+        n_dn = w_data["n_dn"]
+        x_max = w_data["x_max"]
+        _, ls_model = _get_model_style(binfo, idx)
+        is_neural = ls_model == "-"
+        role_tag = "★ BEST RL-MALA (Solid)" if is_neural else "★ BEST MALA (Dashed)"
 
         for e_i in range(n_elec):
-            c_spin = "#3498db" if e_i < n_up else "#e74c3c"
+            c_spin = "#2980b9" if e_i < n_up else "#e74c3c"
             lbl = (
-                r"Spin $\uparrow$"
+                r"Spin $\uparrow$ (Single Walker #0)"
                 if e_i == 0
-                else (r"Spin $\downarrow$" if e_i == n_up else None)
+                else (r"Spin $\downarrow$ (Single Walker #0)" if e_i == n_up else None)
             )
             ax_main.plot(
                 steps_sub,
-                w_single[::stride, e_i],
+                w_single_sub[:, e_i],
                 color=c_spin,
-                alpha=0.7,
-                lw=0.8,
+                linestyle=ls_model,
+                alpha=0.78 if is_neural else 0.72,
+                lw=0.95,
                 label=lbl,
             )
 
+        summary = binfo.get("diagnostics", {}).get("summary", {})
+        unc = binfo.get("uncertainties", {})
+        tau_val = summary.get("tau_int_E", float("nan"))
+        kl_spin_val = unc.get("kl_spin_mean", float("nan"))
+        metrics_str = f"$\\tau_{{\\mathrm{{int}}}}(E)={tau_val:.1f}$"
+        if np.isfinite(kl_spin_val):
+            metrics_str += f", $D_{{\\mathrm{{KL}}}}^{{\\mathrm{{spin}}}}={kl_spin_val:.4f}$"
+
         ax_main.set_title(
-            f"Walker Trajectory & Nodal Tunneling - {binfo['label']}", weight="bold"
+            f"{role_tag}: Single-Walker Trace — {binfo['label']} ({metrics_str})",
+            loc="left",
+            fontsize=11.0,
+            weight="bold",
         )
         ax_main.set_xlabel("MCMC Production Steps")
-        ax_main.set_ylabel("Electron Position (Bohr)")
+        ax_main.set_ylabel("Electron Position $x_i(t)$ (Bohr)")
+        ax_main.set_ylim(-x_max, x_max)
         ax_main.grid(True, alpha=0.3)
-        ax_main.legend(loc="upper right", fontsize=8.5)
+        ax_main.legend(loc="upper right", fontsize=8.5, frameon=True)
 
-        # Panel derecho: histograma marginal usando todos los caminantes de la corrida
-        x_max = float(
-            binfo.get("observables", {}).get("x_max", 15.0)
-            if binfo.get("observables")
-            else 15.0
-        )
-        bins = np.linspace(-x_max, x_max, 120)
-        try:
-            w_flat = w_arr.squeeze(-1).reshape(-1, n_elec)
-            if n_up > 0:
-                up_vals = w_flat[:, :n_up].reshape(-1)
-                up_vals = up_vals[np.isfinite(up_vals)]
-                up_vals = up_vals[(up_vals >= -x_max) & (up_vals <= x_max)]
-                if len(up_vals) > 0:
-                    ax_hist.hist(
-                        up_vals,
-                        bins=bins,
-                        orientation="horizontal",
-                        density=True,
-                        color="#3498db",
-                        alpha=0.45,
-                        label=r"Sampled $\uparrow$",
-                    )
-            if n_dn > 0:
-                dn_vals = w_flat[:, n_up : n_up + n_dn].reshape(-1)
-                dn_vals = dn_vals[np.isfinite(dn_vals)]
-                dn_vals = dn_vals[(dn_vals >= -x_max) & (dn_vals <= x_max)]
-                if len(dn_vals) > 0:
-                    ax_hist.hist(
-                        dn_vals,
-                        bins=bins,
-                        orientation="horizontal",
-                        density=True,
-                        color="#e74c3c",
-                        alpha=0.45,
-                        label=r"Sampled $\downarrow$",
-                    )
-        except Exception:
-            pass
+        # Panel derecho: histograma marginal precalculado
+        bin_centers = w_data["bin_centers"]
+        bin_h = float(bin_centers[1] - bin_centers[0]) if len(bin_centers) > 1 else 0.2
+        if n_up > 0 and np.any(w_data["up_hist"] > 0):
+            ax_hist.barh(
+                bin_centers,
+                w_data["up_hist"],
+                height=bin_h,
+                color="#3498db",
+                alpha=0.45,
+                label=r"Sampled $\uparrow$",
+            )
+        if n_dn > 0 and np.any(w_data["dn_hist"] > 0):
+            ax_hist.barh(
+                bin_centers,
+                w_data["dn_hist"],
+                height=bin_h,
+                color="#e74c3c",
+                alpha=0.45,
+                label=r"Sampled $\downarrow$",
+            )
 
         if casscf_ref is not None:
             x_ex = casscf_ref["x"]
@@ -1470,8 +1736,8 @@ def plot_walker_trace(
                     casscf_ref["p_up"][mask_ex],
                     x_ex[mask_ex],
                     color="#2980b9",
-                    linestyle="--",
-                    lw=2.0,
+                    linestyle=":",
+                    lw=2.2,
                     label=r"Exact $\uparrow$",
                 )
             if n_dn > 0:
@@ -1479,8 +1745,8 @@ def plot_walker_trace(
                     casscf_ref["p_down"][mask_ex],
                     x_ex[mask_ex],
                     color="#c0392b",
-                    linestyle="--",
-                    lw=2.0,
+                    linestyle=":",
+                    lw=2.2,
                     label=r"Exact $\downarrow$",
                 )
 
@@ -1488,7 +1754,7 @@ def plot_walker_trace(
         ax_hist.set_xlabel(r"Normalized $p_\sigma(x)$")
         ax_hist.tick_params(axis="y", labelleft=False)
         ax_hist.grid(True, alpha=0.3)
-        ax_hist.legend(loc="upper right", fontsize=8.0)
+        ax_hist.legend(loc="upper right", fontsize=8.0, frameon=True)
 
     _save_fig(
         fig,
@@ -1497,6 +1763,7 @@ def plot_walker_trace(
         fmt=cfg.figure_format,
         dpi=cfg.dpi,
         sys_tag=getattr(cfg, "system_tag", ""),
+        cfg=cfg,
     )
 
 
@@ -1715,6 +1982,25 @@ def run_postprocessing_pipeline(cfg: PostProcessConfig) -> pd.DataFrame:
             x_max=eff_xmax,
         )
 
+        # Precalcular resúmenes compactos de curva KL y traza de 1 caminante y liberar w_all de RAM
+        kl_curve_data = (
+            _precompute_kl_curve_for_bundle(w_all, casscf_ref, cfg, x_max=eff_xmax)
+            if (cfg.plot_observables_comparison and casscf_ref is not None)
+            else None
+        )
+        walker_trace_data = (
+            _precompute_walker_trace_for_bundle(
+                w_all, n_up=n_up, n_dn=n_dn, x_max=eff_xmax
+            )
+            if cfg.plot_walker_trace
+            else None
+        )
+        if "production" in bundle and "walkers" in bundle["production"]:
+            del bundle["production"]["walkers"]
+        if w_all is not None:
+            del w_all
+        gc.collect()
+
         tau_e = summary.get("tau_int_E", float("nan"))
         if baseline_tau_e is None and not np.isnan(tau_e) and tau_e > 0:
             baseline_tau_e = tau_e
@@ -1792,6 +2078,8 @@ def run_postprocessing_pipeline(cfg: PostProcessConfig) -> pd.DataFrame:
                 "observables": obs,
                 "hyperparams": hp_info,
                 "uncertainties": unc_info,
+                "kl_curve_data": kl_curve_data,
+                "walker_trace_data": walker_trace_data,
             }
         )
 
@@ -1916,7 +2204,13 @@ def run_postprocessing_pipeline(cfg: PostProcessConfig) -> pd.DataFrame:
     if cfg.plot_time_to_solution:
         _safe_run_plot(plot_time_to_solution, plot_bundles, cfg.out_dir, cfg)
     if cfg.plot_walker_trace:
-        _safe_run_plot(plot_walker_trace, plot_bundles, cfg.out_dir, cfg, casscf_ref=casscf_ref)
+        w_top_k = int(getattr(cfg, "walker_trace_top_k", 1))
+        walker_bundles = _select_top_k_bundles(
+            bundles_info, summary_rows, top_k=w_top_k, verbose=False
+        )
+        _safe_run_plot(
+            plot_walker_trace, walker_bundles, cfg.out_dir, cfg, casscf_ref=casscf_ref
+        )
 
     print("\n" + "=" * 76)
     print("[PostProcess] Resumen Comparativo de Corridas:")

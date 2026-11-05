@@ -76,8 +76,46 @@ if [ -n "${REF_DENSITY_CSV}" ] && [ -f "${REF_DENSITY_CSV}" ]; then
     REF_CSV_ARG="--reference_density_csv ${REF_DENSITY_CSV}"
 fi
 
-# Detección y asignación del directorio base (acepta $1 o variables de entorno)
-TARGET_BASE_ARG="${1:-${BASE_OUT_DIR:-}}"
+# Detección y asignación del directorio base y opciones de formato de figuras
+FIGURE_FORMAT="${FIGURE_FORMAT:-png}"
+FIGURE_DPI="${FIGURE_DPI:-300}"
+TITLE_PREFIX="${TITLE_PREFIX:-}"
+CUSTOM_SUPTITLE="${CUSTOM_SUPTITLE:-}"
+NO_TITLES="${NO_TITLES:-0}"
+FONT_SCALE="${FONT_SCALE:-1.0}"
+LINE_WIDTH_SCALE="${LINE_WIDTH_SCALE:-1.0}"
+TRANSPARENT_BG="${TRANSPARENT_BG:-0}"
+TARGET_BASE_ARG=""
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --figure-format|--figure_format|--format|-f) FIGURE_FORMAT="$2"; shift 2 ;;
+        --pdf) FIGURE_FORMAT="pdf"; shift ;;
+        --png) FIGURE_FORMAT="png"; shift ;;
+        --dpi|--ppi) FIGURE_DPI="$2"; shift 2 ;;
+        --title-prefix|--title_prefix) TITLE_PREFIX="$2"; shift 2 ;;
+        --custom-suptitle|--custom_suptitle) CUSTOM_SUPTITLE="$2"; shift 2 ;;
+        --no-titles|--no_titles|--hide-titles) NO_TITLES=1; shift ;;
+        --font-scale|--font_scale) FONT_SCALE="$2"; shift 2 ;;
+        --line-width-scale|--line_width_scale) LINE_WIDTH_SCALE="$2"; shift 2 ;;
+        --transparent-bg|--transparent_bg) TRANSPARENT_BG=1; shift ;;
+        *) TARGET_BASE_ARG="$1"; shift ;;
+    esac
+done
+export FIGURE_FORMAT FIGURE_DPI TITLE_PREFIX CUSTOM_SUPTITLE NO_TITLES FONT_SCALE LINE_WIDTH_SCALE TRANSPARENT_BG
+
+PLOT_STYLE_ARGS=(
+    --figure_format "$FIGURE_FORMAT"
+    --dpi "$FIGURE_DPI"
+    --font_scale "$FONT_SCALE"
+    --line_width_scale "$LINE_WIDTH_SCALE"
+)
+[[ -n "$TITLE_PREFIX" ]] && PLOT_STYLE_ARGS+=(--title_prefix "$TITLE_PREFIX")
+[[ -n "$CUSTOM_SUPTITLE" ]] && PLOT_STYLE_ARGS+=(--custom_suptitle "$CUSTOM_SUPTITLE")
+[[ "$NO_TITLES" -eq 1 || "$NO_TITLES" == "true" ]] && PLOT_STYLE_ARGS+=(--no_titles)
+[[ "$TRANSPARENT_BG" -eq 1 || "$TRANSPARENT_BG" == "true" ]] && PLOT_STYLE_ARGS+=(--transparent_bg)
+
+TARGET_BASE_ARG="${TARGET_BASE_ARG:-${BASE_OUT_DIR:-}}"
 if [ -n "${TARGET_BASE_ARG}" ]; then
     BASE_OUT_DIR="${TARGET_BASE_ARG}"
 elif [ -d "results_params_search" ]; then
@@ -87,6 +125,7 @@ elif [ -d "results_param_search" ]; then
 else
     BASE_OUT_DIR="results_params_search"
 fi
+export BASE_OUT_DIR
 
 CSV_COLLECT_DIR="${BASE_OUT_DIR}/csv_summary"
 FIG_OUT_DIR="${BASE_OUT_DIR}/figures"
@@ -360,7 +399,7 @@ check_and_register_completed_run() {
         num_figs=$(find "${POST_DIR}" -maxdepth 1 -name "*.png" 2>/dev/null | wc -l)
         if [ ! -f "${SUM_CSV}" ] || [ "$num_figs" -eq 0 ]; then
             log_master "[*] Ejecutando post-procesamiento para completar figuras de: ${RUN_TAG}..."
-            ${PYTHON_BIN} -u cli/postprocess.py \
+            CUDA_VISIBLE_DEVICES="" JAX_PLATFORMS=cpu ${PYTHON_BIN} -u cli/postprocess.py \
                 --inputs "${H5_FILE}" \
                 --labels "${LABEL}" \
                 --out_dir "${POST_DIR}" \
@@ -375,8 +414,7 @@ check_and_register_completed_run() {
                 --plot_time_to_solution \
                 --plot_walker_trace \
                 --plot_kl_divergence \
-                --figure_format png \
-                --dpi 200 >/dev/null 2>&1 || true
+                "${PLOT_STYLE_ARGS[@]}" >/dev/null 2>&1 || true
         fi
 
         # Asegurar inserción en el CSV maestro si aún no está
@@ -448,8 +486,8 @@ run_single_sampling_worker() {
         --eloc_chunk_size "${ELOC_CHUNK_SIZE}" \
         --output_h5 "${H5_FILE}"
 
-    # Post-procesamiento exhaustivo con todas las figuras requeridas
-    ${PYTHON_BIN} -u cli/postprocess.py \
+    # Post-procesamiento exhaustivo con todas las figuras requeridas (en CPU)
+    CUDA_VISIBLE_DEVICES="" JAX_PLATFORMS=cpu ${PYTHON_BIN} -u cli/postprocess.py \
         --inputs "${H5_FILE}" \
         --labels "${LABEL}" \
         --out_dir "${POST_DIR}" \
@@ -463,8 +501,7 @@ run_single_sampling_worker() {
         --plot_time_to_solution \
         --plot_walker_trace \
         --plot_kl_divergence \
-        --figure_format png \
-        --dpi 200
+        "${PLOT_STYLE_ARGS[@]}"
 
     # Centralización de figuras
     if [ -d "${POST_DIR}" ]; then
@@ -518,8 +555,8 @@ run_single_training_worker() {
         --eloc_chunk_size "${ELOC_CHUNK_SIZE}" \
         --output_h5 "${H5_FILE}"
 
-    # Post-procesamiento exhaustivo incluyendo métricas de entrenamiento
-    ${PYTHON_BIN} -u cli/postprocess.py \
+    # Post-procesamiento exhaustivo incluyendo métricas de entrenamiento (en CPU)
+    CUDA_VISIBLE_DEVICES="" JAX_PLATFORMS=cpu ${PYTHON_BIN} -u cli/postprocess.py \
         --inputs "${H5_FILE}" \
         --labels "${LABEL}" \
         --out_dir "${POST_DIR}" \
@@ -534,8 +571,7 @@ run_single_training_worker() {
         --plot_time_to_solution \
         --plot_walker_trace \
         --plot_kl_divergence \
-        --figure_format png \
-        --dpi 200
+        "${PLOT_STYLE_ARGS[@]}"
 
     if [ -d "${POST_DIR}" ]; then
         mkdir -p "${FIG_OUT_DIR}/individual_runs/${RUN_TAG}"
@@ -589,7 +625,7 @@ run_single_eval_worker() {
         --eloc_chunk_size "${ELOC_CHUNK_SIZE}" \
         --output_h5 "${H5_FILE}"
 
-    ${PYTHON_BIN} -u cli/postprocess.py \
+    CUDA_VISIBLE_DEVICES="" JAX_PLATFORMS=cpu ${PYTHON_BIN} -u cli/postprocess.py \
         --inputs "${H5_FILE}" \
         --labels "${LABEL}" \
         --out_dir "${POST_DIR}" \
@@ -603,8 +639,7 @@ run_single_eval_worker() {
         --plot_time_to_solution \
         --plot_walker_trace \
         --plot_kl_divergence \
-        --figure_format png \
-        --dpi 200
+        "${PLOT_STYLE_ARGS[@]}"
 
     if [ -d "${POST_DIR}" ]; then
         mkdir -p "${FIG_OUT_DIR}/individual_runs/${RUN_TAG}"
@@ -982,16 +1017,16 @@ try:
     fig1, axes = plt.subplots(2, 2, figsize=(16, 12))
     casscf_ref_e = 4.524052
 
-    # Panel (0,0): Energía Media <E> vs tau
+    # Panel (0,0): Energía Media <E> vs tau (MALA discontinuo --, RL-MALA continuo -)
     ax0 = axes[0, 0]
     if not df_mala.empty:
-        ax0.plot(df_mala["tau"], df_mala["E_mean"], "o-", color="#1f77b4", lw=2.4, ms=7, label="MALA Estándar")
+        ax0.plot(df_mala["tau"], df_mala["E_mean"], "o--", color="#1f77b4", lw=2.4, ms=7, label="MALA Estándar")
     if not df_rl.empty:
         amps = sorted(df_rl["actor_amplitude"].dropna().unique())
         cmap = plt.cm.plasma(np.linspace(0.1, 0.9, len(amps)))
         for i, a in enumerate(amps):
             sub = df_rl[df_rl["actor_amplitude"] == a].sort_values("tau")
-            ax0.plot(sub["tau"], sub["E_mean"], "s--", color=cmap[i], lw=1.8, ms=6, label=f"RL-MALA (A={a:.2f})")
+            ax0.plot(sub["tau"], sub["E_mean"], "s-", color=cmap[i], lw=1.8, ms=6, label=f"RL-MALA (A={a:.2f})")
     ax0.axhline(casscf_ref_e, color="black", ls=":", lw=1.8, label=f"CASSCF 20 det ({casscf_ref_e:.6f} Ha)")
     ax0.set_xlabel(r"Tamaño de Paso $\tau$", fontsize=12)
     ax0.set_ylabel(r"Energía Media $\langle E \rangle$ (Ha)", fontsize=12)
@@ -1003,11 +1038,11 @@ try:
     ax1 = axes[0, 1]
     ax1.axhspan(70, 90, color="green", alpha=0.12, label="Rango Óptimo Aceptación (70-90%)")
     if not df_mala.empty:
-        ax1.plot(df_mala["tau"], df_mala["acceptance"] * 100.0, "o-", color="#1f77b4", lw=2.4, ms=7, label="MALA")
+        ax1.plot(df_mala["tau"], df_mala["acceptance"] * 100.0, "o--", color="#1f77b4", lw=2.4, ms=7, label="MALA")
     if not df_rl.empty:
         for i, a in enumerate(amps):
             sub = df_rl[df_rl["actor_amplitude"] == a].sort_values("tau")
-            ax1.plot(sub["tau"], sub["acceptance"] * 100.0, "s--", color=cmap[i], lw=1.8, ms=6, label=f"RL A={a:.2f}")
+            ax1.plot(sub["tau"], sub["acceptance"] * 100.0, "s-", color=cmap[i], lw=1.8, ms=6, label=f"RL A={a:.2f}")
     ax1.set_xlabel(r"Tamaño de Paso $\tau$", fontsize=12)
     ax1.set_ylabel("Aceptación MCMC (%)", fontsize=12)
     ax1.set_title("Evolución de Tasa de Aceptación MCMC vs $\tau$", fontsize=13, weight="bold")
@@ -1017,11 +1052,11 @@ try:
     # Panel (1,0): ESJD vs tau
     ax2 = axes[1, 0]
     if not df_mala.empty:
-        ax2.plot(df_mala["tau"], df_mala["ESJD"], "o-", color="#1f77b4", lw=2.4, ms=7, label="MALA")
+        ax2.plot(df_mala["tau"], df_mala["ESJD"], "o--", color="#1f77b4", lw=2.4, ms=7, label="MALA")
     if not df_rl.empty:
         for i, a in enumerate(amps):
             sub = df_rl[df_rl["actor_amplitude"] == a].sort_values("tau")
-            ax2.plot(sub["tau"], sub["ESJD"], "s--", color=cmap[i], lw=1.8, ms=6, label=f"RL A={a:.2f}")
+            ax2.plot(sub["tau"], sub["ESJD"], "s-", color=cmap[i], lw=1.8, ms=6, label=f"RL A={a:.2f}")
     ax2.set_xlabel(r"Tamaño de Paso $\tau$", fontsize=12)
     ax2.set_ylabel("ESJD (Distancia Cuadrática Media de Salto)", fontsize=12)
     ax2.set_title("Eficiencia de Exploración de Espacio de Fase (ESJD) vs $\tau$", fontsize=13, weight="bold")
@@ -1031,11 +1066,11 @@ try:
     # Panel (1,1): tau_int(E) vs tau y REMARCADO DE LOS MEJORES MODELOS
     ax3 = axes[1, 1]
     if not df_mala.empty:
-        ax3.plot(df_mala["tau"], df_mala["tau_int_E"], "o-", color="#1f77b4", lw=2.4, ms=7, label="MALA")
+        ax3.plot(df_mala["tau"], df_mala["tau_int_E"], "o--", color="#1f77b4", lw=2.4, ms=7, label="MALA")
     if not df_rl.empty:
         for i, a in enumerate(amps):
             sub = df_rl[df_rl["actor_amplitude"] == a].sort_values("tau")
-            ax3.plot(sub["tau"], sub["tau_int_E"], "s--", color=cmap[i], lw=1.8, ms=6, label=f"RL A={a:.2f}")
+            ax3.plot(sub["tau"], sub["tau_int_E"], "s-", color=cmap[i], lw=1.8, ms=6, label=f"RL A={a:.2f}")
 
     # Remarcado explícito con estrellas doradas y rojas
     if best_mala is not None:

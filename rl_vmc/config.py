@@ -243,9 +243,16 @@ class PostProcessConfig:
     plot_kl_divergence: bool = False
     plot_hyperparameter_evolution: bool = True
     top_k_models: int = 2
+    walker_trace_top_k: int = 1
     n_eval_subblocks: int = 5
-    figure_format: Literal["pdf", "png", "both"] = "pdf"
+    figure_format: Literal["pdf", "png", "both"] = "png"
     dpi: int = 300
+    title_prefix: str = ""
+    custom_suptitle: str = ""
+    no_titles: bool = False
+    font_scale: float = 1.0
+    line_width_scale: float = 1.0
+    transparent_bg: bool = False
 
 
 def build_experiment_argparser() -> argparse.ArgumentParser:
@@ -723,9 +730,16 @@ def build_postprocess_argparser() -> argparse.ArgumentParser:
     g_plot.add_argument("--plot_kl_divergence", action=argparse.BooleanOptionalAction, default=False, help="Genera la curva de convergencia de Divergencia KL respecto a reference_density_csv.")
     g_plot.add_argument("--plot_hyperparameter_evolution", action=argparse.BooleanOptionalAction, default=True, help="Genera las gráficas de evolución de precisión, D_KL y tau_int respecto a los hiperparámetros con barras de error.")
     g_plot.add_argument("--top_k_models", type=int, default=2, help="Número de mejores modelos de cada familia (ej. 2 MALA vs 2 RL-MALA) a graficar en las comparativas detalladas. Usar 0 o -1 para graficar todos.")
+    g_plot.add_argument("--walker_trace_top_k", type=int, default=1, help="Número de mejores modelos por familia para la traza de un solo caminante (1 = mejor MALA vs mejor RL-MALA).")
     g_plot.add_argument("--n_eval_subblocks", type=int, default=5, help="Número de bloques/sub-evaluaciones independientes sobre los caminantes para calcular barras de error en D_KL, energía y tau_int.")
-    g_plot.add_argument("--figure_format", type=str, default="pdf", choices=["pdf", "png", "both"], help="Formato de exportación para las figuras generadas.")
-    g_plot.add_argument("--dpi", type=int, default=300, help="Resolución (DPI) de las figuras exportadas.")
+    g_plot.add_argument("--figure_format", "--format", dest="figure_format", type=str, default="png", choices=["pdf", "png", "both"], help="Formato de exportación para las figuras generadas ('png' por defecto para ahorrar espacio; usar 'pdf' o 'both' para artículo).")
+    g_plot.add_argument("--dpi", "--ppi", dest="dpi", type=int, default=300, help="Resolución en píxeles/puntos por pulgada (PPI / DPI) de las figuras exportadas.")
+    g_plot.add_argument("--title_prefix", type=str, default="", help="Prefijo o etiqueta personalizada para anteponer en los títulos de las figuras.")
+    g_plot.add_argument("--custom_suptitle", type=str, default="", help="Título global personalizado (suptitle) para figuras de artículo.")
+    g_plot.add_argument("--no_titles", "--hide_titles", dest="no_titles", action=argparse.BooleanOptionalAction, default=False, help="Oculta los títulos superiores de las figuras (útil para insertar en LaTeX con \\caption).")
+    g_plot.add_argument("--font_scale", type=float, default=1.0, help="Factor de escala multiplicativo para el tamaño de todas las fuentes (ej. 1.2 para artículo).")
+    g_plot.add_argument("--line_width_scale", type=float, default=1.0, help="Factor de escala multiplicativo para el grosor de las líneas.")
+    g_plot.add_argument("--transparent_bg", action=argparse.BooleanOptionalAction, default=False, help="Exporta las figuras con fondo transparente.")
 
     return parser
 

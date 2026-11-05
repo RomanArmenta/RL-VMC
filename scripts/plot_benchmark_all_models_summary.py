@@ -95,7 +95,43 @@ def load_and_clean_data(csv_path: str) -> pd.DataFrame:
     return df
 
 
-def plot_speedup_and_ess(df: pd.DataFrame, out_dir: str):
+def _save_fig_custom(fig: plt.Figure, out_dir: str, stem: str, args: argparse.Namespace) -> None:
+    os.makedirs(out_dir, exist_ok=True)
+    if getattr(args, "no_titles", False):
+        if getattr(fig, "_suptitle", None) is not None:
+            fig._suptitle.set_text("")
+        for ax in fig.axes:
+            ax.set_title("")
+    else:
+        custom_sup = str(getattr(args, "custom_suptitle", "") or "").strip()
+        t_prefix = str(getattr(args, "title_prefix", "") or "").strip()
+        f_scale = float(getattr(args, "font_scale", 1.0))
+        if custom_sup:
+            full_sup = f"{t_prefix} — {custom_sup}" if t_prefix else custom_sup
+            fig.suptitle(full_sup, fontsize=14.0 * f_scale, weight="bold", y=1.02)
+        elif t_prefix:
+            if getattr(fig, "_suptitle", None) is not None and fig._suptitle.get_text():
+                cur = fig._suptitle.get_text()
+                if not cur.startswith(t_prefix):
+                    fig._suptitle.set_text(f"{t_prefix} — {cur}")
+            else:
+                fig.suptitle(t_prefix, fontsize=13.5 * f_scale, weight="bold", y=1.02)
+
+    fmt = getattr(args, "figure_format", "png")
+    dpi = int(getattr(args, "dpi", 300))
+    transparent = bool(getattr(args, "transparent_bg", False))
+    if fmt in ("png", "both"):
+        out_png = os.path.join(out_dir, f"{stem}.png")
+        fig.savefig(out_png, dpi=dpi, bbox_inches="tight", transparent=transparent)
+        print(f"[+] Figura guardada: {out_png}")
+    if fmt in ("pdf", "both"):
+        out_pdf = os.path.join(out_dir, f"{stem}.pdf")
+        fig.savefig(out_pdf, dpi=dpi, bbox_inches="tight", transparent=transparent)
+        print(f"[+] Figura guardada: {out_pdf}")
+    plt.close(fig)
+
+
+def plot_speedup_and_ess(df: pd.DataFrame, out_dir: str, args: argparse.Namespace):
     """Figura 1: Speedup G_RL y Eficiencia ESS/seg vs fuerza de acoplamiento g."""
     fig, axes = plt.subplots(2, 2, figsize=(15, 11), sharex=True)
 
@@ -168,13 +204,10 @@ def plot_speedup_and_ess(df: pd.DataFrame, out_dir: str):
 
     fig.suptitle("Comportamiento Global del Actor RL: Aceleración de Autocorrelación y Rendimiento ESS", weight="bold")
     fig.tight_layout()
-    out_file = os.path.join(out_dir, "fig_all_models_speedup_ess.png")
-    fig.savefig(out_file, dpi=250)
-    plt.close(fig)
-    print(f"[+] Figura guardada: {out_file}")
+    _save_fig_custom(fig, out_dir, "fig_all_models_speedup_ess", args)
 
 
-def plot_acceptance_and_esjd(df: pd.DataFrame, out_dir: str):
+def plot_acceptance_and_esjd(df: pd.DataFrame, out_dir: str, args: argparse.Namespace):
     """Figura 2: Tasa de Aceptación MCMC y Distancia de Salto ESJD vs g."""
     fig, axes = plt.subplots(2, 2, figsize=(15, 11), sharex=True)
 
@@ -249,13 +282,10 @@ def plot_acceptance_and_esjd(df: pd.DataFrame, out_dir: str):
 
     fig.suptitle("Exploración del Espacio de Configuración: Aceptación y Movilidad Cuadrática ESJD", weight="bold")
     fig.tight_layout()
-    out_file = os.path.join(out_dir, "fig_all_models_acceptance_esjd.png")
-    fig.savefig(out_file, dpi=250)
-    plt.close(fig)
-    print(f"[+] Figura guardada: {out_file}")
+    _save_fig_custom(fig, out_dir, "fig_all_models_acceptance_esjd", args)
 
 
-def plot_fidelity_and_energy(df: pd.DataFrame, out_dir: str):
+def plot_fidelity_and_energy(df: pd.DataFrame, out_dir: str, args: argparse.Namespace):
     """Figura 3: Fidelidad respecto a CASSCF (D_KL y Delta E) vs g."""
     fig, axes = plt.subplots(1, 2, figsize=(15, 6))
 
@@ -299,13 +329,10 @@ def plot_fidelity_and_energy(df: pd.DataFrame, out_dir: str):
 
     fig.suptitle("Precisión Física y Convergencia Asintótica del Sampler MALA vs RL-MALA", weight="bold")
     fig.tight_layout()
-    out_file = os.path.join(out_dir, "fig_all_models_fidelity_kl_energy.png")
-    fig.savefig(out_file, dpi=250)
-    plt.close(fig)
-    print(f"[+] Figura guardada: {out_file}")
+    _save_fig_custom(fig, out_dir, "fig_all_models_fidelity_kl_energy", args)
 
 
-def plot_executive_dashboard(df: pd.DataFrame, out_dir: str):
+def plot_executive_dashboard(df: pd.DataFrame, out_dir: str, args: argparse.Namespace):
     """Figura 4: Dashboard Ejecutivo Comparativo de los 4 Regímenes."""
     fig, axes = plt.subplots(2, 2, figsize=(15, 11))
 
@@ -377,19 +404,62 @@ def plot_executive_dashboard(df: pd.DataFrame, out_dir: str):
     ax.grid(True, which="both")
     ax.legend(fontsize=8.5)
 
-    fig.suptitle("Dashboard Ejecutivo: Evaluación Panorámica de los 96 Modelos del Benchmark", weight="bold")
+    fig.suptitle("Dashboard Ejecutivo: Evaluación Panorámica de los Modelos del Benchmark", weight="bold")
     fig.tight_layout()
-    out_file = os.path.join(out_dir, "fig_all_models_executive_dashboard.png")
-    fig.savefig(out_file, dpi=250)
-    plt.close(fig)
-    print(f"[+] Figura guardada: {out_file}")
+    _save_fig_custom(fig, out_dir, "fig_all_models_executive_dashboard", args)
 
 
 def main():
     parser = argparse.ArgumentParser(description="Genera figuras panorámicas de todos los modelos del benchmark.")
     parser.add_argument("--csv", type=str, default="results_csv_b2/live_all_models_master.csv", help="Ruta al CSV maestro.")
     parser.add_argument("--out_dir", type=str, default="figures/benchmark_summary", help="Directorio donde guardar las figuras.")
+    parser.add_argument(
+        "--figure_format",
+        "--format",
+        dest="figure_format",
+        type=str,
+        default="png",
+        choices=["png", "pdf", "both"],
+        help="Formato de exportación gráfica ('png' por defecto para ahorrar espacio).",
+    )
+    parser.add_argument(
+        "--dpi",
+        "--ppi",
+        dest="dpi",
+        type=int,
+        default=300,
+        help="Resolución en píxeles/puntos por pulgada (PPI / DPI).",
+    )
+    parser.add_argument("--title_prefix", type=str, default="", help="Prefijo de título.")
+    parser.add_argument("--custom_suptitle", type=str, default="", help="Suptitle personalizado.")
+    parser.add_argument(
+        "--no_titles",
+        "--hide_titles",
+        dest="no_titles",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Ocultar títulos para LaTeX.",
+    )
+    parser.add_argument("--font_scale", type=float, default=1.0, help="Escala de fuente.")
+    parser.add_argument("--line_width_scale", type=float, default=1.0, help="Escala de grosor de línea.")
+    parser.add_argument(
+        "--transparent_bg",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Fondo transparente.",
+    )
     args = parser.parse_args()
+
+    plt.rcParams.update({
+        "font.size": 11 * args.font_scale,
+        "axes.labelsize": 12 * args.font_scale,
+        "axes.titlesize": 12 * args.font_scale,
+        "xtick.labelsize": 10 * args.font_scale,
+        "ytick.labelsize": 10 * args.font_scale,
+        "legend.fontsize": 10 * args.font_scale,
+        "figure.titlesize": 14 * args.font_scale,
+        "lines.linewidth": 2.0 * args.line_width_scale,
+    })
 
     os.makedirs(args.out_dir, exist_ok=True)
     df = load_and_clean_data(args.csv)
@@ -398,13 +468,14 @@ def main():
     print("    GENERACIÓN DE FIGURAS REPRESENTATIVAS DE TODOS LOS MODELOS")
     print(f"    Archivo Entrada   : {args.csv}")
     print(f"    Directorio Salida : {args.out_dir}")
+    print(f"    Formato / PPI     : {args.figure_format} @ {args.dpi} PPI")
     print(f"    Total Modelos     : {len(df)}")
     print("=" * 80)
 
-    plot_speedup_and_ess(df, args.out_dir)
-    plot_acceptance_and_esjd(df, args.out_dir)
-    plot_fidelity_and_energy(df, args.out_dir)
-    plot_executive_dashboard(df, args.out_dir)
+    plot_speedup_and_ess(df, args.out_dir, args)
+    plot_acceptance_and_esjd(df, args.out_dir, args)
+    plot_fidelity_and_energy(df, args.out_dir, args)
+    plot_executive_dashboard(df, args.out_dir, args)
 
     print("=" * 80)
     print("    FIGURAS GENERADAS EXITOSAMENTE")

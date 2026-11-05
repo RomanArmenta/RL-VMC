@@ -67,6 +67,43 @@ MAX_PARALLEL_JOBS="${MAX_PARALLEL_JOBS:-auto}"
 COPY_ADVISOR_CASSCF="${COPY_ADVISOR_CASSCF:-1}"
 FORCE_RERUN="${FORCE_RERUN:-0}"
 
+# Formato y estilo de figuras (por defecto solo PNG para ahorrar espacio)
+FIGURE_FORMAT="${FIGURE_FORMAT:-png}"
+FIGURE_DPI="${FIGURE_DPI:-300}"
+TITLE_PREFIX="${TITLE_PREFIX:-}"
+CUSTOM_SUPTITLE="${CUSTOM_SUPTITLE:-}"
+NO_TITLES="${NO_TITLES:-0}"
+FONT_SCALE="${FONT_SCALE:-1.0}"
+LINE_WIDTH_SCALE="${LINE_WIDTH_SCALE:-1.0}"
+TRANSPARENT_BG="${TRANSPARENT_BG:-0}"
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --figure-format|--figure_format|--format|-f) FIGURE_FORMAT="$2"; shift 2 ;;
+        --pdf) FIGURE_FORMAT="pdf"; shift ;;
+        --png) FIGURE_FORMAT="png"; shift ;;
+        --dpi|--ppi) FIGURE_DPI="$2"; shift 2 ;;
+        --title-prefix|--title_prefix) TITLE_PREFIX="$2"; shift 2 ;;
+        --custom-suptitle|--custom_suptitle) CUSTOM_SUPTITLE="$2"; shift 2 ;;
+        --no-titles|--no_titles|--hide-titles) NO_TITLES=1; shift ;;
+        --font-scale|--font_scale) FONT_SCALE="$2"; shift 2 ;;
+        --line-width-scale|--line_width_scale) LINE_WIDTH_SCALE="$2"; shift 2 ;;
+        --transparent-bg|--transparent_bg) TRANSPARENT_BG=1; shift ;;
+        *) BASE_OUT_DIR="$1"; shift ;;
+    esac
+done
+
+PLOT_STYLE_ARGS=(
+    --figure_format "$FIGURE_FORMAT"
+    --dpi "$FIGURE_DPI"
+    --font_scale "$FONT_SCALE"
+    --line_width_scale "$LINE_WIDTH_SCALE"
+)
+[[ -n "$TITLE_PREFIX" ]] && PLOT_STYLE_ARGS+=(--title_prefix "$TITLE_PREFIX")
+[[ -n "$CUSTOM_SUPTITLE" ]] && PLOT_STYLE_ARGS+=(--custom_suptitle "$CUSTOM_SUPTITLE")
+[[ "$NO_TITLES" -eq 1 || "$NO_TITLES" == "true" ]] && PLOT_STYLE_ARGS+=(--no_titles)
+[[ "$TRANSPARENT_BG" -eq 1 || "$TRANSPARENT_BG" == "true" ]] && PLOT_STYLE_ARGS+=(--transparent_bg)
+
 # Hiperparámetros de CASSCF (Benchmark 2: corridas largas para convergencia completa)
 CASSCF_MAX_ITER="${CASSCF_MAX_ITER:-1000}"
 CASSCF_ENERGY_TOL="${CASSCF_ENERGY_TOL:-1e-8}"
@@ -592,24 +629,26 @@ run_sistema_pipeline_2() {
     # 2C. Post-procesamiento inmediato por sistema (figuras + CSV comparativo en vivo)
     if [ -f "$MALA_H5" ] && [ -f "$RL_H5" ]; then
         run_logged_step "[Pipeline 2 | Postprocess | ${SYS_TAG}]" \
-            env CUDA_VISIBLE_DEVICES="" python3 -u cli/postprocess.py \
+            env CUDA_VISIBLE_DEVICES="" JAX_PLATFORMS=cpu python3 -u cli/postprocess.py \
                 --inputs "$MALA_H5" "$RL_H5" \
                 --labels "MALA (Fixed CASSCF)" "RL-MALA TD3 (Fixed CASSCF)" \
                 --casscf_npz_path "$CASSCF_NPZ" \
                 --out_dir "$COMP_DIR" \
                 --system_tag "P2_${SYS_TAG}" \
                 --master_comparison_csv "$LIVE_CSV_P2_COMP" \
-                --csv_collect_dir "$CSV_COLLECT_DIR"
+                --csv_collect_dir "$CSV_COLLECT_DIR" \
+                "${PLOT_STYLE_ARGS[@]}"
 
         run_logged_step "[Pipeline 2 | Postprocess Master | ${SYS_TAG}]" \
-            env CUDA_VISIBLE_DEVICES="" python3 -u cli/postprocess.py \
+            env CUDA_VISIBLE_DEVICES="" JAX_PLATFORMS=cpu python3 -u cli/postprocess.py \
                 --inputs "$MALA_H5" "$RL_H5" \
                 --labels "P2_MALA_FixedCASSCF_${SYS_TAG}" "P2_RL_TD3_FixedCASSCF_${SYS_TAG}" \
                 --casscf_npz_path "$CASSCF_NPZ" \
                 --out_dir "$COMP_DIR" \
                 --system_tag "P2_${SYS_TAG}" \
                 --master_comparison_csv "$LIVE_CSV_ALL" \
-                --csv_collect_dir "$CSV_COLLECT_DIR"
+                --csv_collect_dir "$CSV_COLLECT_DIR" \
+                "${PLOT_STYLE_ARGS[@]}"
         echo "  <- [Pipeline 2 | GPU ${GPU_ID}] Finalizado ${SYS_TAG}. Gráficas y summary.json en: ${COMP_DIR}"
     else
         echo "  [Aviso Pipeline 2] No se encontraron ambos run_bundle.h5 para ${SYS_TAG}. Post-procesamiento omitido."
@@ -763,24 +802,26 @@ run_sistema_pipeline_3() {
         fi
 
         run_logged_step "[Pipeline 3 | Postprocess | ${SYS_TAG}]" \
-            env CUDA_VISIBLE_DEVICES="" python3 -u cli/postprocess.py \
+            env CUDA_VISIBLE_DEVICES="" JAX_PLATFORMS=cpu python3 -u cli/postprocess.py \
                 --inputs "$VMC_MALA_H5" "$COUPLED_RL_H5" \
                 --labels "VMC + MALA (SJB)" "Coupled VMC + RL-MALA TD3 (SJB)" \
                 $EXTRA_CASSCF_FLAG \
                 --out_dir "$COMP_DIR" \
                 --system_tag "P3_${SYS_TAG}" \
                 --master_comparison_csv "$LIVE_CSV_P3_COMP" \
-                --csv_collect_dir "$CSV_COLLECT_DIR"
+                --csv_collect_dir "$CSV_COLLECT_DIR" \
+                "${PLOT_STYLE_ARGS[@]}"
 
         run_logged_step "[Pipeline 3 | Postprocess Master | ${SYS_TAG}]" \
-            env CUDA_VISIBLE_DEVICES="" python3 -u cli/postprocess.py \
+            env CUDA_VISIBLE_DEVICES="" JAX_PLATFORMS=cpu python3 -u cli/postprocess.py \
                 --inputs "$VMC_MALA_H5" "$COUPLED_RL_H5" \
                 --labels "P3_VMC_MALA_SJB_${SYS_TAG}" "P3_Coupled_RL_TD3_SJB_${SYS_TAG}" \
                 $EXTRA_CASSCF_FLAG \
                 --out_dir "$COMP_DIR" \
                 --system_tag "P3_${SYS_TAG}" \
                 --master_comparison_csv "$LIVE_CSV_ALL" \
-                --csv_collect_dir "$CSV_COLLECT_DIR"
+                --csv_collect_dir "$CSV_COLLECT_DIR" \
+                "${PLOT_STYLE_ARGS[@]}"
         echo "  <- [Pipeline 3 | GPU ${GPU_ID}] Finalizado ${SYS_TAG}. Gráficas y summary.json en: ${COMP_DIR}"
     else
         echo "  [Aviso Pipeline 3] No se encontraron ambos run_bundle.h5 para ${SYS_TAG}. Post-procesamiento omitido."

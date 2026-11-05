@@ -40,6 +40,42 @@ SYSTEMS_LIST=(
 
 OMEGA="${OMEGA:-0.1}"
 BASE_OUT_DIR="results_targeted_pipeline2"
+FIGURE_FORMAT="${FIGURE_FORMAT:-png}"
+FIGURE_DPI="${FIGURE_DPI:-300}"
+TITLE_PREFIX="${TITLE_PREFIX:-}"
+CUSTOM_SUPTITLE="${CUSTOM_SUPTITLE:-}"
+NO_TITLES="${NO_TITLES:-0}"
+FONT_SCALE="${FONT_SCALE:-1.0}"
+LINE_WIDTH_SCALE="${LINE_WIDTH_SCALE:-1.0}"
+TRANSPARENT_BG="${TRANSPARENT_BG:-0}"
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --figure-format|--figure_format|--format|-f) FIGURE_FORMAT="$2"; shift 2 ;;
+        --pdf) FIGURE_FORMAT="pdf"; shift ;;
+        --png) FIGURE_FORMAT="png"; shift ;;
+        --dpi|--ppi) FIGURE_DPI="$2"; shift 2 ;;
+        --title-prefix|--title_prefix) TITLE_PREFIX="$2"; shift 2 ;;
+        --custom-suptitle|--custom_suptitle) CUSTOM_SUPTITLE="$2"; shift 2 ;;
+        --no-titles|--no_titles|--hide-titles) NO_TITLES=1; shift ;;
+        --font-scale|--font_scale) FONT_SCALE="$2"; shift 2 ;;
+        --line-width-scale|--line_width_scale) LINE_WIDTH_SCALE="$2"; shift 2 ;;
+        --transparent-bg|--transparent_bg) TRANSPARENT_BG=1; shift ;;
+        *) BASE_OUT_DIR="$1"; shift ;;
+    esac
+done
+
+PLOT_STYLE_ARGS=(
+    --figure_format "$FIGURE_FORMAT"
+    --dpi "$FIGURE_DPI"
+    --font_scale "$FONT_SCALE"
+    --line_width_scale "$LINE_WIDTH_SCALE"
+)
+[[ -n "$TITLE_PREFIX" ]] && PLOT_STYLE_ARGS+=(--title_prefix "$TITLE_PREFIX")
+[[ -n "$CUSTOM_SUPTITLE" ]] && PLOT_STYLE_ARGS+=(--custom_suptitle "$CUSTOM_SUPTITLE")
+[[ "$NO_TITLES" -eq 1 || "$NO_TITLES" == "true" ]] && PLOT_STYLE_ARGS+=(--no_titles)
+[[ "$TRANSPARENT_BG" -eq 1 || "$TRANSPARENT_BG" == "true" ]] && PLOT_STYLE_ARGS+=(--transparent_bg)
+
 LOG_DIR="${BASE_OUT_DIR}/logs"
 CSV_COLLECT_DIR="${BASE_OUT_DIR}/csv_summary"
 FIG_OUT_DIR="${BASE_OUT_DIR}/figures"
@@ -396,7 +432,7 @@ run_targeted_sampling_worker() {
         --output_h5 "${H5_FILE}"
 
     # Post-procesamiento
-    ${PYTHON_BIN} -u cli/postprocess.py \
+    CUDA_VISIBLE_DEVICES="" JAX_PLATFORMS=cpu ${PYTHON_BIN} -u cli/postprocess.py \
         --inputs "${H5_FILE}" \
         --labels "${LABEL}" \
         --out_dir "${POST_DIR}" \
@@ -406,7 +442,7 @@ run_targeted_sampling_worker() {
         --csv_collect_dir "${CSV_COLLECT_DIR}" \
         --plot_observables_comparison \
         --plot_kl_divergence \
-        --figure_format png
+        "${PLOT_STYLE_ARGS[@]}"
 }
 
 # ------------------------------------------------------------------------------
