@@ -27,8 +27,24 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import matplotlib.pyplot as plt
+import matplotlib.gridspec as gridspec
 import numpy as np
 import pandas as pd
+
+# Añadir raíz del proyecto al path para importar módulos rl_vmc
+ROOT_PROJECT = Path(__file__).resolve().parent.parent
+if str(ROOT_PROJECT) not in sys.path:
+    sys.path.insert(0, str(ROOT_PROJECT))
+
+try:
+    import h5py
+except ImportError:
+    h5py = None
+
+try:
+    from rl_vmc.postprocess.casscf_baseline import compute_exact_casscf_1body_density
+except ImportError:
+    compute_exact_casscf_1body_density = None
 
 # Colores y estilo de publicación
 COLOR_MALA = "#D95F02"      # Naranja rojizo para MALA clásico
@@ -590,6 +606,370 @@ def plot_speedup_scaling_summary(
     print(f"[Gráfica] Guardada figura resumen en: {out_file}")
 
 
+def resolve_casscf_reference_state(system_tag: str, root_dir: Path) -> Optional[Dict[str, Any]]:
+    """Busca y calcula la densidad analítica CASSCF exacta para el sistema."""
+    search_dirs = [
+        root_dir / "figures",
+        root_dir.parent / "figures",
+        Path("figures"),
+        ROOT_PROJECT / "figures",
+    ]
+    npz_candidates = []
+    if "N4" in system_tag:
+        target_patterns = ["*n4*g1*det6*.npz", "*n4*det6*.npz", "*n4*.npz"]
+    elif "N8" in system_tag:
+        target_patterns = ["*n8*g1*det70*.npz", "*n8*det70*.npz", "*n8*.npz"]
+    else:
+        target_patterns = ["*.npz"]
+
+    for sdir in search_dirs:
+        if sdir.is_dir():
+            for pat in target_patterns:
+                matches = list(sdir.glob(pat))
+                if matches:
+                    npz_candidates.extend(matches)
+                    break
+        if npz_candidates:
+            break
+
+    if not npz_candidates:
+        return None
+
+    npz_path = npz_candidates[0]
+    x_max = 14.0 if "N4" in system_tag else 20.0
+    if compute_exact_casscf_1body_density is not None:
+        try:
+            res = compute_exact_casscf_1body_density(npz_path, x_min=-x_max, x_max=x_max, n_grid=600)
+            res["npz_path"] = str(npz_path)
+            res["x_max"] = x_max
+            return res
+        except Exception as e:
+            print(f"[Aviso] No se pudo calcular densidad CASSCF exacta desde {npz_path}: {e}")
+    return None
+
+
+def find_best_models_per_initialization(
+    raw_df: pd.DataFrame,
+    system_tag: str,
+) -> Dict[str, Dict[str, Dict[str, Any]]]:
+    """
+    Identifica el Mejor MALA y el Mejor RL-MALA para cada una de las 3 inicializaciones
+    según el criterio de mínimo sesgo absoluto |Delta E| vs CASSCF (o mínima energía).
+    """
+    s_df = raw_df[raw_df["system_tag"] == system_tag].copy()
+    if s_df.empty:
+        return {}
+
+    best_dict: Dict[str, Dict[str, Dict[str, Any]]] = {}
+
+    for init_mode in INIT_ORDER:
+        sub_init = s_df[s_df["init_mode"] == init_mode]
+        if sub_init.empty:
+            continue
+
+        best_dict[init_mode] = {}
+        for m_type in ("MALA", "RL_MALA"):
+            m_sub = sub_init[sub_init["model_type"] == m_type].copy()
+            if m_sub.empty:
+                continue
+
+            # Criterio: mínimo error absoluto |delta_E_vs_CASSCF|
+            if "delta_E_vs_CASSCF" in m_sub.columns and m_sub["delta_E_vs_CASSCF"].notna().any():
+                m_sub["abs_de"] = m_sub["delta_E_vs_CASSCF"].abs()
+                best_row = m_sub.sort_values(by="abs_de", ascending=True).iloc[0]
+            else:
+                best_row = m_sub.sort_values(by="E_mean", ascending=True).iloc[0]
+
+            best_dict[init_mode][m_type] = best_row.to_dict()
+
+    return best_dict
+
+
+def find_and_load_bundle_walkers(run_info: Dict[str, Any], root_dir: Path) -> Optional[Dict[str, Any]]:
+    """Localiza y carga el archivo run_bundle.h5 para extraer las coordenadas de caminantes."""
+    if h5py is None:
+        return None
+
+    r_dir = Path(run_info.get("run_dir", ""))
+    r_name = str(run_info.get("run_name", ""))
+    sys_tag = str(run_info.get("system_tag", ""))
+
+    candidate_paths = [
+        r_dir / "run_bundle.h5",
+        r_dir if str(r_dir).endswith(".h5") else Path("non_existent"),
+        root_dir / sys_tag / r_name / "run_bundle.h5",
+        root_dir / r_name / "run_bundle.h5",
+    ]
+    # Búsqueda por glob recursivo si los anteriores fallan
+    if not any(p.is_file() for p in candidate_paths):
+        glob_matches = list(root_dir.glob(f"**/{r_name}/run_bundle.h5"))
+        if glob_matches:
+            candidate_paths.append(glob_matches[0])
+
+    h5_path = None
+    for p in candidate_paths:
+        if p.is_file() and p.stat().st_size > 10000:
+            h5_path = p
+            break
+
+    if h5_path is None:
+        return None
+
+    try:
+        with h5py.File(h5_path, "r") as f:
+            if "production" not in f or "walkers" not in f["production"]:
+                return None
+            w_all = f["production"]["walkers"][:]
+            
+        w_arr = np.asarray(w_all)
+        if w_arr.ndim == 5:
+            # (n_chains, n_steps, batch_size, n_elec, 1)
+            w_single = w_arr[0, :, 0, :, 0]
+            w_flat = w_arr.squeeze(-1).reshape(-1, w_arr.shape[3])
+        elif w_arr.ndim == 4:
+            # (n_chains, n_steps, batch_size, n_elec)
+            w_single = w_arr[0, :, 0, :]
+            w_flat = w_arr.reshape(-1, w_arr.shape[3])
+        else:
+            w_single = w_arr[0, :, 0]
+            w_flat = w_arr.reshape(-1, w_arr.shape[-1])
+
+        return {
+            "h5_path": str(h5_path),
+            "w_single": w_single,
+            "w_flat": w_flat,
+            "n_steps": int(w_single.shape[0]),
+            "n_elec": int(w_single.shape[1]),
+        }
+    except Exception as exc:
+        print(f"[Aviso] No se pudieron cargar caminantes desde {h5_path}: {exc}")
+        return None
+
+
+def plot_best_models_walker_traces(
+    best_models: Dict[str, Dict[str, Dict[str, Any]]],
+    system_tag: str,
+    casscf_ref: Optional[Dict[str, Any]],
+    out_dir: Path,
+    root_dir: Path,
+    fmt: str = "png",
+    dpi: int = 300,
+) -> None:
+    """
+    Genera figura de trazas temporales de 1 solo caminante junto con el histograma marginal
+    y la superposición exacta CASSCF para el Mejor MALA vs Mejor RL-MALA en las 3 inicializaciones.
+    """
+    init_modes = [k for k in INIT_ORDER if k in best_models and len(best_models[k]) > 0]
+    if not init_modes:
+        return
+
+    # Verificar si al menos un modelo tiene archivo .h5 disponible
+    loaded_data: Dict[Tuple[str, str], Dict[str, Any]] = {}
+    for im in init_modes:
+        for mt in ("MALA", "RL_MALA"):
+            if mt in best_models[im]:
+                w_dict = find_and_load_bundle_walkers(best_models[im][mt], root_dir)
+                if w_dict is not None:
+                    loaded_data[(im, mt)] = w_dict
+
+    if not loaded_data:
+        print(f"[Aviso Trazas] No se encontraron archivos run_bundle.h5 para {system_tag}. Omitiendo gráfica de trazas físicas.")
+        return
+
+    n_rows = len(init_modes)
+    fig = plt.figure(figsize=(16.0, 4.4 * n_rows))
+    outer_gs = gridspec.GridSpec(n_rows, 2, hspace=0.35, wspace=0.18)
+
+    x_max = 12.0 if "N4" in system_tag else 18.0
+    if casscf_ref is not None:
+        x_max = float(casscf_ref.get("x_max", x_max))
+
+    for r_idx, im in enumerate(init_modes):
+        for c_idx, mt in enumerate(("MALA", "RL_MALA")):
+            inner_gs = gridspec.GridSpecFromSubplotSpec(
+                1, 2, subplot_spec=outer_gs[r_idx, c_idx], width_ratios=[3.8, 1.1], wspace=0.06
+            )
+            ax_main = fig.add_subplot(inner_gs[0])
+            ax_hist = fig.add_subplot(inner_gs[1], sharey=ax_main)
+            plt.setp(ax_hist.get_yticklabels(), visible=False)
+
+            info = best_models[im].get(mt)
+            w_res = loaded_data.get((im, mt))
+
+            col_label = "Mejor MALA Clásico" if mt == "MALA" else "Mejor RL-MALA (TD3)"
+            init_title = INIT_LABELS.get(im, im).replace("\n", " ")
+
+            if info is None or w_res is None:
+                ax_main.text(0.5, 0.5, "Datos de caminantes no disponibles\n(run_bundle.h5 ausente)",
+                             ha="center", va="center", transform=ax_main.transAxes, color="gray")
+                ax_main.set_title(f"{col_label} | {init_title}", fontsize=10)
+                continue
+
+            w_single = w_res["w_single"]
+            n_steps, n_elec = w_single.shape
+            n_up = int(info.get("n_elec", n_elec) // 2)
+
+            # Submuestreo uniforme para renderizado nítido
+            stride = max(1, n_steps // 2500)
+            steps_sub = np.arange(0, n_steps, stride)
+            w_sub = w_single[::stride, :]
+
+            # Trazas de partículas coloreadas por espín
+            for e_i in range(n_elec):
+                c_spin = "#2980b9" if e_i < n_up else "#c0392b"
+                lbl = r"Spin $\uparrow$" if e_i == 0 else (r"Spin $\downarrow$" if e_i == n_up else None)
+                ls = "--" if mt == "MALA" else "-"
+                ax_main.plot(steps_sub, w_sub[:, e_i], color=c_spin, linestyle=ls, lw=1.2, alpha=0.85, label=lbl)
+
+            ax_main.set_ylim(-x_max, x_max)
+            ax_main.set_ylabel(f"{init_title}\nCoordenada $x$ [Bohr]", fontsize=10)
+            if r_idx == n_rows - 1:
+                ax_main.set_xlabel("Paso MCMC (Cadena 0, Caminante 0)", fontsize=10)
+
+            # Métricas en el título
+            de_val = float(info.get("delta_E_vs_CASSCF", float("nan"))) * 1000.0
+            acc_val = float(info.get("acceptance", float("nan"))) * 100.0
+            esjd_val = float(info.get("ESJD", float("nan")))
+            title_txt = f"{col_label} ({info.get('run_name', '')})\n$\\Delta E = {de_val:+.2f}$ mHa | Acc = {acc_val:.1f}% | ESJD = {esjd_val:.3f}"
+            ax_main.set_title(title_txt, fontsize=10, fontweight="bold")
+            if r_idx == 0 and c_idx == 0:
+                ax_main.legend(loc="upper left", fontsize=8, framealpha=0.85)
+
+            # Histograma marginal en el panel derecho
+            bins = np.linspace(-x_max, x_max, 100)
+            bin_centers = 0.5 * (bins[:-1] + bins[1:])
+            w_flat = w_res["w_flat"]
+            up_vals = w_flat[:, :n_up].ravel()
+            dn_vals = w_flat[:, n_up:].ravel()
+
+            hist_up, _ = np.histogram(up_vals, bins=bins, density=True)
+            hist_dn, _ = np.histogram(dn_vals, bins=bins, density=True)
+
+            ax_hist.fill_betweenx(bin_centers, 0, hist_up, color="#2980b9", alpha=0.40)
+            ax_hist.plot(hist_up, bin_centers, color="#2980b9", lw=1.2)
+            ax_hist.fill_betweenx(bin_centers, 0, hist_dn, color="#c0392b", alpha=0.40)
+            ax_hist.plot(hist_dn, bin_centers, color="#c0392b", lw=1.2)
+
+            # Superponer referencia CASSCF exacta
+            if casscf_ref is not None:
+                # La densidad CASSCF por espín = p_total / 2 para espín cerrado
+                p_spin_cas = np.asarray(casscf_ref["p_total"], dtype=np.float64) / 2.0
+                ax_hist.plot(p_spin_cas, casscf_ref["x"], color="black", linestyle="--", lw=1.6, label="CASSCF Exacto")
+                if r_idx == 0 and c_idx == 1:
+                    ax_hist.legend(loc="upper right", fontsize=7, framealpha=0.85)
+
+            ax_hist.set_xlabel("$\\rho(x)$", fontsize=9)
+            ax_hist.set_xlim(0, max(np.max(hist_up), np.max(hist_dn), 0.1) * 1.25)
+
+    plt.suptitle(
+        f"Trazas Temporales de 1 Caminante y Distribuciones Marginales vs Benchmark CASSCF Exacto ({system_tag})",
+        fontsize=13, fontweight="bold", y=0.99
+    )
+
+    out_file = out_dir / f"benchmark_walker_traces_{system_tag}.{fmt}"
+    fig.savefig(out_file, dpi=dpi, bbox_inches="tight")
+    plt.close(fig)
+    print(f"[Gráfica] Guardada figura de trazas individuales en: {out_file}")
+
+
+def plot_best_models_density_distributions(
+    best_models: Dict[str, Dict[str, Dict[str, Any]]],
+    system_tag: str,
+    casscf_ref: Optional[Dict[str, Any]],
+    out_dir: Path,
+    root_dir: Path,
+    fmt: str = "png",
+    dpi: int = 300,
+) -> None:
+    """
+    Genera figura de 6 subplots comparando la densidad de 1 cuerpo muestreada
+    por el Mejor MALA y el Mejor RL-MALA contra el benchmark CASSCF exacto para cada inicialización.
+    """
+    init_modes = [k for k in INIT_ORDER if k in best_models and len(best_models[k]) > 0]
+    if not init_modes:
+        return
+
+    n_rows = len(init_modes)
+    fig, axes = plt.subplots(n_rows, 2, figsize=(15.0, 4.0 * n_rows), sharex=True, sharey=True, squeeze=False)
+
+    x_max = 12.0 if "N4" in system_tag else 18.0
+    if casscf_ref is not None:
+        x_max = float(casscf_ref.get("x_max", x_max))
+
+    for r_idx, im in enumerate(init_modes):
+        init_title = INIT_LABELS.get(im, im).replace("\n", " ")
+        for c_idx, mt in enumerate(("MALA", "RL_MALA")):
+            ax = axes[r_idx, c_idx]
+            info = best_models[im].get(mt)
+            col_label = "Mejor MALA Clásico" if mt == "MALA" else "Mejor RL-MALA (TD3)"
+
+            if info is None:
+                ax.text(0.5, 0.5, "Modelo no evaluado", ha="center", va="center", transform=ax.transAxes, color="gray")
+                continue
+
+            w_res = find_and_load_bundle_walkers(info, root_dir)
+            de_val = float(info.get("delta_E_vs_CASSCF", float("nan"))) * 1000.0
+            acc_val = float(info.get("acceptance", float("nan"))) * 100.0
+            esjd_val = float(info.get("ESJD", float("nan")))
+
+            # 1. Superponer Benchmark CASSCF Exacto
+            if casscf_ref is not None:
+                x_cas = casscf_ref["x"]
+                rho_tot_cas = casscf_ref["rho_total"]
+                ax.plot(x_cas, rho_tot_cas, color="#008000", lw=2.2, linestyle="-", label="CASSCF Exacto (Total)")
+                if "rho_up" in casscf_ref and "rho_down" in casscf_ref:
+                    ax.plot(x_cas, casscf_ref["rho_up"], color="#2980b9", lw=1.1, linestyle=":", label=r"CASSCF $\uparrow$")
+                    ax.plot(x_cas, casscf_ref["rho_down"], color="#c0392b", lw=1.1, linestyle=":", label=r"CASSCF $\downarrow$")
+
+            # 2. Graficar densidades muestreadas si los caminantes están disponibles
+            if w_res is not None:
+                w_flat = w_res["w_flat"]
+                n_elec = w_res["n_elec"]
+                n_up = n_elec // 2
+                bins = np.linspace(-x_max, x_max, 120)
+                bin_centers = 0.5 * (bins[:-1] + bins[1:])
+
+                up_vals = w_flat[:, :n_up].ravel()
+                dn_vals = w_flat[:, n_up:].ravel()
+
+                hist_up, _ = np.histogram(up_vals, bins=bins, density=True)
+                hist_dn, _ = np.histogram(dn_vals, bins=bins, density=True)
+                # Escalar por número de partículas para obtener rho(x) con integral = N
+                rho_up = hist_up * n_up
+                rho_dn = hist_dn * (n_elec - n_up)
+                rho_tot = rho_up + rho_dn
+
+                ls = "--" if mt == "MALA" else "-"
+                ax.fill_between(bin_centers, rho_up, color="#2980b9", alpha=0.35, label=r"Muestreado $\rho_\uparrow(x)$")
+                ax.fill_between(bin_centers, rho_dn, color="#c0392b", alpha=0.35, label=r"Muestreado $\rho_\downarrow(x)$")
+                ax.plot(bin_centers, rho_tot, color="black", linestyle=ls, lw=2.0, label=f"Muestreado Total ({mt})")
+            else:
+                ax.text(0.5, 0.4, "Densidad muestreada requiere run_bundle.h5\n(mostrando benchmark CASSCF)",
+                        ha="center", va="center", transform=ax.transAxes, color="#555555", fontsize=9)
+
+            ax.set_xlim(-x_max, x_max)
+            if c_idx == 0:
+                ax.set_ylabel(f"{init_title}\nDensidad $\\rho(x)$", fontsize=10)
+            if r_idx == n_rows - 1:
+                ax.set_xlabel("Coordenada $x$ [Bohr]", fontsize=10)
+
+            # Anotación cuantitativa en esquina superior
+            annot_txt = f"{col_label} ({info.get('run_name', '')})\n$\\Delta E = {de_val:+.2f}$ mHa | Acc = {acc_val:.1f}% | ESJD = {esjd_val:.3f}"
+            ax.set_title(annot_txt, fontsize=10, fontweight="bold")
+            if r_idx == 0 and c_idx == 0:
+                ax.legend(loc="upper left", fontsize=8, framealpha=0.9)
+
+    plt.suptitle(
+        f"Distribuciones de Densidad Muestreadas vs Benchmark CASSCF Exacto ({system_tag})",
+        fontsize=13, fontweight="bold", y=0.99
+    )
+
+    out_file = out_dir / f"benchmark_densities_vs_casscf_{system_tag}.{fmt}"
+    fig.savefig(out_file, dpi=dpi, bbox_inches="tight")
+    plt.close(fig)
+    print(f"[Gráfica] Guardada figura de densidades vs CASSCF en: {out_file}")
+
+
 def export_markdown_and_csv_reports(agg_df: pd.DataFrame, out_dir: Path) -> None:
     """Genera tabla ejecutiva en CSV y en Markdown."""
     csv_file = out_dir / "initialization_benchmark_summary_table.csv"
@@ -698,7 +1078,19 @@ def main() -> None:
     fmts = ["png", "pdf"] if args.format == "both" else [args.format]
     for fmt in fmts:
         for sys_tag in agg_df["system_tag"].unique():
+            casscf_ref = resolve_casscf_reference_state(sys_tag, root_dir)
+            best_models = find_best_models_per_initialization(raw_df, sys_tag)
+            
+            # 1. Panel de barras comparativas agregadas
             plot_system_initialization_comparison(agg_df, sys_tag, out_dir, fmt=fmt, dpi=args.dpi)
+            
+            # 2. Trazas individuales de 1 caminante (Mejor MALA vs Mejor RL-MALA)
+            plot_best_models_walker_traces(best_models, sys_tag, casscf_ref, out_dir, root_dir, fmt=fmt, dpi=args.dpi)
+            
+            # 3. Distribuciones de densidad muestreadas vs Benchmark CASSCF Exacto
+            plot_best_models_density_distributions(best_models, sys_tag, casscf_ref, out_dir, root_dir, fmt=fmt, dpi=args.dpi)
+
+        # 4. Resumen global de factores de aceleración y descorrelación
         plot_speedup_scaling_summary(agg_df, out_dir, fmt=fmt, dpi=args.dpi)
 
     print("[Benchmark] Post-procesamiento y graficación completados con éxito.")
