@@ -239,6 +239,81 @@ def collect_benchmark_data(root_dir: Path) -> pd.DataFrame:
         except Exception as e:
             print(f"[Aviso] No se pudo leer master_csv: {e}")
 
+    # Fallback: Parsear directamente los archivos .log en root_dir / "logs" o root_dir
+    if not records:
+        import re
+        log_files = sorted(list(root_dir.glob("logs/*.log")) + list(root_dir.glob("*.log")))
+        cas_energies = {
+            "N4_g1.0": 1.9486219356652614,
+            "N8_g1.0": 21.723051632802946,
+        }
+        for lfile in log_files:
+            bname = lfile.stem
+            if bname in ("master_benchmark", "realtime_global_plots") or bname.startswith("postprocess_"):
+                continue
+            m = re.match(r"(N\d+)_w([\d\.]+)_g([\d\.]+)_([A-Za-z0-9_]+)_(alt_spin|sym_gauss|uniform)_exp(\d+)", bname)
+            if not m:
+                continue
+            n_str, w_str, g_str, model_raw, init_tag, exp_id = m.groups()
+            n_elec = int(n_str.replace("N", ""))
+            g_val = float(g_str)
+            omega = float(w_str)
+            sys_tag = f"N{n_elec}_g{g_val}"
+            init_mode = {
+                "alt_spin": "alternating_spin",
+                "sym_gauss": "symmetric_gaussian",
+                "uniform": "uniform",
+            }.get(init_tag, init_tag)
+            model_type = "RL_MALA" if ("RL_MALA" in model_raw or "TD3" in model_raw) else "MALA"
+
+            try:
+                content = lfile.read_text(encoding="utf-8")
+            except Exception:
+                continue
+
+            chain_matches = re.findall(
+                r"\[Cadena (\d+)\] <E> = ([\d\.]+) \+/- ([\d\.]+) Ha \| Acc = ([\d\.]+)% \| ESJD = ([\d\.]+) \| t = ([\d\.]+)s",
+                content,
+            )
+            if not chain_matches:
+                continue
+
+            e_vals = [float(cm[1]) for cm in chain_matches]
+            se_vals = [float(cm[2]) for cm in chain_matches]
+            acc_vals = [float(cm[3]) / 100.0 for cm in chain_matches]
+            esjd_vals = [float(cm[4]) for cm in chain_matches]
+            t_vals = [float(cm[5]) for cm in chain_matches]
+
+            cas_e = cas_energies.get(sys_tag, float("nan"))
+            e_mean = float(np.mean(e_vals))
+            delta_e = e_mean - cas_e if np.isfinite(cas_e) else float("nan")
+
+            records.append({
+                "run_dir": str(lfile.parent),
+                "run_name": bname,
+                "n_elec": n_elec,
+                "g": g_val,
+                "omega": omega,
+                "system_tag": sys_tag,
+                "init_mode": init_mode,
+                "model_type": model_type,
+                "seed": int(exp_id),
+                "E_mean": e_mean,
+                "SE_E": float(np.mean(se_vals)),
+                "E_var": float(np.var(e_vals)),
+                "tau_int_E": float("nan"),
+                "tau_int_pos": float("nan"),
+                "ESS": float("nan"),
+                "ESS_per_sec": float("nan"),
+                "acceptance": float(np.mean(acc_vals)),
+                "ESJD": float(np.mean(esjd_vals)),
+                "wall_time_sec": float(np.sum(t_vals)),
+                "casscf_energy": cas_e,
+                "delta_E_vs_CASSCF": delta_e,
+                "kl_total": float("nan"),
+                "kl_spin": float("nan"),
+            })
+
     df = pd.DataFrame(records)
     if not df.empty:
         # Deduplicar por run_name
@@ -585,6 +660,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Graficador y Generador de Tablas del Benchmark de Inicializaciones.")
     parser.add_argument("results_dir", type=str, help="Carpeta raíz con los resultados del benchmark.")
     parser.add_argument("--out_dir", type=str, default=None, help="Carpeta de salida para figuras y reportes (por defecto: results_dir/figures).")
+    parser.add_argument("--system", "-s", type=str, default="all", help="Filtrar por sistema específico (ej. N4, N8, all).")
     parser.add_argument("--format", "-f", type=str, default="png", choices=["png", "pdf", "both"], help="Formato de exportación gráfica.")
     parser.add_argument("--dpi", type=int, default=300, help="Resolución en puntos por pulgada.")
     parser.add_argument("--font_scale", type=float, default=1.0, help="Escala de fuentes tipográficas.")
@@ -606,6 +682,13 @@ def main() -> None:
     if raw_df.empty:
         print(f"[Aviso] No se encontraron corridas en {root_dir}. Verifica la ruta.")
         sys.exit(0)
+
+    if args.system != "all":
+        s_target = "N4" if "4" in args.system else "N8"
+        raw_df = raw_df[raw_df["system_tag"].str.contains(s_target)].copy()
+        if raw_df.empty:
+            print(f"[Aviso] No se encontraron corridas para el sistema {args.system}.")
+            sys.exit(0)
 
     print(f"[Benchmark] Encontradas {len(raw_df)} corridas individuales.")
     agg_df = aggregate_statistics(raw_df)

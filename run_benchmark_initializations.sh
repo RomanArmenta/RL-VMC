@@ -566,6 +566,19 @@ else
                 "$N4_MALA_TAU" "$N4_RL_TAU" "$N4_RL_AMP" "$N4_RL_PEN" "$N4_RL_SIG" \
                 "$N4_SIGMA_ENV" "$N4_BOX_HALF"
 
+            log_msg "[COLA] Esperando finalización de trabajos para N4..."
+            wait_all_slots
+            log_msg "[OK] Simulaciones de N4 finalizadas. Generando figuras preliminares de N4..."
+            "$PYTHON_BIN" scripts/plot_initialization_benchmark.py \
+                "$OUT_ROOT" \
+                --system N4 \
+                --out_dir "$FIG_DIR" \
+                --format "$FIGURE_FORMAT" \
+                --dpi "$FIGURE_DPI" \
+                --font_scale "$FONT_SCALE" \
+                --line_width_scale "$LINE_WIDTH_SCALE" \
+                2>&1 | tee -a "$MASTER_LOG" || true
+
             run_benchmark_for_system "N8_w0.1_g1.0" "$NPZ_N8" \
                 "$N8_ELEC" "$N8_UP" "$N8_DN" "$N8_OMEGA" "$N8_G" "$N8_SOFT" \
                 "$N8_MALA_TAU" "$N8_RL_TAU" "$N8_RL_AMP" "$N8_RL_PEN" "$N8_RL_SIG" \

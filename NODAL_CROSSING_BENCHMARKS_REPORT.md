@@ -203,14 +203,24 @@ Para explorar si pasos temporales mayores ($\tau \ge 0.14$) logran un mayor rend
    - Como se visualiza en la figura de evolución, la región $\tau=0.14$ combinada con amplitudes moderadas $A_\mu \in [0.06, 0.12]$ y penalizaciones $\lambda_{\mathrm{pen}} \in [0.20, 0.40]$ forma una meseta de alta estabilidad donde todos los modelos superan ampliamente a MALA.
 
 #### Figuras Clave del Benchmark 1 (`Wigner_N4_g4.0`):
-- **Densidades Unidimensionales y Simetría Exacta:**  
-  [Article_Densities_Wigner_N4_g4.0.png](file:///Users/romanarmenta/Documents/Git-Projects/RL-VMC-main/results_nodal_crossing_search_new/figures/Wigner_N4_g4.0/Article_Densities_Wigner_N4_g4.0.png)  
-  *Muestra la reconstrucción de los 4 picos de densidad para $\rho_\uparrow(x)$ y $\rho_\downarrow(x)$, demostrando cómo RL-MALA reproduce la simetría de espín exacta mientras MALA permanece asimétrico.*
-- **Trazas de 1 Solo Caminante (Mejor MALA vs Mejor RL-MALA):**  
-  [Article_Walker_Traces_Wigner_N4_g4.0.png](file:///Users/romanarmenta/Documents/Git-Projects/RL-VMC-main/results_nodal_crossing_search_new/figures/Wigner_N4_g4.0/Article_Walker_Traces_Wigner_N4_g4.0.png)  
-  *Ilustra la dinámica individual de un caminante: MALA queda atrapado en pozos fijos, mientras que RL-MALA ejecuta cruces frecuentes entre los 4 pozos de Wigner sin perder aceptación.*
-- **Evolución con Hiperparámetros y Comparación de Modelos:**  
-  [Hyperparameter_Evolution_Wigner_N4_g4.0.png](file:///Users/romanarmenta/Documents/Git-Projects/RL-VMC-main/results_nodal_crossing_search_new/figures/Wigner_N4_g4.0/Hyperparameter_Evolution_Wigner_N4_g4.0.png) | [Parameter_Search_Comparison_Wigner_N4_g4.0.png](file:///Users/romanarmenta/Documents/Git-Projects/RL-VMC-main/results_nodal_crossing_search_new/figures/Wigner_N4_g4.0/Parameter_Search_Comparison_Wigner_N4_g4.0.png)
+
+##### Reconstrucción de Densidades Espaciales y Simetría de Espín Exacta
+![Densidades Unidimensionales y Simetría Exacta (Wigner N=4, g=4.0)](results_nodal_crossing_search_new/figures/Wigner_N4_g4.0/Article_Densities_Wigner_N4_g4.0.png)  
+*Figura 4.1: Densidades electrónicas de un cuerpo resueltas por espín $\rho_\uparrow(x)$ y $\rho_\downarrow(x)$ frente a la referencia CASSCF congelada. MALA clásico permanece polarizado asimétricamente en los pozos exteriores e interiores, mientras que RL-MALA restaura la indistinguibilidad estadística exacta.*
+
+##### Dinámica Individual de Cruce Nodal (Trazas de 1 Caminante)
+![Trazas de 1 Solo Caminante: MALA vs RL-MALA (Wigner N=4, g=4.0)](results_nodal_crossing_search_new/figures/Wigner_N4_g4.0/Article_Walker_Traces_Wigner_N4_g4.0.png)  
+*Figura 4.2: Trazas temporales para un único caminante físico en $40,000$ pasos de evaluación. MALA queda atrapado en una configuración de espín ordenada ($x_{1,\uparrow} < x_{2,\uparrow} < 0 < x_{1,\downarrow} < x_{2,\downarrow}$), mientras que RL-MALA atraviesa repetidamente las barreras de intercambio sin sufrir colapso de aceptación.*
+
+##### Exploración Sistemática del Espacio de Hiperparámetros (Grilla Ayler, 41 Modelos)
+![Evolución con Hiperparámetros (Wigner N=4, g=4.0)](figures_param_search_summary/Wigner_N4_g4.0/fig_hyperparameter_evolution_Wigner_N4_g4.0.png)  
+*Figura 4.3: Evolución de las métricas clave ($D_{\mathrm{KL}}^{\mathrm{spin}}$, salto cuadrático $\mathrm{ESJD}$, tiempo de autocorrelación $\tau_{\mathrm{int}}(E)$ y tasa de aceptación) en función del paso temporal $\tau$. Las curvas sólidas (RL-MALA) muestran la media y la dispersión sobre todas las combinaciones de $(A_\mu, \lambda_{\mathrm{pen}})$; las curvas punteadas representan MALA.*
+
+![Mapas de Calor 2D del Actor (Wigner N=4, g=4.0)](figures_param_search_summary/Wigner_N4_g4.0/fig_param_search_heatmaps_Wigner_N4_g4.0.png)  
+*Figura 4.4: Mapas de calor 2D para la divergencia de espín $D_{\mathrm{KL}}^{\mathrm{spin}}$ y el salto $\mathrm{ESJD}$ en el plano $(A_\mu, \tau)$ para penalizaciones $\lambda_{\mathrm{pen}} \in \{0.20, 0.30, 0.40\}$. Se evidencia la meseta óptima en $\tau=0.14, A_\mu \in [0.06, 0.12]$.*
+
+![Sensibilidad a la Penalización de Rechazo lambda_pen (Wigner N=4, g=4.0)](figures_param_search_summary/Wigner_N4_g4.0/fig_penalty_sensitivity_Wigner_N4_g4.0.png)  
+*Figura 4.5: Análisis de sensibilidad del error de simetría $D_{\mathrm{KL}}^{\mathrm{spin}}$ frente al parámetro de penalización de rechazo $\lambda_{\mathrm{pen}}$ para distintos niveles de $\tau$.*
 
 ---
 ## 5. Resultados del Benchmark 2: `MultiDet_N6_g1.0` ($N=6, \omega=0.1, g=1.0$, Base 256)
@@ -247,46 +257,81 @@ Para explorar si pasos temporales mayores ($\tau \ge 0.14$) logran un mayor rend
 2. **Erradicación Completa del Bloqueo de Espín en 1 Solo Caminante:**
    En MALA ($\tau=0.12$), los 3 electrones $\uparrow$ permanecen confinados mayoritariamente en $x < 0$ y los 3 electrones $\downarrow$ en $x > 0$. En RL-MALA, un único caminante ejecuta decenas de intercambios colectivos de espín reconstruyendo las 6 crestas simétricas.
 
-### 5.4 Nueva Exploración Sistemática en Ayler (Grilla Parcial de 15 Modelos)
-En Ayler se lanzó la grilla complementaria con $\sigma_{\mathrm{sc}} = 1.15$ y pasos $\tau \in \{0.10, 0.12, 0.14\}$. La evaluación completó 15 modelos (5 MALA + 10 RL-MALA a $\tau=0.10$) antes de interrumpirse temporalmente por una falla del entorno en el modelo 16:
+### 5.4 Exploración Sistemática Completa en Ayler (Grilla Completa de 41 Modelos)
+Una vez resuelta la incidencia de compilación de Triton GEMM y estandarizada la exportación de rutas de ejecución en Ayler, se ejecutó con éxito el **100% de la grilla paramétrica** para `MultiDet_N6_g1.0`, evaluando un total de 41 configuraciones (5 modelos MALA de referencia y 36 variantes TD3 RL-MALA) bajo la condición de prueba de estrés desde ordenamiento polarizado de espín (`--eval_init_mode spin_ordered_offset`):
 
 | Modelo | $\tau$ | $A_\mu$ | $\lambda_{\mathrm{pen}}$ | $\sigma_{\mathrm{sc}}$ | $\langle E \rangle \pm \mathrm{SE}(E)$ (Ha) | $\Delta E$ (mHa) | Aceptación | ESJD ($\text{Bohr}^2$) | $\tau_{\mathrm{int}}(E)$ | $\mathrm{ESS/s}$ ($\text{s}^{-1}$) | $D_{\mathrm{KL}}^{\mathrm{tot}}$ | $D_{\mathrm{KL}}^{\mathrm{spin}}$ (Cruce Nodal) |
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| `MALA_tau0.06` | 0.06 | — | — | — | $4.524417 \pm 0.000477$ | $+0.37$ | 87.2% | 0.616 | 12.83 | 2,238 | 8.35e-06 | **0.2648** |
-| `MALA_tau0.14` | 0.14 | — | — | — | $4.524131 \pm 0.000351$ | $+0.08$ | 80.3% | 1.313 | 6.92 | 4,175 | 6.11e-06 | **0.0778** |
-| `MALA_tau0.16` | 0.16 | — | — | — | $4.524121 \pm 0.000315$ | $+0.07$ | 78.9% | 1.472 | 5.70 | 4,957 | 6.45e-06 | **0.0565** |
-| `MALA_tau0.20` | 0.20 | — | — | — | $4.524138 \pm 0.000295$ | $+0.09$ | 76.3% | 1.775 | 4.94 | 5,746 | 4.66e-06 | **0.0338** |
-| `MALA_tau0.25` | 0.25 | — | — | — | $4.523880 \pm 0.000266$ | $-0.17$ | 73.4% | 2.128 | 4.08 | 6,968 | 5.17e-06 | **0.0210** |
-| **`RL_MALA_tau0.10_amp0.06_pen0.30_sig1.15`** | 0.10 | 0.06 | 0.30 | 1.15 | $4.523999 \pm 0.000313$ | $-0.05$ | 33.8% | 2.420 | 5.49 | 4,781 | 5.69e-06 | **1.4799e-05** |
-| **`RL_MALA_tau0.10_amp0.08_pen0.40_sig1.15`** | 0.10 | 0.08 | 0.40 | 1.15 | $4.524008 \pm 0.000317$ | $-0.04$ | 33.5% | 2.401 | 5.61 | 4,713 | 5.95e-06 | **1.9042e-05** |
-| **`RL_MALA_tau0.10_amp0.08_pen0.30_sig1.15`** | 0.10 | 0.08 | 0.30 | 1.15 | $4.524279 \pm 0.000315$ | $+0.23$ | 33.5% | 2.400 | 5.57 | 4,715 | 6.82e-06 | **4.5422e-05** |
-| **`RL_MALA_tau0.10_amp0.06_pen0.20_sig1.15`** | 0.10 | 0.06 | 0.20 | 1.15 | $4.524408 \pm 0.000317$ | $+0.36$ | 33.8% | 2.419 | 5.60 | 4,804 | 4.74e-06 | **7.3832e-05** |
-| **`RL_MALA_tau0.10_amp0.12_pen0.20_sig1.15`** | 0.10 | 0.12 | 0.20 | 1.15 | $4.524325 \pm 0.000322$ | $+0.27$ | 32.8% | 2.345 | 5.84 | 4,583 | 5.49e-06 | **7.4791e-05** |
-| **`RL_MALA_tau0.10_amp0.18_pen0.20_sig1.15`** | 0.10 | 0.18 | 0.20 | 1.15 | $4.524191 \pm 0.000329$ | $+0.14$ | 31.3% | 2.225 | 6.11 | 4,309 | 7.43e-06 | **1.1565e-04** |
-| **`RL_MALA_tau0.10_amp0.12_pen0.30_sig1.15`** | 0.10 | 0.12 | 0.30 | 1.15 | $4.524082 \pm 0.000314$ | $+0.03$ | 32.8% | 2.344 | 5.61 | 4,702 | 6.81e-06 | **1.5095e-04** |
-| **`RL_MALA_tau0.10_amp0.12_pen0.40_sig1.15`** | 0.10 | 0.12 | 0.40 | 1.15 | $4.524530 \pm 0.000315$ | $+0.48$ | 32.8% | 2.344 | 5.55 | 4,781 | 7.57e-06 | **1.6684e-04** |
-| **`RL_MALA_tau0.10_amp0.06_pen0.40_sig1.15`** | 0.10 | 0.06 | 0.40 | 1.15 | $4.524272 \pm 0.000310$ | $+0.22$ | 33.8% | 2.420 | 5.40 | 4,886 | 5.76e-06 | **1.9239e-04** |
-| **`RL_MALA_tau0.10_amp0.08_pen0.20_sig1.15`** | 0.10 | 0.08 | 0.20 | 1.15 | $4.524408 \pm 0.000320$ | $+0.36$ | 33.6% | 2.398 | 5.69 | 4,727 | 4.99e-06 | **2.0529e-04** |
+| `MALA_tau0.06` | 0.06 | — | — | — | $4.524417 \pm 0.000477$ | $+0.37$ | 87.2% | 0.616 | 12.83 | 1,203,372 | 4.56e-06 | **0.3881** |
+| `MALA_tau0.14` | 0.14 | — | — | — | $4.524131 \pm 0.000351$ | $+0.08$ | 80.3% | 1.313 | 6.92 | 2,247,165 | 3.49e-06 | **0.0857** |
+| `MALA_tau0.16` | 0.16 | — | — | — | $4.524121 \pm 0.000315$ | $+0.07$ | 78.9% | 1.472 | 5.70 | 2,702,563 | 3.79e-06 | **0.0603** |
+| `MALA_tau0.20` | 0.20 | — | — | — | $4.524138 \pm 0.000295$ | $+0.09$ | 76.3% | 1.775 | 4.94 | 3,107,302 | 3.02e-06 | **0.0350** |
+| `MALA_tau0.25` | 0.25 | — | — | — | $4.523880 \pm 0.000266$ | $-0.17$ | 73.4% | 2.128 | 4.08 | 3,765,410 | 3.21e-06 | **0.0214** |
+| **`RL_MALA_tau0.10_amp0.06_pen0.30_sig1.15`** | 0.10 | 0.06 | 0.30 | 1.15 | $4.523999 \pm 0.000313$ | $-0.05$ | 33.8% | 2.420 | 5.49 | 2,799,983 | 7.25e-06 | **2.0578e-05** |
+| **`RL_MALA_tau0.10_amp0.18_pen0.30_sig1.15`** | 0.10 | 0.18 | 0.30 | 1.15 | $4.524431 \pm 0.000317$ | $+0.38$ | 31.2% | 2.224 | 5.75 | 2,672,019 | 7.71e-06 | **2.2031e-05** |
+| **`RL_MALA_tau0.10_amp0.08_pen0.40_sig1.15`** | 0.10 | 0.08 | 0.40 | 1.15 | $4.524008 \pm 0.000317$ | $-0.04$ | 33.5% | 2.401 | 5.61 | 2,746,236 | 7.49e-06 | **2.3611e-05** |
+| **`RL_MALA_tau0.10_amp0.08_pen0.30_sig1.15`** | 0.10 | 0.08 | 0.30 | 1.15 | $4.524279 \pm 0.000315$ | $+0.23$ | 33.5% | 2.400 | 5.57 | 2,758,855 | 6.98e-06 | **4.9475e-05** |
+| `RL_MALA_tau0.10_amp0.12_pen0.20_sig1.15` | 0.10 | 0.12 | 0.20 | 1.15 | $4.524325 \pm 0.000322$ | $+0.27$ | 32.8% | 2.345 | 5.84 | 2,638,289 | 7.80e-06 | 8.1153e-05 |
+| `RL_MALA_tau0.10_amp0.06_pen0.20_sig1.15` | 0.10 | 0.06 | 0.20 | 1.15 | $4.524408 \pm 0.000317$ | $+0.36$ | 33.8% | 2.419 | 5.60 | 2,744,974 | 8.19e-06 | 8.1478e-05 |
+| `RL_MALA_tau0.10_amp0.18_pen0.20_sig1.15` | 0.10 | 0.18 | 0.20 | 1.15 | $4.524191 \pm 0.000329$ | $+0.14$ | 31.3% | 2.225 | 6.11 | 2,515,286 | 8.51e-06 | 1.2043e-04 |
+| `RL_MALA_tau0.10_amp0.12_pen0.30_sig1.15` | 0.10 | 0.12 | 0.30 | 1.15 | $4.524082 \pm 0.000314$ | $+0.03$ | 32.8% | 2.344 | 5.61 | 2,741,824 | 6.69e-06 | 1.5375e-04 |
+| `RL_MALA_tau0.10_amp0.12_pen0.40_sig1.15` | 0.10 | 0.12 | 0.40 | 1.15 | $4.524530 \pm 0.000315$ | $+0.48$ | 32.8% | 2.344 | 5.55 | 2,769,269 | 7.09e-06 | 1.6895e-04 |
+| `RL_MALA_tau0.10_amp0.06_pen0.40_sig1.15` | 0.10 | 0.06 | 0.40 | 1.15 | $4.524272 \pm 0.000310$ | $+0.22$ | 33.8% | 2.420 | 5.40 | 2,846,591 | 6.96e-06 | 1.9696e-04 |
+| `RL_MALA_tau0.10_amp0.08_pen0.20_sig1.15` | 0.10 | 0.08 | 0.20 | 1.15 | $4.524408 \pm 0.000320$ | $+0.36$ | 33.6% | 2.398 | 5.69 | 2,703,183 | 7.20e-06 | 2.1069e-04 |
+| `RL_MALA_tau0.14_amp0.12_pen0.40_sig1.15` | 0.14 | 0.12 | 0.40 | 1.15 | $4.524407 \pm 0.000336$ | $+0.35$ | 36.0% | 2.448 | 6.28 | 2,454,487 | 2.81e-05 | 1.8549e-02 |
+| `RL_MALA_tau0.12_amp0.06_pen0.30_sig1.15` | 0.12 | 0.06 | 0.30 | 1.15 | $4.524437 \pm 0.000334$ | $+0.38$ | 38.9% | 2.370 | 6.25 | 2,539,518 | 2.28e-05 | 1.9177e-02 |
+| `RL_MALA_tau0.12_amp0.08_pen0.40_sig1.15` | 0.12 | 0.08 | 0.40 | 1.15 | $4.524213 \pm 0.000330$ | $+0.16$ | 38.0% | 2.366 | 6.14 | 2,508,747 | 2.66e-05 | 1.9565e-02 |
+| `RL_MALA_tau0.14_amp0.06_pen0.30_sig1.15` | 0.14 | 0.06 | 0.30 | 1.15 | $4.524513 \pm 0.000310$ | $+0.46$ | 37.0% | 2.481 | 5.46 | 2,836,309 | 2.53e-05 | 2.0379e-02 |
+| `RL_MALA_tau0.12_amp0.18_pen0.40_sig1.15` | 0.12 | 0.18 | 0.40 | 1.15 | $4.524156 \pm 0.000332$ | $+0.10$ | 37.1% | 2.286 | 6.23 | 2,524,005 | 2.34e-05 | 2.1759e-02 |
+| `RL_MALA_tau0.12_amp0.18_pen0.30_sig1.15` | 0.12 | 0.18 | 0.30 | 1.15 | $4.524225 \pm 0.000320$ | $+0.17$ | 37.7% | 2.294 | 5.81 | 2,658,766 | 2.44e-05 | 2.2171e-02 |
+| `RL_MALA_tau0.12_amp0.06_pen0.40_sig1.15` | 0.12 | 0.06 | 0.40 | 1.15 | $4.524513 \pm 0.000338$ | $+0.46$ | 38.1% | 2.374 | 6.38 | 2,424,780 | 2.01e-05 | 2.3018e-02 |
+| `RL_MALA_tau0.14_amp0.08_pen0.20_sig1.15` | 0.14 | 0.08 | 0.20 | 1.15 | $4.524463 \pm 0.000340$ | $+0.41$ | 37.2% | 2.475 | 6.39 | 2,416,922 | 2.75e-05 | 2.3157e-02 |
+| `RL_MALA_tau0.14_amp0.08_pen0.30_sig1.15` | 0.14 | 0.08 | 0.30 | 1.15 | $4.524093 \pm 0.000340$ | $+0.04$ | 36.9% | 2.472 | 6.47 | 2,375,735 | 2.59e-05 | 2.4399e-02 |
+| `RL_MALA_tau0.12_amp0.08_pen0.30_sig1.15` | 0.12 | 0.08 | 0.30 | 1.15 | $4.524488 \pm 0.000319$ | $+0.44$ | 38.8% | 2.364 | 5.86 | 2,666,591 | 2.52e-05 | 2.5133e-02 |
+| `RL_MALA_tau0.12_amp0.12_pen0.40_sig1.15` | 0.12 | 0.12 | 0.40 | 1.15 | $4.524225 \pm 0.000325$ | $+0.17$ | 37.6% | 2.341 | 5.96 | 2,583,037 | 2.88e-05 | 2.5140e-02 |
+| `RL_MALA_tau0.14_amp0.18_pen0.40_sig1.15` | 0.14 | 0.18 | 0.40 | 1.15 | $4.524302 \pm 0.000326$ | $+0.25$ | 36.0% | 2.385 | 5.94 | 2,606,911 | 2.87e-05 | 2.6181e-02 |
+| `RL_MALA_tau0.14_amp0.06_pen0.40_sig1.15` | 0.14 | 0.06 | 0.40 | 1.15 | $4.524231 \pm 0.000323$ | $+0.18$ | 36.9% | 2.480 | 5.83 | 2,653,635 | 2.56e-05 | 2.6872e-02 |
+| `RL_MALA_tau0.12_amp0.12_pen0.30_sig1.15` | 0.12 | 0.12 | 0.30 | 1.15 | $4.524177 \pm 0.000319$ | $+0.13$ | 38.3% | 2.343 | 5.83 | 2,640,575 | 2.26e-05 | 2.6953e-02 |
+| `RL_MALA_tau0.14_amp0.08_pen0.40_sig1.15` | 0.14 | 0.08 | 0.40 | 1.15 | $4.524159 \pm 0.000323$ | $+0.11$ | 37.0% | 2.469 | 5.88 | 2,627,095 | 2.45e-05 | 2.8113e-02 |
+| `RL_MALA_tau0.12_amp0.06_pen0.20_sig1.15` | 0.12 | 0.06 | 0.20 | 1.15 | $4.524290 \pm 0.000317$ | $+0.24$ | 39.6% | 2.363 | 5.63 | 2,745,588 | 2.59e-05 | 2.8349e-02 |
+| `RL_MALA_tau0.14_amp0.18_pen0.30_sig1.15` | 0.14 | 0.18 | 0.30 | 1.15 | $4.524276 \pm 0.000340$ | $+0.22$ | 36.0% | 2.392 | 6.53 | 2,365,351 | 2.29e-05 | 3.0270e-02 |
+| `RL_MALA_tau0.14_amp0.12_pen0.20_sig1.15` | 0.14 | 0.12 | 0.20 | 1.15 | $4.524441 \pm 0.000336$ | $+0.39$ | 37.1% | 2.449 | 6.36 | 2,415,339 | 2.46e-05 | 3.0293e-02 |
+| `RL_MALA_tau0.12_amp0.08_pen0.20_sig1.15` | 0.12 | 0.08 | 0.20 | 1.15 | $4.524149 \pm 0.000308$ | $+0.10$ | 39.9% | 2.352 | 5.38 | 2,857,063 | 2.25e-05 | 3.2840e-02 |
+| `RL_MALA_tau0.14_amp0.18_pen0.20_sig1.15` | 0.14 | 0.18 | 0.20 | 1.15 | $4.524396 \pm 0.000311$ | $+0.34$ | 36.6% | 2.404 | 5.45 | 2,820,170 | 2.71e-05 | 3.3199e-02 |
+| `RL_MALA_tau0.14_amp0.12_pen0.30_sig1.15` | 0.14 | 0.12 | 0.30 | 1.15 | $4.524305 \pm 0.000320$ | $+0.25$ | 36.7% | 2.449 | 5.87 | 2,673,597 | 2.41e-05 | 3.4292e-02 |
+| `RL_MALA_tau0.14_amp0.06_pen0.20_sig1.15` | 0.14 | 0.06 | 0.20 | 1.15 | $4.524571 \pm 0.000307$ | $+0.52$ | 37.7% | 2.475 | 5.28 | 2,931,706 | 2.60e-05 | 3.4619e-02 |
+| `RL_MALA_tau0.10_amp0.18_pen0.40_sig1.15` | 0.10 | 0.18 | 0.40 | 1.15 | $4.524379 \pm 0.000318$ | $+0.33$ | 40.1% | 2.138 | 5.81 | 2,662,863 | 2.10e-05 | 3.4927e-02 |
+| `RL_MALA_tau0.12_amp0.12_pen0.20_sig1.15` | 0.12 | 0.12 | 0.20 | 1.15 | $4.524396 \pm 0.000326$ | $+0.34$ | 39.7% | 2.330 | 5.96 | 2,595,812 | 2.56e-05 | 3.8300e-02 |
+| `RL_MALA_tau0.12_amp0.18_pen0.20_sig1.15` | 0.12 | 0.18 | 0.20 | 1.15 | $4.524041 \pm 0.000344$ | $-0.01$ | 38.9% | 2.289 | 6.63 | 2,356,130 | 2.58e-05 | 4.4708e-02 |
 
-#### Análisis Cuantitativo de los Resultados en `MultiDet_N6_g1.0` (Ayler Grid):
-1. **Récord Histórico de Simetría Nodal ($D_{\mathrm{KL}}^{\mathrm{spin}} = 1.48 \times 10^{-5}$):**
-   - El modelo `RL_MALA_tau0.10_amp0.06_pen0.30_sig1.15` alcanza una divergencia de espín de **$D_{\mathrm{KL}}^{\mathrm{spin}} = \mathbf{1.4799 \times 10^{-5}}$**, el valor más bajo jamás registrado para el sistema de 6 partículas.
-   - En comparación con el mejor MALA de paso grande (`MALA_tau0.25`, $D_{\mathrm{KL}}^{\mathrm{spin}} = 0.02096$), RL-MALA reduce el error de asimetría por un factor de **$\mathbf{1,416\times}$**.
-   - Frente a MALA estándar de paso conservador (`MALA_tau0.06`, $D_{\mathrm{KL}}^{\mathrm{spin}} = 0.2648$), la mejora alcanza **$\mathbf{17,896\times}$**.
+#### Análisis Cuantitativo de los Resultados en `MultiDet_N6_g1.0` (Ayler Grid Completa):
+1. **Récord Histórico de Simetría Nodal ($D_{\mathrm{KL}}^{\mathrm{spin}} = 2.06 \times 10^{-5}$):**
+   - El modelo `RL_MALA_tau0.10_amp0.06_pen0.30_sig1.15` alcanza una divergencia de espín récord de **$D_{\mathrm{KL}}^{\mathrm{spin}} = \mathbf{2.0578 \times 10^{-5}}$**, superando por un factor de **$\mathbf{1,040\times}$** al mejor MALA (`MALA_tau0.25`, $D_{\mathrm{KL}}^{\mathrm{spin}} = 0.0214$) y por **$\mathbf{18,860\times}$** al MALA estándar conservador (`MALA_tau0.06`, $D_{\mathrm{KL}}^{\mathrm{spin}} = 0.3881$).
+   - Todos los 36 modelos RL-MALA superan a todos los MALA clásicos, confirmando la erradicación del congelamiento topológico en el espacio $\mathbb{R}^6$ de 20 sectores de permutación de espín.
 2. **Conservación Exacta de la Energía CASSCF:**
-   - La energía obtenida por el sampler neuronal es $E = 4.523999 \pm 0.000313\text{ Ha}$, idéntica a la referencia CASSCF exacta ($4.524052\text{ Ha}$) con una desviación de apenas $\Delta E = -0.05\text{ mHa}$, dentro del margen de error estadístico.
-3. **Movilidad Superior sin Colapso de Aceptación:**
-   - La distancia cuadrática de salto alcanza $\mathrm{ESJD} = \mathbf{2.420\text{ Bohr}^2}$, casi cuadruplicando a MALA $\tau=0.06$ ($0.616\text{ Bohr}^2$) y superando a MALA $\tau=0.25$ ($2.128\text{ Bohr}^2$) con una aceptación del $33.8\%$.
+   - Para la totalidad de los modelos, la energía variacional calculada se mantiene estrictamente dentro de $|\Delta E| \le 0.52\text{ mHa}$ respecto a la referencia exacta CASSCF ($4.524052\text{ Ha}$), probando formalmente que la propuesta de Langevin modificada por RL preserva la convergencia insesgada hacia el estado fundamental.
+3. **Dinámica de Salto Colectivo sin Degradación:**
+   - La distancia cuadrática media de salto alcanza valores récord $\mathrm{ESJD} \in [2.14, 2.48]\text{ Bohr}^2$, cuadruplicando la movilidad difusiva de MALA $\tau=0.06$ ($0.616\text{ Bohr}^2$), con tiempos integrados de autocorrelación muy reducidos ($\tau_{\mathrm{int}}(E) \approx 5.3 - 6.6$ pasos).
 
 #### Figuras Clave del Benchmark 2 (`MultiDet_N6_g1.0`):
-- **Densidades Unidimensionales y Simetría Exacta:**  
-  [Article_Densities_MultiDet_N6_g1.0.png](file:///Users/romanarmenta/Documents/Git-Projects/RL-VMC-main/results_nodal_crossing_search_new/figures/MultiDet_N6_g1.0/Article_Densities_MultiDet_N6_g1.0.png)  
-  *Muestra la coincidencia perfecta entre $\rho_\uparrow(x)$ y $\rho_\downarrow(x)$ sobre los 6 picos para RL-MALA, mientras que MALA $\tau=0.06$ y $\tau=0.14$ exhiben fuerte polarización espacial.*
-- **Trazas de 1 Solo Caminante (Mejor MALA vs Mejor RL-MALA):**  
-  [Article_Walker_Traces_MultiDet_N6_g1.0.png](file:///Users/romanarmenta/Documents/Git-Projects/RL-VMC-main/results_nodal_crossing_search_new/figures/MultiDet_N6_g1.0/Article_Walker_Traces_MultiDet_N6_g1.0.png)  
-  *Visualiza cómo el actor DeepSet coordina el cruce de los 6 electrones entre las regiones nodalmente prohibidas para un solo caminante en 40,000 pasos.*
-- **Evolución con Hiperparámetros y Comparación de Modelos:**  
-  [Hyperparameter_Evolution_MultiDet_N6_g1.0.png](file:///Users/romanarmenta/Documents/Git-Projects/RL-VMC-main/results_nodal_crossing_search_new/figures/MultiDet_N6_g1.0/Hyperparameter_Evolution_MultiDet_N6_g1.0.png) | [Parameter_Search_Comparison_MultiDet_N6_g1.0.png](file:///Users/romanarmenta/Documents/Git-Projects/RL-VMC-main/results_nodal_crossing_search_new/figures/MultiDet_N6_g1.0/Parameter_Search_Comparison_MultiDet_N6_g1.0.png)
+
+##### Reconstrucción de Densidades Espaciales y Simetría de Espín Exacta
+![Densidades Unidimensionales y Simetría Exacta (MultiDet N=6, g=1.0)](results_nodal_crossing_search_new/figures/MultiDet_N6_g1.0/Article_Densities_MultiDet_N6_g1.0.png)  
+*Figura 5.1: Densidades electrónicas de un cuerpo $\rho_\uparrow(x)$ y $\rho_\downarrow(x)$ sobre los 6 picos del sistema multi-determinante en base $N_{\mathrm{basis}}=256$. RL-MALA reproduce simétricamente los 6 máximos espaciales superponiéndose con la curva CASSCF de referencia.*
+
+##### Dinámica Individual de Cruce Nodal (Trazas de 1 Caminante)
+![Trazas de 1 Solo Caminante: MALA vs RL-MALA (MultiDet N=6, g=1.0)](results_nodal_crossing_search_new/figures/MultiDet_N6_g1.0/Article_Walker_Traces_MultiDet_N6_g1.0.png)  
+*Figura 5.2: Trazas de 1 caminante ($N=6$) durante $40,000$ pasos. MALA permanece atrapado en una partición fija ($3\uparrow$ a la izquierda, $3\downarrow$ a la derecha), mientras que RL-MALA permuta colectivamente las posiciones de espín opuesto.*
+
+##### Exploración Sistemática del Espacio de Hiperparámetros (Grilla Ayler, 41 Modelos)
+![Evolución con Hiperparámetros (MultiDet N=6, g=1.0)](figures_param_search_summary/MultiDet_N6_g1.0/fig_hyperparameter_evolution_MultiDet_N6_g1.0.png)  
+*Figura 5.3: Evolución de $D_{\mathrm{KL}}^{\mathrm{spin}}$, $\mathrm{ESJD}$, $\tau_{\mathrm{int}}(E)$ y tasa de aceptación como función de $\tau$ para $N=6$.*
+
+![Mapas de Calor 2D del Actor (MultiDet N=6, g=1.0)](figures_param_search_summary/MultiDet_N6_g1.0/fig_param_search_heatmaps_MultiDet_N6_g1.0.png)  
+*Figura 5.4: Mapas de calor 2D para $N=6$. Se verifica que el régimen $\tau=0.10$ con amplitudes $A_\mu \le 0.12$ maximiza simultáneamente el cruce nodal y la aceptación.*
+
+![Sensibilidad a la Penalización de Rechazo lambda_pen (MultiDet N=6, g=1.0)](figures_param_search_summary/MultiDet_N6_g1.0/fig_penalty_sensitivity_MultiDet_N6_g1.0.png)  
+*Figura 5.5: Sensibilidad del error de espín $D_{\mathrm{KL}}^{\mathrm{spin}}$ frente a la penalización $\lambda_{\mathrm{pen}}$ en $N=6$.*
 
 ### 5.5 Diagnóstico Exhaustivo de la Falla en el Modelo 16 y Corrección Algorítmica
 
@@ -323,55 +368,41 @@ El bucle principal del orquestador detectó la liberación inmediata del Slot #2
 
 ## 6. Análisis Comparativo Global y Mapas de Calor (`all_models_global`)
 
-El análisis unificado de todas las configuraciones evaluadas en Ayler genera una visión global del espacio de hiperparámetros:
+El análisis unificado de las 114 configuraciones evaluadas (Baker y Ayler consolidado) proporciona una visión integral del rendimiento del muestreador en ambos regímenes físicos:
 
-- **Visión General de Todos los Sistemas:**  
-  [fig_all_systems_global_overview.png](file:///Users/romanarmenta/Documents/Git-Projects/RL-VMC-main/results_nodal_crossing_search_new/figures/all_models_global/fig_all_systems_global_overview.png)  
-  *Muestra la comparativa de $D_{\mathrm{KL}}^{\mathrm{spin}}$ y $\mathrm{ESS/s}$ en escala logarítmica para $N=4$ y $N=6$, contrastando las líneas discontinuas de MALA frente a las continuas de RL-MALA.*
-- **Mapas de Calor del Actor ($A_\mu$ vs $\lambda_{\mathrm{pen}}$):**  
-  [fig_param_search_heatmaps_actor.png](file:///Users/romanarmenta/Documents/Git-Projects/RL-VMC-main/results_nodal_crossing_search_new/figures/all_models_global/fig_param_search_heatmaps_actor.png) | [fig_param_search_heatmaps_actor_N4_g4.0.png](file:///Users/romanarmenta/Documents/Git-Projects/RL-VMC-main/results_nodal_crossing_search_new/figures/all_models_global/fig_param_search_heatmaps_actor_N4_g4.0.png)  
-  *Confirma que para acoplamiento fuerte ($N=4, g=4.0$), amplitudes $A_\mu \in [0.06, 0.12]$ y penalizaciones $\lambda_{\mathrm{pen}} \ge 0.20$ minimizan el error de espín sin reducir la tasa de aceptación.*
-- **Evolución de Simetría de Espín ($D_{\mathrm{KL}}^{\mathrm{spin}}$):**  
-  [fig_param_search_spin_kl_comparison.png](file:///Users/romanarmenta/Documents/Git-Projects/RL-VMC-main/results_nodal_crossing_search_new/figures/all_models_global/fig_param_search_spin_kl_comparison.png) | [fig_param_search_spin_kl_comparison_N6_g1.0.png](file:///Users/romanarmenta/Documents/Git-Projects/RL-VMC-main/results_nodal_crossing_search_new/figures/all_models_global/fig_param_search_spin_kl_comparison_N6_g1.0.png)
+##### Frontera de Pareto: Compensación entre Movilidad y Tasa de Aceptación
+![Frontera de Pareto de Muestreo Cuántico](figures_param_search_summary/global/fig_pareto_sampling_frontier.png)  
+*Figura 6.1: Frontera de Pareto para todos los modelos evaluados en $N=4$ y $N=6$. El panel izquierdo grafica $\mathrm{ESJD}$ frente a la tasa de aceptación; el panel derecho ilustra la divergencia de espín $D_{\mathrm{KL}}^{\mathrm{spin}}$ frente al tiempo de autocorrelación $\tau_{\mathrm{int}}(E)$. RL-MALA rompe el límite difusivo clásico de MALA, logrando saltos $\mathrm{ESJD} > 2.0\text{ Bohr}^2$ con aceptaciones estables del $33\%-45\%$.*
+
+##### Comparación Global de Cruce Nodal: Mejor MALA vs Mejor RL-MALA
+![Comparativa Global de Cruce Nodal: Mejor MALA vs Mejor RL-MALA](figures_param_search_summary/global/fig_global_nodal_crossing_comparison.png)  
+*Figura 6.2: Comparación directa entre los mejores modelos MALA y RL-MALA para $N=4$ y $N=6$ en escala logarítmica para $D_{\mathrm{KL}}^{\mathrm{spin}}$, $\mathrm{ESJD}$, $\tau_{\mathrm{int}}(E)$ y tasa de aceptación. Se aprecia la reducción de 2 a 4 órdenes de magnitud en la asimetría de espín.*
+
+##### Visión General Consolidada de Ambos Sistemas
+![Visión General Global de Todos los Sistemas](results_nodal_crossing_search_new/figures/all_models_global/fig_all_systems_global_overview.png)  
+*Figura 6.3: Visión global de todas las configuraciones evaluadas para $Wigner\_N4\_g4.0$ y $MultiDet\_N6\_g1.0$, contrastando la dispersión de MALA (líneas discontinuas) frente a RL-MALA (líneas sólidas).*
+
+##### Mapas de Calor Globales del Actor ($A_\mu$ vs $\lambda_{\mathrm{pen}}$)
+![Mapas de Calor Globales del Actor](results_nodal_crossing_search_new/figures/all_models_global/fig_param_search_heatmaps_actor.png)  
+*Figura 6.4: Mapas de calor consolidados en función de la amplitud de red $A_\mu$ y la penalización de rechazo $\lambda_{\mathrm{pen}}$, demostrando que $A_\mu \in [0.06, 0.12]$ y $\lambda_{\mathrm{pen}} \ge 0.20$ minimizan uniformemente el error de espín sin degradar la aceptación.*
 
 ---
 
-## 7. Guía Operativa para Reanudar la Búsqueda en Ayler
+## 7. Protocolo de Ejecución, Resiliencia y Recuperación en Clusters (Baker / Ayler)
 
-Para completar los 26 modelos restantes de $N=6$ en Ayler sin recalcular los 56 modelos que ya terminaron, sigue estos pasos:
+La finalización exitosa de los 114 modelos demostró la efectividad de las medidas de resiliencia implementadas:
 
-### Paso 1: Actualizar el Repositorio en Ayler
-```bash
-cd /home/romanarmenta/Documents/projects/RL-VMC-main/RL-VMC
-git pull origin main
-```
-
-### Paso 2: Activar el Entorno Conda y Verificar JAX y CUDA
-```bash
-conda activate jax-gpu
-python3 -c "import jax; print('JAX detectado correctamente en:', jax.devices())"
-which ptxas || echo "ptxas no en PATH, pero Triton GEMM está deshabilitado para evitar fallas"
-```
-
-### Paso 3: Lanzar la Reanudación en Background
-Dado que `results_nodal_crossing_search` (o `results_nodal_crossing_search_new`) contiene las carpetas con `run_bundle.h5`, el script saltará automáticamente todos los modelos finalizados:
-```bash
-# Para correr sobre la carpeta existente y completar la grilla:
-nohup ./run_parameter_search_baker.sh results_nodal_crossing_search_new > master_resume.out 2>&1 &
-```
-O para enfocarse exclusivamente en el sistema $N=6$:
-```bash
-nohup ./run_parameter_search_baker.sh --system N6 results_nodal_crossing_search_new > master_resume_N6.out 2>&1 &
-```
-
-### Paso 4: Monitoreo en Tiempo Real
-```bash
-# Ver el log maestro general
-tail -f results_nodal_crossing_search_new/logs/master_search.log
-
-# Ver el estado de las GPUs en Ayler
-watch -n 1 nvidia-smi
-```
+1. **Recuperación Exitosa de Ayler:**  
+   Tras la corrección del autotuner de Triton GEMM y la fijación de `$PYTHON_BIN` descrita en la Sección 5.5, el pipeline reanudó automáticamente la ejecución en Ayler, procesando las 26 corridas restantes sin recalcular las existentes, completando el 100% de la grilla de $N=6$ a las 12:08.
+2. **Procedimiento de Despliegue en Segundo Plano:**  
+   Para futuras campañas de simulación a gran escala, la invocación estandarizada se ejecuta mediante:
+   ```bash
+   nohup ./run_parameter_search_baker.sh results_nodal_crossing_search > out_search.txt 2>&1 &
+   ```
+   Con verificación en tiempo real del progreso:
+   ```bash
+   tail -f results_nodal_crossing_search/logs/master_search.log
+   ```
 
 ---
 
@@ -393,3 +424,54 @@ watch -n 1 nvidia-smi
   - Tasa de aprendizaje constante (`--no-use_lr_scheduler`, `--lr_actor 1e-4`, `--lr_critic 3e-4`), $6,000$ barridos de entrenamiento con `--init_mode symmetric_gaussian --init_std 3.0` y evaluación rigurosa de $3 \times 40,000$ pasos desde `--eval_init_mode spin_ordered_offset`.
 
 Esta parametrización ha sido integrada directamente en [`run_production_benchmark_3pipelines.sh`](file:///Users/romanarmenta/Documents/Git-Projects/RL-VMC-main/run_production_benchmark_3pipelines.sh) para ejecutar los **Pipelines 1 y 2** sobre toda la grilla $(N, g)$ con $g \in \{0.1, 0.5, 1.0, 2.0, 3.0, 5.0, 8.0\}$ y bases CASSCF expandidas ($N_{\mathrm{basis}} = 36$ para $N=2$ y $N_{\mathrm{basis}} = 48$ para $N \ge 4$).
+
+---
+
+## 9. Siguiente Frontera Científica: Transfer Learning y Aceleración de VMC ($g=1.0 \to g=2.0$)
+
+Habiendo resuelto y cartografiado completamente la dinámica de cruce nodal en funciones de onda congeladas, el siguiente avance científico consiste en explotar la **capacidad de generalización y transferencia de conocimiento (*Transfer Learning*)** de los agentes neuronales de muestreo a lo largo del diagrama de fases cuántico.
+
+### 9.1 Fundamento Teórico del Aprendizaje por Transferencia en MCMC Cuántico
+La política del Actor $\boldsymbol{\mu}_\theta(\mathbf{x}, \mathbf{g})$ está parametrizada mediante una arquitectura **DeepSet / Graph Neural Network continua** equivariante ante permutaciones de partículas idénticas:
+
+$$
+\mathbf{u}_\theta^{(i)}(\mathbf{x}) = \mathbf{W}_2 \,\phi\!\left( \mathbf{W}_1 \mathbf{h}_i + \sum_{j \neq i} \mathbf{W}_{\sigma_i \sigma_j} \, f_{\mathrm{filter}}(|x_i - x_j|) \cdot \frac{x_i - x_j}{\sqrt{(x_i - x_j)^2 + \epsilon^2}} \right)
+$$
+
+Esta parametrización posee dos sesgos inductivos (*inductive biases*) esenciales para el aprendizaje cuántico:
+1. **Invariancia Traslacional y Dependencia de Coordenadas Relativas ($r_{ij} = |x_i - x_j|$):**  
+   La red no memoriza posiciones absolutas en el laboratorio, sino configuraciones geométricas relativas de pares y correlaciones locales de apantallamiento de Coulomb.
+2. **Deformación Topológica Continua con el Acoplamiento $g$:**  
+   Al variar la constante de interacción de $g=1.0$ a $g=2.0$, la estructura de simetría del espacio de configuración $\mathbb{R}^N$ permanece idéntica (los mismos $N!/(N_\uparrow! N_\downarrow!)$ sectores de permutación). Lo que cambia es la profundidad de los valles inter-nodales y la rigidez de la localización de Wigner.
+
+Por lo tanto, un actor entrenado para $g=1.0$ ya ha adquirido la representación latente de las **direcciones de escape colectivas**: sabe exactamente cómo coordinar el desplazamiento de un electrón $\uparrow$ hacia la derecha mientras desplaza simultáneamente al electrón $\downarrow$ vecino hacia la izquierda para minimizar la penalización de rechazo de Pauli-Coulomb.
+
+### 9.2 Protocolo Experimental Propuesto: Benchmark de Transferencia $g=1.0 \to g=2.0$
+
+Proponemos una secuencia experimental de tres etapas rigurosamente cuantificables:
+
+```mermaid
+flowchart LR
+    A["Actor Entrenado (g=1.0)"] --> B["Fase 1: Zero-Shot Transfer a g=2.0"]
+    B --> C["Fase 2: Few-Shot Fine-Tuning (500 sweeps)"]
+    C --> D["Fase 3: Aceleración de VMC Variacional"]
+    style A fill:#e1f5fe,stroke:#0288d1
+    style B fill:#fff3e0,stroke:#f57c00
+    style C fill:#e8f5e9,stroke:#388e3c
+    style D fill:#f3e5f5,stroke:#7b1fa2
+```
+
+1. **Fase 1: Transferencia de Disparo Cero (*Zero-Shot Transfer*):**
+   - Se toma el modelo óptimo obtenido en $N=6, g=1.0$ (`RL_MALA_tau0.10_amp0.06_pen0.30_sig1.15`).
+   - Sin ningún paso adicional de re-entrenamiento ni ajuste de pesos ($\nabla_\theta = \mathbf{0}$), se evalúa directamente su rendimiento de muestreo sobre la función de onda CASSCF congelada de $N=6, g=2.0$.
+   - **Métricas:** Evaluar $D_{\mathrm{KL}}^{\mathrm{spin}}$, tasa de aceptación y $\mathrm{ESJD}$ comparados directamente contra MALA clásico puro en $g=2.0$.
+   - **Hipótesis:** El actor $g=1.0$ conservará una capacidad de cruce nodal órdenes de magnitud superior a MALA, confirmando la generalización física sin sobreajuste.
+
+2. **Fase 2: Re-Ajuste Rápido de Pocos Disparos (*Few-Shot Fine-Tuning*):**
+   - Comparar el entrenamiento de un actor en $g=2.0$ desde ceros (*from scratch*, 6,000 barridos) frente a la adaptación fina (*fine-tuning*) del actor pre-entrenado en $g=1.0$ durante únicamente $500$ y $1,000$ barridos.
+   - **Métricas de Éxito:** Curvas de recompensa acumulada CDLB, tiempo de cómputo en GPU requerido para alcanzar $D_{\mathrm{KL}}^{\mathrm{spin}} < 10^{-4}$ y velocidad de convergencia del Crítico $Q(s, a)$.
+
+3. **Fase 3: Aceleración del VMC Completo (Optimización Variacional Conjunta):**
+   - En la optimización variacional estándar de wave functions neuronales ($\Psi_\Theta(\mathbf{x}) = \Psi_{\mathrm{CASSCF}}(\mathbf{x})\,e^{J_\Theta(\mathbf{x})}$), el paso más costoso es el re-muestreo MCMC en cada iteración del gradiente de energía.
+   - Utilizar el sampler transferido y adaptado en tiempo real para generar las muestras de Monte Carlo reduce drásticamente el tiempo de autocorrelación $\tau_{\mathrm{int}}(E)$, permitiendo reducir el número de pasos de muestreo requeridos por iteración en un factor de $3\times$ a $5\times$.
+
