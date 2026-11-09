@@ -1096,11 +1096,26 @@ def _shade_physical_regimes(ax: Any, g_min: float, g_max: float, f_scale: float 
 
     if annotate:
         ylim = ax.get_ylim()
-        y_top = ylim[1] * 0.72 if ax.get_yscale() == "log" else (ylim[0] + 0.88 * (ylim[1] - ylim[0]))
+        if ax.get_yscale() == "log":
+            y0 = max(ylim[0], 1e-6)
+            y1 = max(ylim[1], y0 * 10.0)
+            y_top = y0 * ((y1 / y0) ** 0.84)
+        else:
+            y_top = ylim[0] + 0.86 * (ylim[1] - ylim[0])
         if g_min <= 0.35:
             ax.text(0.16, y_top, "Hartree\n($g \\lesssim 0.3$)", fontsize=8.0 * f_scale, color="#1b5e8a", ha="center", weight="bold")
         if g_max >= 0.6:
             ax.text(min(g_max * 0.62, 4.5), y_top, "Cristal de Wigner Localizado ($g > 0.4$)", fontsize=8.5 * f_scale, color="#8c1d1d", ha="center", weight="bold")
+
+
+def _infer_n_same_pairs(row: Dict[str, Any], n_elec_fallback: int = 2) -> int:
+    val = _safe_int(row.get("n_same_pairs"), -1)
+    if val >= 0:
+        return val
+    n_tot = _safe_int(row.get("N"), n_elec_fallback)
+    n_up = _safe_int(row.get("n_up"), n_tot // 2)
+    n_dn = _safe_int(row.get("n_dn"), n_tot - n_up)
+    return (n_up * (n_up - 1)) // 2 + (n_dn * (n_dn - 1)) // 2
 
 
 def plot_flips_vs_g_for_N(
@@ -1125,8 +1140,8 @@ def plot_flips_vs_g_for_N(
     f_scale = float(getattr(args, "font_scale", 1.0))
     lw_scale = float(getattr(args, "line_width_scale", 1.0))
 
-    methods = sorted(set(r["method"] for r in rows_n), key=lambda m: {"MALA": 0, "Adaptive-MALA": 1, "RL-MALA": 2}.get(m, 99))
-    all_g = sorted(set(float(r["g"]) for r in rows_n))
+    methods = sorted(set(str(r["method"]) for r in rows_n), key=lambda m: {"MALA": 0, "Adaptive-MALA": 1, "RL-MALA": 2}.get(m, 99))
+    all_g = sorted(set(_safe_float(r.get("g"), 0.0) for r in rows_n))
     g_min, g_max = min(all_g), max(all_g)
 
     fig, axes = plt.subplots(2, 2, figsize=(15.5, 11.0))
@@ -1139,11 +1154,15 @@ def plot_flips_vs_g_for_N(
     # Panel A: Flips up-down vs g (Histéresis vs Crudos)
     # --------------------------------------------------------------------------
     for m in methods:
-        sub = sorted([r for r in rows_n if r["method"] == m], key=lambda x: float(x["g"]))
-        g_arr = np.array([float(x["g"]) for x in sub])
-        hyst_opp = np.array([max(float(x["hyst_flips_opp_mean"]), eps_log) for x in sub])
-        hyst_err = np.array([float(x["hyst_flips_opp_std"]) for x in sub])
-        raw_opp = np.array([max(float(x["raw_flips_opp_mean"]), eps_log) for x in sub])
+        sub = sorted([r for r in rows_n if str(r["method"]) == m], key=lambda x: _safe_float(x.get("g"), 0.0))
+        if not sub:
+            continue
+        g_arr = np.array([_safe_float(x.get("g"), 0.0) for x in sub])
+        hyst_opp = np.array([max(_safe_float(x.get("hyst_flips_opp_mean"), 0.0), eps_log) for x in sub])
+        hyst_err = np.array([max(_safe_float(x.get("hyst_flips_opp_std"), 0.0), 0.0) for x in sub])
+        hyst_err = np.where(np.isfinite(hyst_err), hyst_err, 0.0)
+        yerr_low = np.minimum(hyst_err, hyst_opp * 0.85)
+        raw_opp = np.array([max(_safe_float(x.get("raw_flips_opp_mean"), 0.0), eps_log) for x in sub])
 
         col = METHOD_COLORS.get(m, "#333333")
         ls_h = "-" if m == "RL-MALA" else "--"
@@ -1152,7 +1171,7 @@ def plot_flips_vs_g_for_N(
         ax_a.errorbar(
             g_arr,
             hyst_opp,
-            yerr=hyst_err,
+            yerr=[yerr_low, hyst_err],
             color=col,
             ls=ls_h,
             lw=2.3 * lw_scale,
@@ -1185,10 +1204,12 @@ def plot_flips_vs_g_for_N(
     # Panel B: Flips de Espín Opuesto (Wigner) vs Mismo Espín (Nodos de Pauli)
     # --------------------------------------------------------------------------
     for m in methods:
-        sub = sorted([r for r in rows_n if r["method"] == m], key=lambda x: float(x["g"]))
-        g_arr = np.array([float(x["g"]) for x in sub])
-        hyst_opp = np.array([max(float(x["hyst_flips_opp_mean"]), eps_log) for x in sub])
-        hyst_same = np.array([max(float(x["hyst_flips_same_mean"]), eps_log) for x in sub])
+        sub = sorted([r for r in rows_n if str(r["method"]) == m], key=lambda x: _safe_float(x.get("g"), 0.0))
+        if not sub:
+            continue
+        g_arr = np.array([_safe_float(x.get("g"), 0.0) for x in sub])
+        hyst_opp = np.array([max(_safe_float(x.get("hyst_flips_opp_mean"), 0.0), eps_log) for x in sub])
+        hyst_same = np.array([max(_safe_float(x.get("hyst_flips_same_mean"), 0.0), eps_log) for x in sub])
 
         col = METHOD_COLORS.get(m, "#333333")
         ls_m = "-" if m == "RL-MALA" else "--"
@@ -1202,7 +1223,7 @@ def plot_flips_vs_g_for_N(
             markersize=6.2,
             label=f"{m}: Espín Opuesto $\\uparrow\\downarrow$ (Barrera Wigner)",
         )
-        if int(sub[0]["n_same_pairs"]) > 0:
+        if _infer_n_same_pairs(sub[0], n_elec) > 0:
             ax_b.plot(
                 g_arr,
                 hyst_same,
@@ -1228,9 +1249,11 @@ def plot_flips_vs_g_for_N(
     # --------------------------------------------------------------------------
     ax_c_right = ax_c.twinx()
     for m in methods:
-        sub = sorted([r for r in rows_n if r["method"] == m], key=lambda x: float(x["g"]))
-        g_arr = np.array([float(x["g"]) for x in sub])
-        kl_spin = np.array([float(x.get("kl_spin", float("nan"))) for x in sub])
+        sub = sorted([r for r in rows_n if str(r["method"]) == m], key=lambda x: _safe_float(x.get("g"), 0.0))
+        if not sub:
+            continue
+        g_arr = np.array([_safe_float(x.get("g"), 0.0) for x in sub])
+        kl_spin = np.array([_safe_float(x.get("kl_spin"), float("nan")) for x in sub])
         col = METHOD_COLORS.get(m, "#333333")
         ls_m = "-" if m == "RL-MALA" else "--"
         if np.any(np.isfinite(kl_spin)):
@@ -1246,8 +1269,8 @@ def plot_flips_vs_g_for_N(
             )
 
     # Calcular el cociente de tasas de flips RL-MALA / MALA por cada g
-    mala_by_g = {float(r["g"]): float(r["hyst_flips_total_mean"]) for r in rows_n if r["method"] == "MALA"}
-    rl_by_g = {float(r["g"]): float(r["hyst_flips_total_mean"]) for r in rows_n if r["method"] == "RL-MALA"}
+    mala_by_g = {_safe_float(r.get("g"), 0.0): _safe_float(r.get("hyst_flips_total_mean"), 0.0) for r in rows_n if str(r["method"]) == "MALA"}
+    rl_by_g = {_safe_float(r.get("g"), 0.0): _safe_float(r.get("hyst_flips_total_mean"), 0.0) for r in rows_n if str(r["method"]) == "RL-MALA"}
     common_g = sorted(set(mala_by_g.keys()) & set(rl_by_g.keys()))
     if common_g:
         ratios = [
@@ -1284,25 +1307,26 @@ def plot_flips_vs_g_for_N(
     # --------------------------------------------------------------------------
     ax_d_right = ax_d.twinx()
     for m in methods:
-        sub = sorted([r for r in rows_n if r["method"] == m], key=lambda x: float(x["g"]))
-        g_arr = np.array([float(x["g"]) for x in sub])
-        f1_arr = np.array([float(x["one_step_fraction"]) * 100.0 for x in sub])
-        jmp_arr = np.array([float(x["jump_at_flip_mean"]) for x in sub])
-        d_adj_arr = np.array([float(x["d_adj"]) for x in sub])
+        sub = sorted([r for r in rows_n if str(r["method"]) == m], key=lambda x: _safe_float(x.get("g"), 0.0))
+        if not sub:
+            continue
+        g_arr = np.array([_safe_float(x.get("g"), 0.0) for x in sub])
+        f1_raw = np.array([_safe_float(x.get("one_step_fraction"), float("nan")) * 100.0 for x in sub])
+        f1_arr = np.where(np.isfinite(f1_raw), f1_raw, 0.0)
+        jmp_arr = np.array([_safe_float(x.get("jump_at_flip_mean"), float("nan")) for x in sub])
 
         col = METHOD_COLORS.get(m, "#333333")
         ls_m = "-" if m == "RL-MALA" else "--"
-        if np.any(np.isfinite(f1_arr)):
-            ax_d.plot(
-                g_arr,
-                f1_arr,
-                color=col,
-                ls=ls_m,
-                lw=2.2 * lw_scale,
-                marker="o" if m == "RL-MALA" else "s",
-                markersize=6.0,
-                label=f"{m}: % Cruces en 1 Paso ($\\Delta t_{{\\mathrm{{transit}}}}=1$)",
-            )
+        ax_d.plot(
+            g_arr,
+            f1_arr,
+            color=col,
+            ls=ls_m,
+            lw=2.2 * lw_scale,
+            marker="o" if m == "RL-MALA" else "s",
+            markersize=6.0,
+            label=f"{m}: % Cruces en 1 Paso ($\\Delta t_{{\\mathrm{{transit}}}}=1$)",
+        )
         if np.any(np.isfinite(jmp_arr)):
             ax_d_right.plot(
                 g_arr,
@@ -1317,17 +1341,18 @@ def plot_flips_vs_g_for_N(
             )
 
     # Graficar también la separación entre pozos d_adj(g) como referencia física
-    sub_ref = sorted(rows_n, key=lambda x: float(x["g"]))
-    g_unique = sorted(set(float(x["g"]) for x in sub_ref))
-    d_adj_by_g = [float(np.mean([float(x["d_adj"]) for x in sub_ref if float(x["g"]) == gg])) for gg in g_unique]
-    ax_d_right.plot(
-        g_unique,
-        d_adj_by_g,
-        color="#2ca02c",
-        ls="-.",
-        lw=1.6 * lw_scale,
-         label="Separación entre pozos $d_{\\mathrm{adj}}(g)$ [Bohr]",
-    )
+    sub_ref = sorted(rows_n, key=lambda x: _safe_float(x.get("g"), 0.0))
+    g_unique = sorted(set(_safe_float(x.get("g"), 0.0) for x in sub_ref))
+    d_adj_by_g = [float(np.nanmean([_safe_float(x.get("d_adj"), float("nan")) for x in sub_ref if _safe_float(x.get("g"), 0.0) == gg])) for gg in g_unique]
+    if np.any(np.isfinite(d_adj_by_g)):
+        ax_d_right.plot(
+            g_unique,
+            d_adj_by_g,
+            color="#2ca02c",
+            ls="-.",
+            lw=1.6 * lw_scale,
+            label="Separación entre pozos $d_{\\mathrm{adj}}(g)$ [Bohr]",
+        )
 
     ax_d.set_ylim(-5.0, 105.0)
     ax_d.set_title(f"(d) Fracción de Saltos en 1 Paso y Escala del Brinco vs $g$", fontsize=11.2 * f_scale, weight="bold")
@@ -1365,15 +1390,15 @@ def plot_master_all_N_flips_vs_g(
     """
     import matplotlib.pyplot as plt
 
-    rows_p = [r for r in all_rows if r["pipeline"] == pipeline]
+    rows_p = [r for r in all_rows if str(r.get("pipeline", "P2")) == pipeline]
     if not rows_p:
         return []
 
     f_scale = float(getattr(args, "font_scale", 1.0))
     lw_scale = float(getattr(args, "line_width_scale", 1.0))
 
-    n_values = sorted(set(int(r["N"]) for r in rows_p))
-    all_g = sorted(set(float(r["g"]) for r in rows_p))
+    n_values = sorted(set(_safe_int(r.get("N"), 0) for r in rows_p if _safe_int(r.get("N"), 0) > 0))
+    all_g = sorted(set(_safe_float(r.get("g"), 0.0) for r in rows_p))
     g_min, g_max = min(all_g), max(all_g)
     eps_log = 1e-3
 
@@ -1384,16 +1409,16 @@ def plot_master_all_N_flips_vs_g(
     for n_val in n_values:
         col_n = N_COLORS.get(n_val, "#333333")
         mk_n = N_MARKERS.get(n_val, "o")
-        rows_n = [r for r in rows_p if int(r["N"]) == n_val]
+        rows_n = [r for r in rows_p if _safe_int(r.get("N"), 0) == n_val]
 
         for m_name in ("MALA", "RL-MALA"):
-            sub = sorted([r for r in rows_n if r["method"] == m_name], key=lambda x: float(x["g"]))
+            sub = sorted([r for r in rows_n if str(r.get("method")) == m_name], key=lambda x: _safe_float(x.get("g"), 0.0))
             if not sub:
                 continue
-            g_arr = np.array([float(x["g"]) for x in sub])
-            hyst_tot = np.array([max(float(x["hyst_flips_total_mean"]), eps_log) for x in sub])
-            raw_tot = np.array([max(float(x["raw_flips_total_mean"]), eps_log) for x in sub])
-            kl_sp = np.array([float(x.get("kl_spin", float("nan"))) for x in sub])
+            g_arr = np.array([_safe_float(x.get("g"), 0.0) for x in sub])
+            hyst_tot = np.array([max(_safe_float(x.get("hyst_flips_total_mean"), 0.0), eps_log) for x in sub])
+            raw_tot = np.array([max(_safe_float(x.get("raw_flips_total_mean"), 0.0), eps_log) for x in sub])
+            kl_sp = np.array([_safe_float(x.get("kl_spin"), float("nan")) for x in sub])
 
             ls = "-" if m_name == "RL-MALA" else "--"
             mfc = col_n if m_name == "RL-MALA" else "white"
@@ -1438,8 +1463,8 @@ def plot_master_all_N_flips_vs_g(
                 )
 
         # Razón RL-MALA / MALA para este N
-        mala_g = {float(r["g"]): float(r["hyst_flips_total_mean"]) for r in rows_n if r["method"] == "MALA"}
-        rl_g = {float(r["g"]): float(r["hyst_flips_total_mean"]) for r in rows_n if r["method"] == "RL-MALA"}
+        mala_g = {_safe_float(r.get("g"), 0.0): _safe_float(r.get("hyst_flips_total_mean"), 0.0) for r in rows_n if str(r.get("method")) == "MALA"}
+        rl_g = {_safe_float(r.get("g"), 0.0): _safe_float(r.get("hyst_flips_total_mean"), 0.0) for r in rows_n if str(r.get("method")) == "RL-MALA"}
         cg = sorted(set(mala_g.keys()) & set(rl_g.keys()))
         if cg:
             rat = [(rl_g[gg] + 1e-2) / (mala_g[gg] + 1e-2) for gg in cg]
@@ -1483,7 +1508,9 @@ def plot_master_all_N_flips_vs_g(
     ax_kl.set_xlabel("Acoplamiento de interacción $g$", fontsize=10.0 * f_scale)
     ax_kl.set_ylabel("$D_{\\mathrm{KL}}^{\\mathrm{spin}}$ respecto a CASSCF exacto", fontsize=10.0 * f_scale)
     ax_kl.grid(True, alpha=0.26, linestyle="--")
-    ax_kl.legend(loc="best", ncol=2, fontsize=7.8 * f_scale, framealpha=0.92)
+    handles_kl, labels_kl = ax_kl.get_legend_handles_labels()
+    if handles_kl:
+        ax_kl.legend(loc="best", ncol=2, fontsize=7.8 * f_scale, framealpha=0.92)
 
     fig.suptitle(
         f"Síntesis Global de Intercambios Topológicos (Flips) respecto a $N$ y $g$ ({pipeline}: MALA discontinuo vs RL-MALA continuo)",
@@ -1497,7 +1524,7 @@ def plot_master_all_N_flips_vs_g(
 
 
 # ==============================================================================
-# 5.PUNTO DE ENTRADA CLI
+# 5. PUNTO DE ENTRADA CLI
 # ==============================================================================
 
 def build_arg_parser() -> argparse.ArgumentParser:
@@ -1516,6 +1543,13 @@ def build_arg_parser() -> argparse.ArgumentParser:
     p.add_argument("--fixed_delta", type=float, default=None, help="Umbral fijo delta [Bohr] opcional en lugar de hysteresis_frac * d_adj.")
     p.add_argument("--include_pipeline3", action="store_true", help="Analizar también Pipeline 3 (entrenamiento variacional SJB) además de Pipeline 2.")
     p.add_argument("--skip_per_system_plots", action="store_true", help="Omitir las figuras individuales de cada par (N, g) y generar sólo las curvas vs g.")
+    p.add_argument(
+        "--only_summary_plots",
+        "--from_csv",
+        dest="only_summary_plots",
+        action="store_true",
+        help="Si ya existe flips_vs_g_summary.csv en <out_dir>, reutilizarlo directamente para generar las gráficas generales vs g sin re-leer los HDF5.",
+    )
     p.add_argument("--figure_format", choices=["png", "pdf", "both"], default="png", help="Formato de exportación de figuras.")
     p.add_argument("--dpi", type=int, default=300, help="Resolución en PPI/DPI para PNG.")
     p.add_argument("--font_scale", type=float, default=1.0, help="Factor de escala para tamaños de fuente.")
@@ -1538,6 +1572,7 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     out_dir = os.path.abspath(args.out_dir) if args.out_dir else os.path.join(root_dir, "figures", "flips_analysis")
     os.makedirs(out_dir, exist_ok=True)
+    out_csv = os.path.join(out_dir, "flips_vs_g_summary.csv")
 
     print("==============================================================================")
     print(" ANÁLISIS DE INTERCAMBIOS TOPOLÓGICOS ('FLIPS') RESPECTO A N Y g")
@@ -1546,125 +1581,133 @@ def main(argv: Optional[List[str]] = None) -> int:
     print(f" Histéresis (eta * d_adj): eta = {args.hysteresis_frac:.2f}")
     print("==============================================================================")
 
-    h5_paths = discover_h5_bundles(root_dir, include_pipeline3=args.include_pipeline3)
-    if not h5_paths:
-        print(f"[ERROR] No se encontraron archivos run_bundle*.h5 dentro de: {root_dir}", file=sys.stderr)
-        return 2
-
-    print(f"[+] Se descubrieron {len(h5_paths)} bundles HDF5 para analizar.")
-    csv_lookup = _load_csv_lookup_tables(root_dir)
-
     records: List[Dict[str, Any]] = []
     summary_rows: List[Dict[str, Any]] = []
 
-    for idx, h5p in enumerate(h5_paths, start=1):
-        try:
-            bundle_info = load_bundle_walkers_and_meta(h5p)
-            stats = compute_flip_statistics(
-                bundle_info["walkers"],
-                n_up=bundle_info["n_up"],
-                hysteresis_frac=args.hysteresis_frac,
-                fixed_delta=args.fixed_delta,
-            )
-            # Liberar tensor pesado de caminantes tras extraer estadísticas y trazas
-            del bundle_info["walkers"]
+    if args.only_summary_plots and os.path.isfile(out_csv) and os.path.getsize(out_csv) > 0:
+        print(f"[+] Modo --only_summary_plots: cargando tabla existente {out_csv}")
+        with open(out_csv, "r", encoding="utf-8") as f:
+            for r in csv.DictReader(f):
+                summary_rows.append(dict(r))
+    else:
+        h5_paths = discover_h5_bundles(root_dir, include_pipeline3=args.include_pipeline3)
+        if not h5_paths:
+            print(f"[ERROR] No se encontraron archivos run_bundle*.h5 dentro de: {root_dir}", file=sys.stderr)
+            return 2
 
-            key = (
-                bundle_info["pipeline"],
-                int(bundle_info["N"]),
-                round(float(bundle_info["g"]), 6),
-                bundle_info["method"],
-            )
-            extra = csv_lookup.get(key, {})
-            for k_ex in ("acceptance", "ESJD", "tau_int_E", "tau_int_pos", "E_mean", "SE_E", "kl_total", "kl_up", "kl_down", "kl_spin", "G_RL_speedup"):
-                cur_val = bundle_info.get(k_ex, float("nan"))
-                if (cur_val is None or not np.isfinite(cur_val)) and k_ex in extra:
-                    bundle_info[k_ex] = extra[k_ex]
+        print(f"[+] Se descubrieron {len(h5_paths)} bundles HDF5 para analizar.")
+        csv_lookup = _load_csv_lookup_tables(root_dir)
 
-            if not np.isfinite(bundle_info.get("kl_spin", float("nan"))):
-                ku = bundle_info.get("kl_up", float("nan"))
-                kd = bundle_info.get("kl_down", float("nan"))
-                if np.isfinite(ku) and np.isfinite(kd):
-                    bundle_info["kl_spin"] = 0.5 * (ku + kd)
-                else:
-                    bundle_info["kl_spin"] = bundle_info.get("kl_total", float("nan"))
+        for idx, h5p in enumerate(h5_paths, start=1):
+            try:
+                bundle_info = load_bundle_walkers_and_meta(h5p)
+                stats = compute_flip_statistics(
+                    bundle_info["walkers"],
+                    n_up=bundle_info["n_up"],
+                    hysteresis_frac=args.hysteresis_frac,
+                    fixed_delta=args.fixed_delta,
+                )
+                # Liberar tensor pesado de caminantes tras extraer estadísticas y trazas
+                del bundle_info["walkers"]
 
-            if not np.isfinite(bundle_info.get("ESJD", float("nan"))):
-                bundle_info["ESJD"] = stats["empirical_esjd"]
+                key = (
+                    bundle_info["pipeline"],
+                    int(bundle_info["N"]),
+                    round(float(bundle_info["g"]), 6),
+                    bundle_info["method"],
+                )
+                extra = csv_lookup.get(key, {})
+                for k_ex in ("acceptance", "ESJD", "tau_int_E", "tau_int_pos", "E_mean", "SE_E", "kl_total", "kl_up", "kl_down", "kl_spin", "G_RL_speedup"):
+                    cur_val = bundle_info.get(k_ex, float("nan"))
+                    if (cur_val is None or not np.isfinite(cur_val)) and k_ex in extra:
+                        bundle_info[k_ex] = extra[k_ex]
 
-            bundle_info["stats"] = stats
-            records.append(bundle_info)
+                if not np.isfinite(bundle_info.get("kl_spin", float("nan"))):
+                    ku = bundle_info.get("kl_up", float("nan"))
+                    kd = bundle_info.get("kl_down", float("nan"))
+                    if np.isfinite(ku) and np.isfinite(kd):
+                        bundle_info["kl_spin"] = 0.5 * (ku + kd)
+                    else:
+                        bundle_info["kl_spin"] = bundle_info.get("kl_total", float("nan"))
 
-            row_csv = {
-                "pipeline": bundle_info["pipeline"],
-                "N": bundle_info["N"],
-                "n_up": bundle_info["n_up"],
-                "n_dn": bundle_info["n_dn"],
-                "omega": bundle_info["omega"],
-                "g": bundle_info["g"],
-                "method": bundle_info["method"],
-                "run_name": bundle_info["run_name"],
-                "tau": bundle_info["tau"],
-                "actor_amplitude": bundle_info["actor_amplitude"],
-                "sigma_action_scale": bundle_info["sigma_action_scale"],
-                "n_chains": bundle_info["n_chains"],
-                "n_steps": bundle_info["n_steps"],
-                "n_batch_saved": bundle_info["n_batch_saved"],
-                "d_adj": stats["d_adj"],
-                "delta_hyst": stats["delta_hyst"],
-                "hyst_flips_total_mean": stats["hyst_flips_total_mean"],
-                "hyst_flips_total_std": stats["hyst_flips_total_std"],
-                "hyst_flips_opp_mean": stats["hyst_flips_opp_mean"],
-                "hyst_flips_opp_std": stats["hyst_flips_opp_std"],
-                "hyst_flips_same_mean": stats["hyst_flips_same_mean"],
-                "hyst_flips_same_std": stats["hyst_flips_same_std"],
-                "raw_flips_total_mean": stats["raw_flips_total_mean"],
-                "raw_flips_total_std": stats["raw_flips_total_std"],
-                "raw_flips_opp_mean": stats["raw_flips_opp_mean"],
-                "raw_flips_opp_std": stats["raw_flips_opp_std"],
-                "raw_flips_same_mean": stats["raw_flips_same_mean"],
-                "raw_flips_same_std": stats["raw_flips_same_std"],
-                "origin_flips_per_1k": stats["origin_flips_per_1k"],
-                "one_step_fraction": stats["one_step_fraction"],
-                "two_step_fraction": stats["two_step_fraction"],
-                "transit_steps_mean": stats["transit_steps_mean"],
-                "transit_steps_median": stats["transit_steps_median"],
-                "jump_at_flip_mean": stats["jump_at_flip_mean"],
-                "normal_pair_jump_mean": stats["normal_pair_jump_mean"],
-                "acceptance": bundle_info.get("acceptance"),
-                "ESJD": bundle_info.get("ESJD"),
-                "kl_spin": bundle_info.get("kl_spin"),
-                "kl_total": bundle_info.get("kl_total"),
-                "tau_int_E": bundle_info.get("tau_int_E"),
-                "h5_path": h5p,
-            }
-            summary_rows.append(row_csv)
+                if not np.isfinite(bundle_info.get("ESJD", float("nan"))):
+                    bundle_info["ESJD"] = stats["empirical_esjd"]
 
-            print(
-                f"  [{idx:02d}/{len(h5_paths):02d}] {bundle_info['pipeline']} | N={bundle_info['N']:>2d} g={bundle_info['g']:<4g} | "
-                f"{bundle_info['method']:<13s} | Flips(hyst)={stats['hyst_flips_total_mean']:7.2f}/1k "
-                f"(opp={stats['hyst_flips_opp_mean']:6.2f}, same={stats['hyst_flips_same_mean']:6.2f}) | "
-                f"Flips(raw)={stats['raw_flips_total_mean']:7.2f}/1k | "
-                f"1-paso={stats['one_step_fraction']*100.0 if np.isfinite(stats['one_step_fraction']) else 0.0:5.1f}%"
-            )
-        except Exception as exc:
-            print(f"  [WARN] No se pudo procesar {h5p}: {exc}", file=sys.stderr)
+                bundle_info["stats"] = stats
+                records.append(bundle_info)
 
-    if not summary_rows:
-        print("[ERROR] Ningún archivo HDF5 pudo ser procesado exitosamente.", file=sys.stderr)
-        return 3
+                row_csv = {
+                    "pipeline": bundle_info["pipeline"],
+                    "N": bundle_info["N"],
+                    "n_up": bundle_info["n_up"],
+                    "n_dn": bundle_info["n_dn"],
+                    "omega": bundle_info["omega"],
+                    "g": bundle_info["g"],
+                    "method": bundle_info["method"],
+                    "run_name": bundle_info["run_name"],
+                    "tau": bundle_info["tau"],
+                    "actor_amplitude": bundle_info["actor_amplitude"],
+                    "sigma_action_scale": bundle_info["sigma_action_scale"],
+                    "n_chains": bundle_info["n_chains"],
+                    "n_steps": bundle_info["n_steps"],
+                    "n_batch_saved": bundle_info["n_batch_saved"],
+                    "n_pairs_total": stats["n_pairs_total"],
+                    "n_opp_pairs": stats["n_opp_pairs"],
+                    "n_same_pairs": stats["n_same_pairs"],
+                    "d_adj": stats["d_adj"],
+                    "delta_hyst": stats["delta_hyst"],
+                    "hyst_flips_total_mean": stats["hyst_flips_total_mean"],
+                    "hyst_flips_total_std": stats["hyst_flips_total_std"],
+                    "hyst_flips_opp_mean": stats["hyst_flips_opp_mean"],
+                    "hyst_flips_opp_std": stats["hyst_flips_opp_std"],
+                    "hyst_flips_same_mean": stats["hyst_flips_same_mean"],
+                    "hyst_flips_same_std": stats["hyst_flips_same_std"],
+                    "raw_flips_total_mean": stats["raw_flips_total_mean"],
+                    "raw_flips_total_std": stats["raw_flips_total_std"],
+                    "raw_flips_opp_mean": stats["raw_flips_opp_mean"],
+                    "raw_flips_opp_std": stats["raw_flips_opp_std"],
+                    "raw_flips_same_mean": stats["raw_flips_same_mean"],
+                    "raw_flips_same_std": stats["raw_flips_same_std"],
+                    "origin_flips_per_1k": stats["origin_flips_per_1k"],
+                    "one_step_fraction": stats["one_step_fraction"],
+                    "two_step_fraction": stats["two_step_fraction"],
+                    "transit_steps_mean": stats["transit_steps_mean"],
+                    "transit_steps_median": stats["transit_steps_median"],
+                    "jump_at_flip_mean": stats["jump_at_flip_mean"],
+                    "normal_pair_jump_mean": stats["normal_pair_jump_mean"],
+                    "acceptance": bundle_info.get("acceptance"),
+                    "ESJD": bundle_info.get("ESJD"),
+                    "kl_spin": bundle_info.get("kl_spin"),
+                    "kl_total": bundle_info.get("kl_total"),
+                    "tau_int_E": bundle_info.get("tau_int_E"),
+                    "h5_path": h5p,
+                }
+                summary_rows.append(row_csv)
 
-    # Ordenar filas por pipeline, N, g, method
-    summary_rows.sort(key=lambda r: (str(r["pipeline"]), int(r["N"]), float(r["g"]), str(r["method"])))
-    fieldnames = list(summary_rows[0].keys())
-    out_csv = os.path.join(out_dir, "flips_vs_g_summary.csv")
-    _atomic_write_csv(summary_rows, fieldnames, out_csv)
-    print(f"\n[+] Tabla maestra de flips exportada en: {out_csv}")
+                print(
+                    f"  [{idx:02d}/{len(h5_paths):02d}] {bundle_info['pipeline']} | N={bundle_info['N']:>2d} g={bundle_info['g']:<4g} | "
+                    f"{bundle_info['method']:<13s} | Flips(hyst)={stats['hyst_flips_total_mean']:7.2f}/1k "
+                    f"(opp={stats['hyst_flips_opp_mean']:6.2f}, same={stats['hyst_flips_same_mean']:6.2f}) | "
+                    f"Flips(raw)={stats['raw_flips_total_mean']:7.2f}/1k | "
+                    f"1-paso={stats['one_step_fraction']*100.0 if np.isfinite(stats['one_step_fraction']) else 0.0:5.1f}%"
+                )
+            except Exception as exc:
+                print(f"  [WARN] No se pudo procesar {h5p}: {exc}", file=sys.stderr)
 
-    # Copiar también a <root_dir>/results_csv si existe esa carpeta
-    csv_collect_dir = os.path.join(root_dir, "results_csv")
-    if os.path.isdir(csv_collect_dir):
-        _atomic_write_csv(summary_rows, fieldnames, os.path.join(csv_collect_dir, "flips_vs_g_summary.csv"))
+        if not summary_rows:
+            print("[ERROR] Ningún archivo HDF5 pudo ser procesado exitosamente.", file=sys.stderr)
+            return 3
+
+        # Ordenar filas por pipeline, N, g, method
+        summary_rows.sort(key=lambda r: (str(r["pipeline"]), _safe_int(r.get("N"), 0), _safe_float(r.get("g"), 0.0), str(r["method"])))
+        fieldnames = list(summary_rows[0].keys())
+        _atomic_write_csv(summary_rows, fieldnames, out_csv)
+        print(f"\n[+] Tabla maestra de flips exportada en: {out_csv}")
+
+        # Copiar también a <root_dir>/results_csv si existe esa carpeta
+        csv_collect_dir = os.path.join(root_dir, "results_csv")
+        if os.path.isdir(csv_collect_dir):
+            _atomic_write_csv(summary_rows, fieldnames, os.path.join(csv_collect_dir, "flips_vs_g_summary.csv"))
 
     # Verificar disponibilidad de matplotlib antes de graficar
     try:
@@ -1677,7 +1720,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         return 0
 
     # 1. Graficar anatomía detallada por cada sistema (pipeline, N, g)
-    if not args.skip_per_system_plots:
+    if records and not args.skip_per_system_plots and not args.only_summary_plots:
         per_sys_dir = os.path.join(out_dir, "per_system")
         grouped_ng: Dict[Tuple[str, int, float], List[Dict[str, Any]]] = {}
         for r in records:
@@ -1705,11 +1748,11 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     # 2. Graficar evolución vs g para cada N
     per_n_dir = os.path.join(out_dir, "per_N")
-    pipelines_present = sorted(set(str(r["pipeline"]) for r in summary_rows))
+    pipelines_present = sorted(set(str(r.get("pipeline", "P2")) for r in summary_rows))
     for pipe in pipelines_present:
-        n_present = sorted(set(int(r["N"]) for r in summary_rows if str(r["pipeline"]) == pipe))
+        n_present = sorted(set(_safe_int(r.get("N"), 0) for r in summary_rows if str(r.get("pipeline", "P2")) == pipe and _safe_int(r.get("N"), 0) > 0))
         for n_val in n_present:
-            rows_n = [r for r in summary_rows if str(r["pipeline"]) == pipe and int(r["N"]) == n_val]
+            rows_n = [r for r in summary_rows if str(r.get("pipeline", "P2")) == pipe and _safe_int(r.get("N"), 0) == n_val]
             plot_flips_vs_g_for_N(rows_n, n_val, pipe, per_n_dir, args)
 
         # 3. Figura maestra con todos los N vs g
