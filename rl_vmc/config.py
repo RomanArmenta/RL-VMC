@@ -164,6 +164,9 @@ class IOConfig:
     save_production_walkers: bool = True
     save_walkers_max_batch: int = 64
     save_production_energies: bool = True
+    save_production_energy_mode: Literal["step_mean", "full"] = "step_mean"
+    save_production_walkers_dtype: Literal["float32", "float64"] = "float32"
+    save_production_stats_dtype: Literal["float32", "float64"] = "float32"
     save_production_sampler_stats: bool = True
     export_legacy_files: bool = False
     save_summary_json: bool = True
@@ -407,6 +410,9 @@ def build_experiment_argparser() -> argparse.ArgumentParser:
     g_io.add_argument("--save_production_walkers", action=argparse.BooleanOptionalAction, default=True, help="Guarda las trayectorias de caminantes de la fase de producción en el archivo .h5.")
     g_io.add_argument("--save_walkers_max_batch", type=int, default=64, help="Número máximo de caminantes del lote a almacenar en /production/walkers (usar -1 para guardar todos).")
     g_io.add_argument("--save_production_energies", action=argparse.BooleanOptionalAction, default=True, help="Guarda las energías locales (total, cinética, potencial) de producción en el archivo .h5.")
+    g_io.add_argument("--save_production_energy_mode", type=str, default="step_mean", choices=["step_mean", "full"], help="Modo de guardado de energías en /production: 'step_mean' guarda promedios por paso (n_chains, n_steps, 1) + atributos exactos de varianza y n_walkers (~128x más compacto); 'full' guarda todos los caminantes.")
+    g_io.add_argument("--save_production_walkers_dtype", type=str, default="float32", choices=["float32", "float64"], help="Precisión numérica de /production/walkers en .h5 ('float32' reduce a la mitad el tamaño sin afectar histogramas ni D_KL).")
+    g_io.add_argument("--save_production_stats_dtype", type=str, default="float32", choices=["float32", "float64"], help="Precisión numérica de /production/sampler_stats en .h5.")
     g_io.add_argument("--save_production_sampler_stats", action=argparse.BooleanOptionalAction, default=True, help="Guarda estadísticas de aceptación, desplazamientos y acciones de producción en el archivo .h5.")
     g_io.add_argument("--export_legacy_files", action=argparse.BooleanOptionalAction, default=False, help="Exporta adicionalmente params.json, *.pkl y *.csv en el formato antiguo.")
     g_io.add_argument("--save_summary_json", action=argparse.BooleanOptionalAction, default=True, help="Guarda summary.json en la carpeta del modelo con datos del sistema, hiperparámetros y observables finales.")
@@ -680,6 +686,9 @@ def parse_experiment_args(argv: Optional[list[str]] = None) -> Experiment1DConfi
             save_production_walkers=args.save_production_walkers,
             save_walkers_max_batch=args.save_walkers_max_batch,
             save_production_energies=args.save_production_energies,
+            save_production_energy_mode=args.save_production_energy_mode,
+            save_production_walkers_dtype=args.save_production_walkers_dtype,
+            save_production_stats_dtype=args.save_production_stats_dtype,
             save_production_sampler_stats=args.save_production_sampler_stats,
             export_legacy_files=args.export_legacy_files,
             save_summary_json=args.save_summary_json,

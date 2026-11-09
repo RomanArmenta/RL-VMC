@@ -100,6 +100,12 @@ LR_ACTOR="${LR_ACTOR:-1e-4}"
 LR_CRITIC="${LR_CRITIC:-3e-4}"
 ELOC_CHUNK_SIZE="${ELOC_CHUNK_SIZE:-2048}"
 SAVE_WALKERS_MAX_BATCH="${SAVE_WALKERS_MAX_BATCH:-16}"
+SAVE_ENERGY_MODE="${SAVE_ENERGY_MODE:-step_mean}"
+SAVE_WALKERS_DTYPE="${SAVE_WALKERS_DTYPE:-float32}"
+SAVE_STATS_DTYPE="${SAVE_STATS_DTYPE:-float32}"
+EXPORT_LEGACY_FILES="${EXPORT_LEGACY_FILES:-0}"
+MIN_FREE_DISK_MB="${MIN_FREE_DISK_MB:-512}"
+CRITICAL_MIN_DISK_MB="${CRITICAL_MIN_DISK_MB:-96}"
 TOP_K_MODELS="${TOP_K_MODELS:-2}"
 WALKER_TRACE_TOP_K="${WALKER_TRACE_TOP_K:-1}"
 
@@ -232,11 +238,29 @@ discover_gpus() {
 
 discover_gpus
 
+LEGACY_EXPORT_FLAG="--no-export_legacy_files"
+if [ "$EXPORT_LEGACY_FILES" = "1" ] || [ "$EXPORT_LEGACY_FILES" = "true" ]; then
+    LEGACY_EXPORT_FLAG="--export_legacy_files"
+fi
+
+get_free_disk_mb() {
+    local target_path="${1:-$BASE_OUT_DIR}"
+    local check_dir="$target_path"
+    while [ ! -d "$check_dir" ] && [ "$check_dir" != "/" ] && [ "$check_dir" != "." ]; do
+        check_dir=$(dirname "$check_dir")
+    done
+    [ -d "$check_dir" ] || check_dir="."
+    df -Pm "$check_dir" 2>/dev/null | awk 'NR==2 {gsub(/[^0-9]/, "", $4); print ($4 == "" ? -1 : $4)}'
+}
+
+STARTUP_FREE_MB=$(get_free_disk_mb "$BASE_OUT_DIR")
+
 echo "=============================================================================="
 echo " INICIANDO BENCHMARK DE PRODUCCIÓN (BAKER / AYLER)"
 echo " Fecha y Hora         : $MASTER_START_TIME"
 echo " PID del Master       : $MASTER_PID"
 echo " Directorio raíz      : $BASE_OUT_DIR"
+echo " Espacio libre disco  : ${STARTUP_FREE_MB} MiB (umbral crítico=${CRITICAL_MIN_DISK_MB} MiB)"
 echo " Pipelines activos    : $PIPELINES_TO_RUN (Postprocess-only=$POSTPROCESS_ONLY)"
 echo " Sistemas N           : $N_LIST"
 echo " Acoplamientos g      : $G_LIST"
@@ -245,6 +269,7 @@ echo " Bases CASSCF (N2/N4+): ${CASSCF_BASIS_N2} / ${CASSCF_BASIS_N4} (quad=${CA
 echo " GPUs en Pool         : ${AVAILABLE_GPUS[*]} (Trabajos/GPU=$JOBS_PER_GPU, Total=$MAX_TOTAL_JOBS)"
 echo " Muestreo RL-MALA TD3 : reward=${REWARD_TYPE}, sweeps=${RL_ONLY_STEPS}, walkers=${N_WALKERS}"
 echo " Evaluación CruceNod  : init=${EVAL_INIT_MODE}, chains=${N_EVAL_CHAINS}, steps=${MEASURE_STEPS}"
+echo " Almacenamiento HDF5  : energy=${SAVE_ENERGY_MODE}, walkers=${SAVE_WALKERS_DTYPE} (batch<=${SAVE_WALKERS_MAX_BATCH}), stats=${SAVE_STATS_DTYPE}, legacy=${EXPORT_LEGACY_FILES}"
 echo " Formato de Figuras   : ${FIGURE_FORMAT} @ ${FIGURE_DPI} PPI"
 echo "=============================================================================="
 
@@ -276,15 +301,57 @@ sys.exit(0 if ok else 1)
 ' "${SCRIPT_DIR}/rl_vmc/core/io_bundle.py" "$h5_file" >/dev/null 2>&1
 }
 
+cleanup_run_dir_artifacts() {
+    local run_dir="$1"
+    [ -d "$run_dir" ] || return 0
+    rm -f "$run_dir"/.run_bundle.h5.tmp.* "$run_dir"/core "$run_dir"/core.* 2>/dev/null || true
+    local old_corrupt
+    for old_corrupt in "$run_dir"/run_bundle.h5.corrupt_*; do
+        [ -e "$old_corrupt" ] || continue
+        echo "  [CLEAN] Eliminando respaldo corrupto previo para recuperar espacio: $old_corrupt"
+        rm -f "$old_corrupt"
+    done
+}
+
 quarantine_corrupt_h5() {
     local h5_file="$1"
+    local h5_dir
+    h5_dir=$(dirname "$h5_file")
+    cleanup_run_dir_artifacts "$h5_dir"
+
     if [ -e "$h5_file" ] && [ "$FORCE_RERUN" -eq 0 ]; then
         if ! is_h5_completed "$h5_file"; then
-            local stamp backup_path
-            stamp=$(date +%Y%m%d_%H%M%S)
-            backup_path="${h5_file}.corrupt_${stamp}"
-            echo "  [WARN] Archivo HDF5 inválido o corrupto detectado: $h5_file -> moviendo a $backup_path"
-            mv -f "$h5_file" "$backup_path" || return 1
+            local free_mb
+            free_mb=$(get_free_disk_mb "$h5_dir")
+            if [ -n "$free_mb" ] && [ "$free_mb" -ge 0 ] && [ "$free_mb" -lt "$MIN_FREE_DISK_MB" ]; then
+                echo "  [WARN] Archivo HDF5 inválido detectado ($h5_file) con espacio reducido (${free_mb} MiB < ${MIN_FREE_DISK_MB} MiB) -> eliminando directamente"
+                rm -f "$h5_file" || return 1
+            else
+                local stamp backup_path
+                stamp=$(date +%Y%m%d_%H%M%S)
+                backup_path="${h5_file}.corrupt_${stamp}"
+                echo "  [WARN] Archivo HDF5 inválido o corrupto detectado: $h5_file -> moviendo a $backup_path"
+                mv -f "$h5_file" "$backup_path" || return 1
+            fi
+        fi
+    fi
+    return 0
+}
+
+check_disk_before_run() {
+    local target_dir="$1"
+    local stage="$2"
+    local sys_tag="$3"
+    local model_label="$4"
+    local free_mb
+    free_mb=$(get_free_disk_mb "$target_dir")
+    if [ -n "$free_mb" ] && [ "$free_mb" -ge 0 ]; then
+        if [ "$free_mb" -lt "$CRITICAL_MIN_DISK_MB" ]; then
+            echo "  [ERROR CRITICO DISCO] Espacio libre insuficiente (${free_mb} MiB < ${CRITICAL_MIN_DISK_MB} MiB) antes de lanzar ${model_label} en ${sys_tag}." >&2
+            record_failure "$stage" "$sys_tag" "Espacio insuficiente en disco (${free_mb} MiB libres < ${CRITICAL_MIN_DISK_MB} MiB requeridos) antes de ${model_label}"
+            return 1
+        elif [ "$free_mb" -lt "$MIN_FREE_DISK_MB" ]; then
+            echo "  [WARN DISCO] Espacio libre bajo en disco (${free_mb} MiB < ${MIN_FREE_DISK_MB} MiB) antes de lanzar ${model_label} en ${sys_tag}." >&2
         fi
     fi
     return 0
@@ -839,6 +906,8 @@ run_sistema_pipeline_2() {
             if ! quarantine_corrupt_h5 "$MALA_H5"; then
                 record_failure "PIPELINE 2 (MALA)" "$SYS_TAG" "No se pudo respaldar HDF5 inválido ${MALA_H5}"
                 sys_failed=1
+            elif ! check_disk_before_run "$MALA_DIR" "PIPELINE 2 (MALA)" "$SYS_TAG" "MALA"; then
+                sys_failed=1
             else
                 run_logged_step "[Pipeline 2 | MALA (tau=${TAU}) | ${SYS_TAG} | GPU ${GPU_ID}]" \
                     env CUDA_VISIBLE_DEVICES="$GPU_ID" python3 -u cli/run_1d.py \
@@ -861,11 +930,14 @@ run_sistema_pipeline_2() {
                         --measure_steps "$MEASURE_STEPS" \
                         --eloc_chunk_size "$ELOC_CHUNK_SIZE" \
                         --save_walkers_max_batch "$SAVE_WALKERS_MAX_BATCH" \
+                        --save_production_energy_mode "$SAVE_ENERGY_MODE" \
+                        --save_production_walkers_dtype "$SAVE_WALKERS_DTYPE" \
+                        --save_production_stats_dtype "$SAVE_STATS_DTYPE" \
                         --output_h5 "$MALA_H5" \
                         --reference_casscf_npz "$CASSCF_NPZ" \
                         --master_csv "$LIVE_CSV_P2_RUNS" \
                         --csv_collect_dir "$CSV_COLLECT_DIR" \
-                        --export_legacy_files
+                        "$LEGACY_EXPORT_FLAG"
                 local mala_rc=$?
                 if [ "$mala_rc" -ne 0 ] || ! is_h5_completed "$MALA_H5"; then
                     echo "  [Error Pipeline 2] Falló MALA para ${SYS_TAG} (exit=${mala_rc})." >&2
@@ -874,6 +946,7 @@ run_sistema_pipeline_2() {
                 fi
             fi
         else
+            cleanup_run_dir_artifacts "$MALA_DIR"
             echo "  [SKIP] MALA ya completado para ${SYS_TAG}: $MALA_H5"
         fi
 
@@ -881,6 +954,8 @@ run_sistema_pipeline_2() {
         if [ "$FORCE_RERUN" -eq 1 ] || ! is_h5_completed "$RL_H5"; then
             if ! quarantine_corrupt_h5 "$RL_H5"; then
                 record_failure "PIPELINE 2 (RL-TD3)" "$SYS_TAG" "No se pudo respaldar HDF5 inválido ${RL_H5}"
+                sys_failed=1
+            elif ! check_disk_before_run "$RL_DIR" "PIPELINE 2 (RL-TD3)" "$SYS_TAG" "RL-TD3"; then
                 sys_failed=1
             else
                 run_logged_step "[Pipeline 2 | RL-TD3 (tau=${TAU}, amp=${ACTOR_AMP}, pen=${PENALTY}) | ${SYS_TAG} | GPU ${GPU_ID}]" \
@@ -916,11 +991,14 @@ run_sistema_pipeline_2() {
                         --measure_steps "$MEASURE_STEPS" \
                         --eloc_chunk_size "$ELOC_CHUNK_SIZE" \
                         --save_walkers_max_batch "$SAVE_WALKERS_MAX_BATCH" \
+                        --save_production_energy_mode "$SAVE_ENERGY_MODE" \
+                        --save_production_walkers_dtype "$SAVE_WALKERS_DTYPE" \
+                        --save_production_stats_dtype "$SAVE_STATS_DTYPE" \
                         --output_h5 "$RL_H5" \
                         --reference_casscf_npz "$CASSCF_NPZ" \
                         --master_csv "$LIVE_CSV_P2_RUNS" \
                         --csv_collect_dir "$CSV_COLLECT_DIR" \
-                        --export_legacy_files
+                        "$LEGACY_EXPORT_FLAG"
                 local rl_rc=$?
                 if [ "$rl_rc" -ne 0 ] || ! is_h5_completed "$RL_H5"; then
                     echo "  [Error Pipeline 2] Falló RL-TD3 para ${SYS_TAG} (exit=${rl_rc})." >&2
@@ -929,6 +1007,7 @@ run_sistema_pipeline_2() {
                 fi
             fi
         else
+            cleanup_run_dir_artifacts "$RL_DIR"
             echo "  [SKIP] RL-MALA TD3 ya completado para ${SYS_TAG}: $RL_H5"
         fi
     fi
@@ -1072,6 +1151,15 @@ EOF
     if ! update_global_all_models_figures "FINAL_PIPELINE_2"; then
         record_failure "PIPELINE 2 (GLOBAL_PLOTS)" "FINAL_PIPELINE_2" "plot_benchmark_all_models_summary.py falló al cierre de Pipeline 2"
     fi
+    if [ -f "${SCRIPT_DIR}/scripts/analyze_flips_vs_g.py" ]; then
+        echo "  [Flips vs g] Generando análisis y gráficas de intercambios topológicos (flips) respecto a N y g..."
+        if ! env CUDA_VISIBLE_DEVICES="" JAX_PLATFORMS=cpu python3 -u "${SCRIPT_DIR}/scripts/analyze_flips_vs_g.py" \
+            --root_dir "$BASE_OUT_DIR" \
+            --out_dir "${FIG_ROOT_DIR}/flips_analysis" \
+            "${PLOT_STYLE_ARGS[@]}"; then
+            record_failure "PIPELINE 2 (FLIPS_ANALYSIS)" "FINAL_PIPELINE_2" "scripts/analyze_flips_vs_g.py falló al cierre de Pipeline 2"
+        fi
+    fi
     echo ""
     echo " [PIPELINE 2] Etapa de muestreo puro completada."
 }
@@ -1108,6 +1196,8 @@ run_sistema_pipeline_3() {
             if ! quarantine_corrupt_h5 "$VMC_MALA_H5"; then
                 record_failure "PIPELINE 3 (VMC-MALA)" "$SYS_TAG" "No se pudo respaldar HDF5 inválido ${VMC_MALA_H5}"
                 sys_failed=1
+            elif ! check_disk_before_run "$VMC_MALA_DIR" "PIPELINE 3 (VMC-MALA)" "$SYS_TAG" "VMC-MALA"; then
+                sys_failed=1
             else
                 run_logged_step "[Pipeline 3 | VMC-MALA | ${SYS_TAG} | GPU ${GPU_ID}]" \
                     env CUDA_VISIBLE_DEVICES="$GPU_ID" python3 -u cli/run_1d.py \
@@ -1131,11 +1221,14 @@ run_sistema_pipeline_3() {
                         --measure_steps "$MEASURE_STEPS" \
                         --eloc_chunk_size "$ELOC_CHUNK_SIZE" \
                         --save_walkers_max_batch "$SAVE_WALKERS_MAX_BATCH" \
+                        --save_production_energy_mode "$SAVE_ENERGY_MODE" \
+                        --save_production_walkers_dtype "$SAVE_WALKERS_DTYPE" \
+                        --save_production_stats_dtype "$SAVE_STATS_DTYPE" \
                         --output_h5 "$VMC_MALA_H5" \
                         --reference_casscf_npz "$CASSCF_NPZ" \
                         --master_csv "$LIVE_CSV_P3_RUNS" \
                         --csv_collect_dir "$CSV_COLLECT_DIR" \
-                        --export_legacy_files
+                        "$LEGACY_EXPORT_FLAG"
                 local vmc_rc=$?
                 if [ "$vmc_rc" -ne 0 ] || ! is_h5_completed "$VMC_MALA_H5"; then
                     echo "  [Error Pipeline 3] Falló VMC-MALA para ${SYS_TAG} (exit=${vmc_rc})." >&2
@@ -1144,12 +1237,15 @@ run_sistema_pipeline_3() {
                 fi
             fi
         else
+            cleanup_run_dir_artifacts "$VMC_MALA_DIR"
             echo "  [SKIP] VMC-MALA ya completado para ${SYS_TAG}: $VMC_MALA_H5"
         fi
 
         if [ "$FORCE_RERUN" -eq 1 ] || ! is_h5_completed "$COUPLED_RL_H5"; then
             if ! quarantine_corrupt_h5 "$COUPLED_RL_H5"; then
                 record_failure "PIPELINE 3 (COUPLED)" "$SYS_TAG" "No se pudo respaldar HDF5 inválido ${COUPLED_RL_H5}"
+                sys_failed=1
+            elif ! check_disk_before_run "$COUPLED_RL_DIR" "PIPELINE 3 (COUPLED)" "$SYS_TAG" "Coupled VMC+RL"; then
                 sys_failed=1
             else
                 run_logged_step "[Pipeline 3 | Coupled VMC+RL | ${SYS_TAG} | GPU ${GPU_ID}]" \
@@ -1183,11 +1279,14 @@ run_sistema_pipeline_3() {
                         --measure_steps "$MEASURE_STEPS" \
                         --eloc_chunk_size "$ELOC_CHUNK_SIZE" \
                         --save_walkers_max_batch "$SAVE_WALKERS_MAX_BATCH" \
+                        --save_production_energy_mode "$SAVE_ENERGY_MODE" \
+                        --save_production_walkers_dtype "$SAVE_WALKERS_DTYPE" \
+                        --save_production_stats_dtype "$SAVE_STATS_DTYPE" \
                         --output_h5 "$COUPLED_RL_H5" \
                         --reference_casscf_npz "$CASSCF_NPZ" \
                         --master_csv "$LIVE_CSV_P3_RUNS" \
                         --csv_collect_dir "$CSV_COLLECT_DIR" \
-                        --export_legacy_files
+                        "$LEGACY_EXPORT_FLAG"
                 local coupled_rc=$?
                 if [ "$coupled_rc" -ne 0 ] || ! is_h5_completed "$COUPLED_RL_H5"; then
                     echo "  [Error Pipeline 3] Falló Coupled VMC+RL para ${SYS_TAG} (exit=${coupled_rc})." >&2
@@ -1196,6 +1295,7 @@ run_sistema_pipeline_3() {
                 fi
             fi
         else
+            cleanup_run_dir_artifacts "$COUPLED_RL_DIR"
             echo "  [SKIP] Coupled VMC+RL ya completado para ${SYS_TAG}: $COUPLED_RL_H5"
         fi
     fi

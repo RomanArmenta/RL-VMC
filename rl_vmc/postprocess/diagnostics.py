@@ -73,30 +73,54 @@ def summarize_bundle_diagnostics(
     eloc_all = np.asarray(prod["local_energy"], dtype=np.float64)
     if eloc_all.ndim == 2:
         eloc_all = eloc_all[None, ...]
-    n_chains, n_steps, n_walkers = eloc_all.shape
+    n_chains, n_steps, stored_n_walkers = eloc_all.shape
 
     tloc_all = prod.get("kinetic_energy", None)
     vloc_all = prod.get("potential_energy", None)
     walkers_all = prod.get("walkers", None)
     s_stats = prod.get("sampler_stats", {})
     attrs = prod.get("attrs", {})
-    total_wall_time = max(1e-9, float(attrs.get("wall_time_sec", 1.0)))
+    total_wall_time = max(
+        1e-9,
+        float(attrs.get("wall_time_sec", prod.get("wall_time_sec", 1.0))),
+    )
     chain_wall_time = total_wall_time / max(1, n_chains)
+
+    attr_n_walkers = attrs.get("n_walkers", prod.get("n_walkers", None))
+    eff_n_walkers = (
+        int(attr_n_walkers)
+        if stored_n_walkers == 1 and attr_n_walkers is not None and int(attr_n_walkers) > 0
+        else int(stored_n_walkers)
+    )
+    e_var_per_chain_attr = attrs.get("e_var_per_chain", prod.get("e_var_per_chain", None))
+    e_var_per_chain_arr = (
+        np.asarray(e_var_per_chain_attr, dtype=np.float64).reshape(-1)
+        if e_var_per_chain_attr is not None
+        else None
+    )
 
     per_chain = []
     for c_idx in range(n_chains):
-        e_c = eloc_all[c_idx]  # (n_steps, n_walkers)
+        e_c = eloc_all[c_idx]  # (n_steps, stored_n_walkers)
         e_step_series = np.mean(e_c, axis=-1)
         e_mean = float(np.mean(e_c))
-        e_var = float(np.var(e_c))
+        if (
+            stored_n_walkers == 1
+            and e_var_per_chain_arr is not None
+            and c_idx < len(e_var_per_chain_arr)
+            and np.isfinite(e_var_per_chain_arr[c_idx])
+        ):
+            e_var = float(e_var_per_chain_arr[c_idx])
+        else:
+            e_var = float(np.var(e_c))
 
         t_mean = (
-            float(np.mean(tloc_all[c_idx]))
+            float(np.mean(np.asarray(tloc_all[c_idx], dtype=np.float64)))
             if tloc_all is not None and len(tloc_all) > c_idx
             else float("nan")
         )
         v_mean = (
-            float(np.mean(vloc_all[c_idx]))
+            float(np.mean(np.asarray(vloc_all[c_idx], dtype=np.float64)))
             if vloc_all is not None and len(vloc_all) > c_idx
             else float("nan")
         )
@@ -113,24 +137,24 @@ def summarize_bundle_diagnostics(
             acf_pos = np.ones_like(acf_e)
             tau_int_pos = float("nan")
 
-        total_samples = n_steps * n_walkers
+        total_samples = n_steps * eff_n_walkers
         ess_steps = float(n_steps / max(1.0, tau_int_e))
         ess_total = float(total_samples / max(1.0, tau_int_e))
         ess_per_sec = float(ess_total / chain_wall_time)
         se_e = float(np.sqrt(np.var(e_step_series) / max(1.0, ess_steps)))
 
         acc_mean = (
-            float(np.mean(s_stats["acceptance"][c_idx]))
+            float(np.mean(np.asarray(s_stats["acceptance"][c_idx], dtype=np.float64)))
             if "acceptance" in s_stats
             else float("nan")
         )
         esjd_mean = (
-            float(np.mean(s_stats["esjd"][c_idx]))
+            float(np.mean(np.asarray(s_stats["esjd"][c_idx], dtype=np.float64)))
             if "esjd" in s_stats
             else float("nan")
         )
         adisp_mean = (
-            float(np.mean(s_stats["accepted_disp"][c_idx]))
+            float(np.mean(np.asarray(s_stats["accepted_disp"][c_idx], dtype=np.float64)))
             if "accepted_disp" in s_stats
             else float("nan")
         )
@@ -144,7 +168,7 @@ def summarize_bundle_diagnostics(
             {
                 "chain_idx": c_idx,
                 "n_steps": int(n_steps),
-                "n_walkers": int(n_walkers),
+                "n_walkers": int(eff_n_walkers),
                 "total_samples": int(total_samples),
                 "E_mean": e_mean,
                 "E_var": e_var,

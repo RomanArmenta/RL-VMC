@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import datetime
+import errno
 import fcntl
 import json
 import os
@@ -258,6 +259,41 @@ def _deserialize_pytree(uint8_arr: np.ndarray) -> Any:
     return pickle.loads(raw_bytes)
 
 
+def _cleanup_stale_h5_temps(parent_dir: Path, target_name: str) -> int:
+    """Elimina archivos temporales huérfanos de HDF5 dejados por fallos previos en el directorio."""
+    removed = 0
+    if not parent_dir.is_dir():
+        return removed
+    prefix = f".{target_name}.tmp."
+    try:
+        for entry in parent_dir.iterdir():
+            if entry.is_file() and entry.name.startswith(prefix):
+                try:
+                    entry.unlink()
+                    removed += 1
+                except OSError:
+                    pass
+    except OSError:
+        pass
+    return removed
+
+
+def _ensure_disk_space(target_dir: Path, required_bytes: int, context_label: str) -> None:
+    """Verifica que exista espacio libre suficiente antes de abrir/escribir HDF5 con libhdf5."""
+    try:
+        free_bytes = shutil.disk_usage(target_dir).free
+    except OSError:
+        return
+    if free_bytes < required_bytes:
+        free_mb = free_bytes / (1024.0 * 1024.0)
+        req_mb = required_bytes / (1024.0 * 1024.0)
+        raise OSError(
+            errno.ENOSPC,
+            f"Espacio insuficiente en disco en '{target_dir}' para guardar '{context_label}': "
+            f"{free_mb:.1f} MiB libres < {req_mb:.1f} MiB requeridos",
+        )
+
+
 def save_run_bundle_h5(
     h5_path: str | Path,
     config_dict: dict[str, Any],
@@ -274,91 +310,189 @@ def save_run_bundle_h5(
     """Guarda todos los artefactos de una corrida en un único archivo HDF5 (.h5) de forma atómica."""
     path = Path(h5_path)
     path.parent.mkdir(parents=True, exist_ok=True)
+    _cleanup_stale_h5_temps(path.parent, path.name)
+
+    energy_mode = str(
+        getattr(io_flags, "save_production_energy_mode", "step_mean") or "step_mean"
+    ).lower()
+    if energy_mode not in ("step_mean", "full"):
+        energy_mode = "step_mean"
+
+    w_dtype_name = str(
+        getattr(io_flags, "save_production_walkers_dtype", "float32") or "float32"
+    ).lower()
+    w_dtype = np.float32 if w_dtype_name == "float32" else np.float64
+
+    s_dtype_name = str(
+        getattr(io_flags, "save_production_stats_dtype", "float32") or "float32"
+    ).lower()
+    s_dtype = np.float32 if s_dtype_name == "float32" else np.float64
+
+    # Pre-serializar y compactar en memoria antes de abrir libhdf5 para evitar
+    # escribir/fallar a mitad de disco lleno (que puede provocar SIGSEGV en HDF5).
+    raw_payload_bytes = 0
+    config_json_str: Optional[str] = None
+    if getattr(io_flags, "save_config", True):
+        config_json_str = json.dumps(config_dict, indent=2, default=_json_default)
+        raw_payload_bytes += len(config_json_str.encode("utf-8"))
+
+    ckpt_arrays: dict[str, np.ndarray] = {}
+    if getattr(io_flags, "save_ansatz_weights", True):
+        if ansatz_best is not None:
+            ckpt_arrays["ansatz_best"] = _serialize_pytree(ansatz_best)
+        if ansatz_final is not None:
+            ckpt_arrays["ansatz_final"] = _serialize_pytree(ansatz_final)
+    if getattr(io_flags, "save_actor_weights", True) and actor_final is not None:
+        ckpt_arrays["actor_final"] = _serialize_pytree(actor_final)
+    if getattr(io_flags, "save_critic_weights", True):
+        if critic1_final is not None:
+            ckpt_arrays["critic1_final"] = _serialize_pytree(critic1_final)
+        if critic2_final is not None:
+            ckpt_arrays["critic2_final"] = _serialize_pytree(critic2_final)
+    for arr in ckpt_arrays.values():
+        raw_payload_bytes += int(arr.nbytes)
+
+    training_records_json: Optional[str] = None
+    training_cols: dict[str, np.ndarray] = {}
+    if getattr(io_flags, "save_training_history", True) and training_history:
+        training_records_json = json.dumps(training_history, default=_json_default)
+        raw_payload_bytes += len(training_records_json.encode("utf-8"))
+        df_trn = pd.DataFrame(training_history)
+        for col in df_trn.columns:
+            series = df_trn[col]
+            if pd.api.types.is_numeric_dtype(series):
+                col_arr = series.to_numpy(dtype=np.float64)
+                training_cols[col] = col_arr
+                raw_payload_bytes += int(col_arr.nbytes)
+
+    prod_attrs: dict[str, Any] = {}
+    prod_walkers_arr: Optional[np.ndarray] = None
+    prod_energy_arrays: dict[str, np.ndarray] = {}
+    prod_stat_arrays: dict[str, np.ndarray] = {}
+
+    if production_data is not None:
+        for meta_key in ("wall_time_sec", "n_chains", "n_burn_in", "measure_steps", "thin"):
+            if meta_key in production_data:
+                prod_attrs[meta_key] = production_data[meta_key]
+
+        eloc_raw = production_data.get("local_energy")
+        if eloc_raw is not None:
+            eloc_np = np.asarray(eloc_raw)
+            eloc_3d = eloc_np[None, ...] if eloc_np.ndim == 2 else eloc_np
+            inferred_nw = int(eloc_3d.shape[2]) if eloc_3d.ndim >= 3 else 1
+            if (
+                inferred_nw <= 1
+                and "n_walkers" in production_data
+                and int(production_data["n_walkers"]) > 0
+            ):
+                orig_nw = int(production_data["n_walkers"])
+            else:
+                orig_nw = inferred_nw
+            prod_attrs["n_walkers"] = orig_nw
+            prod_attrs["energy_storage_mode"] = energy_mode
+
+            if inferred_nw <= 1 and "e_var_per_chain" in production_data:
+                e_var_pc = np.asarray(production_data["e_var_per_chain"], dtype=np.float64)
+                prod_attrs["e_var_per_chain"] = e_var_pc
+                if "e_var_total" in production_data:
+                    prod_attrs["e_var_total"] = float(production_data["e_var_total"])
+            elif eloc_3d.size > 0:
+                eloc_f64 = np.asarray(eloc_3d, dtype=np.float64)
+                if eloc_f64.ndim >= 3:
+                    prod_attrs["e_var_per_chain"] = np.var(eloc_f64, axis=(1, 2)).astype(
+                        np.float64
+                    )
+                else:
+                    prod_attrs["e_var_per_chain"] = np.asarray(
+                        [float(np.var(eloc_f64))], dtype=np.float64
+                    )
+                prod_attrs["e_var_total"] = float(np.var(eloc_f64))
+
+        if getattr(io_flags, "save_production_walkers", True) and production_data.get("walkers") is not None:
+            w_arr = np.asarray(production_data["walkers"])
+            max_b = getattr(io_flags, "save_walkers_max_batch", -1)
+            if max_b is not None and max_b > 0 and w_arr.ndim >= 3 and w_arr.shape[2] > max_b:
+                w_arr = w_arr[:, :, :max_b, ...]
+            w_arr = np.ascontiguousarray(w_arr, dtype=w_dtype)
+            prod_walkers_arr = w_arr
+            raw_payload_bytes += int(w_arr.nbytes)
+
+        if getattr(io_flags, "save_production_energies", True):
+            for e_key in ("local_energy", "kinetic_energy", "potential_energy"):
+                if e_key in production_data and production_data[e_key] is not None:
+                    e_arr = np.asarray(production_data[e_key], dtype=np.float64)
+                    if e_arr.ndim == 2:
+                        e_arr = e_arr[None, ...]
+                    if energy_mode == "step_mean" and e_arr.ndim >= 3 and e_arr.shape[2] > 1:
+                        e_arr = np.mean(e_arr, axis=-1, keepdims=True, dtype=np.float64)
+                    e_arr = np.ascontiguousarray(e_arr, dtype=np.float64)
+                    prod_energy_arrays[e_key] = e_arr
+                    raw_payload_bytes += int(e_arr.nbytes)
+
+        if getattr(io_flags, "save_production_sampler_stats", True) and "sampler_stats" in production_data:
+            for s_key, s_val in production_data["sampler_stats"].items():
+                if s_val is not None:
+                    s_arr = np.ascontiguousarray(np.asarray(s_val), dtype=s_dtype)
+                    prod_stat_arrays[s_key] = s_arr
+                    raw_payload_bytes += int(s_arr.nbytes)
+
+    required_bytes = max(32 * 1024 * 1024, int(raw_payload_bytes) + 8 * 1024 * 1024)
+    _ensure_disk_space(path.parent, required_bytes, path.name)
+
     fd, tmp_name = tempfile.mkstemp(prefix=f".{path.name}.tmp.", dir=str(path.parent))
     os.close(fd)
     tmp_path = Path(tmp_name)
 
     try:
         with h5py.File(tmp_path, "w") as f:
-            f.attrs["schema_version"] = "1.0"
+            f.attrs["schema_version"] = "1.1"
             f.attrs["created_at"] = datetime.datetime.now().isoformat()
             if extra_metadata:
                 for k, v in extra_metadata.items():
                     f.attrs[k] = json.dumps(v) if isinstance(v, (dict, list)) else str(v)
 
             # 1. Configuración
-            if getattr(io_flags, "save_config", True):
-                f.attrs["config_json"] = json.dumps(config_dict, indent=2, default=_json_default)
+            if config_json_str is not None:
+                f.attrs["config_json"] = config_json_str
 
             # 2. Checkpoints de redes entrenadas
             ckpt_grp = f.create_group("checkpoints")
-            if getattr(io_flags, "save_ansatz_weights", True):
-                if ansatz_best is not None:
-                    ckpt_grp.create_dataset("ansatz_best", data=_serialize_pytree(ansatz_best))
-                if ansatz_final is not None:
-                    ckpt_grp.create_dataset("ansatz_final", data=_serialize_pytree(ansatz_final))
-
-            if getattr(io_flags, "save_actor_weights", True) and actor_final is not None:
-                ckpt_grp.create_dataset("actor_final", data=_serialize_pytree(actor_final))
-
-            if getattr(io_flags, "save_critic_weights", True):
-                if critic1_final is not None:
-                    ckpt_grp.create_dataset("critic1_final", data=_serialize_pytree(critic1_final))
-                if critic2_final is not None:
-                    ckpt_grp.create_dataset("critic2_final", data=_serialize_pytree(critic2_final))
+            for ckpt_name, ckpt_arr in ckpt_arrays.items():
+                ckpt_grp.create_dataset(ckpt_name, data=ckpt_arr)
 
             # 3. Historial de Entrenamiento
-            if getattr(io_flags, "save_training_history", True) and training_history:
+            if training_records_json is not None:
                 trn_grp = f.create_group("training")
-                trn_grp.attrs["records_json"] = json.dumps(training_history, default=_json_default)
-                df_trn = pd.DataFrame(training_history)
-                for col in df_trn.columns:
-                    series = df_trn[col]
-                    if pd.api.types.is_numeric_dtype(series):
-                        trn_grp.create_dataset(
-                            col, data=series.to_numpy(dtype=np.float64), compression="gzip"
-                        )
+                trn_grp.attrs["records_json"] = training_records_json
+                for col, col_arr in training_cols.items():
+                    trn_grp.create_dataset(col, data=col_arr, compression="gzip")
 
             # 4. Datos de Producción / Evaluación MCMC
             if production_data is not None:
                 prod_grp = f.create_group("production")
-                for meta_key in ("wall_time_sec", "n_chains", "n_burn_in", "measure_steps", "thin"):
-                    if meta_key in production_data:
-                        prod_grp.attrs[meta_key] = production_data[meta_key]
+                for meta_key, meta_val in prod_attrs.items():
+                    prod_grp.attrs[meta_key] = meta_val
 
-                if getattr(io_flags, "save_production_walkers", True) and "walkers" in production_data:
-                    w_arr = np.asarray(production_data["walkers"])
-                    max_b = getattr(io_flags, "save_walkers_max_batch", -1)
-                    if max_b is not None and max_b > 0 and w_arr.ndim >= 3 and w_arr.shape[2] > max_b:
-                        w_arr = w_arr[:, :, :max_b, ...]
-                    prod_grp.create_dataset("walkers", data=w_arr, compression="gzip")
+                if prod_walkers_arr is not None:
+                    prod_grp.create_dataset("walkers", data=prod_walkers_arr, compression="gzip")
 
-                if getattr(io_flags, "save_production_energies", True):
-                    for e_key in ("local_energy", "kinetic_energy", "potential_energy"):
-                        if e_key in production_data and production_data[e_key] is not None:
-                            prod_grp.create_dataset(
-                                e_key,
-                                data=np.asarray(production_data[e_key]),
-                                compression="gzip",
-                            )
+                for e_key, e_arr in prod_energy_arrays.items():
+                    prod_grp.create_dataset(e_key, data=e_arr, compression="gzip")
 
-                if getattr(io_flags, "save_production_sampler_stats", True) and "sampler_stats" in production_data:
+                if prod_stat_arrays:
                     stats_grp = prod_grp.create_group("sampler_stats")
-                    for s_key, s_val in production_data["sampler_stats"].items():
-                        if s_val is not None:
-                            stats_grp.create_dataset(
-                                s_key, data=np.asarray(s_val), compression="gzip"
-                            )
+                    for s_key, s_arr in prod_stat_arrays.items():
+                        stats_grp.create_dataset(s_key, data=s_arr, compression="gzip")
 
         need_prod = bool(
             production_data is not None
             and getattr(io_flags, "save_production_energies", True)
-            and "local_energy" in production_data
+            and "local_energy" in prod_energy_arrays
         )
         need_walkers = bool(
             need_prod
             and getattr(io_flags, "save_production_walkers", True)
-            and "walkers" in production_data
+            and prod_walkers_arr is not None
         )
         ok, reason = validate_run_bundle_h5(
             tmp_path,

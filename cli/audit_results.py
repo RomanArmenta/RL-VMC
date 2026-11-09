@@ -529,24 +529,44 @@ def evaluate_single_bundle(
     reused_production = False
     if reuse and has_audited_prod:
         prod_data = bundle["production"]
-        stored_eloc = np.asarray(prod_data["local_energy"])
+        prod_attrs = prod_data.get("attrs", {})
+        stored_eloc = np.asarray(prod_data["local_energy"], dtype=np.float64)
         if stored_eloc.ndim == 2:
             stored_eloc = stored_eloc[None, ...]
         n_runs = stored_eloc.shape[0]
         n_steps = stored_eloc.shape[1]
-        batch_size = stored_eloc.shape[2] if stored_eloc.ndim >= 3 else 1
-        total_wall_time = float(prod_data.get("attrs", {}).get("wall_time_sec", 1.0))
+        stored_batch = stored_eloc.shape[2] if stored_eloc.ndim >= 3 else 1
+        attr_n_walkers = prod_attrs.get("n_walkers", None)
+        if stored_batch == 1 and attr_n_walkers is not None and int(attr_n_walkers) > 0:
+            batch_size = int(attr_n_walkers)
+        else:
+            batch_size = stored_batch
+        e_var_attr = prod_attrs.get("e_var_per_chain", None)
+        e_var_attr_arr = (
+            np.asarray(e_var_attr, dtype=np.float64).reshape(-1)
+            if e_var_attr is not None
+            else None
+        )
+        total_wall_time = float(prod_attrs.get("wall_time_sec", 1.0))
         dt = max(total_wall_time / max(1, n_runs), 1e-6)
 
         for r_idx in range(n_runs):
             eloc_all = stored_eloc[r_idx]
             acf = compute_acf_1d(eloc_all, max_lag=min(args.max_lag, n_steps - 1))
             tau_int = compute_iat_sokal(acf, c_sokal=args.sokal_c)
-            total_samples = float(eloc_all.size)
+            total_samples = float(n_steps * batch_size)
             ess = total_samples / max(tau_int, 1.0)
             ess_s = ess / dt
             e_mean = float(np.mean(eloc_all))
-            e_var = float(np.var(eloc_all))
+            if (
+                stored_batch == 1
+                and e_var_attr_arr is not None
+                and r_idx < len(e_var_attr_arr)
+                and np.isfinite(e_var_attr_arr[r_idx])
+            ):
+                e_var = float(e_var_attr_arr[r_idx])
+            else:
+                e_var = float(np.var(eloc_all))
             e_sem = float(np.sqrt(max(e_var, 0.0) / max(ess, 1.0)))
 
             e_means.append(e_mean)
@@ -559,22 +579,22 @@ def evaluate_single_bundle(
 
             s_stats = prod_data.get("sampler_stats", {})
             if "acceptance" in s_stats and len(s_stats["acceptance"]) > 0:
-                acc_arr = np.asarray(s_stats["acceptance"])
+                acc_arr = np.asarray(s_stats["acceptance"], dtype=np.float64)
                 acc_means.append(float(np.mean(acc_arr[r_idx] if acc_arr.ndim >= 2 else acc_arr)))
             else:
                 acc_means.append(float("nan"))
             if "esjd" in s_stats and len(s_stats["esjd"]) > 0:
-                esjd_arr = np.asarray(s_stats["esjd"])
+                esjd_arr = np.asarray(s_stats["esjd"], dtype=np.float64)
                 esjd_means.append(float(np.mean(esjd_arr[r_idx] if esjd_arr.ndim >= 2 else esjd_arr)))
             else:
                 esjd_means.append(float("nan"))
             if "actor_drift_mag" in s_stats and len(s_stats["actor_drift_mag"]) > 0:
-                drift_arr = np.asarray(s_stats["actor_drift_mag"])
+                drift_arr = np.asarray(s_stats["actor_drift_mag"], dtype=np.float64)
                 drift_means.append(float(np.mean(drift_arr[r_idx] if drift_arr.ndim >= 2 else drift_arr)))
             else:
                 drift_means.append(float("nan"))
             if "actor_sigma" in s_stats and len(s_stats["actor_sigma"]) > 0:
-                sig_arr = np.asarray(s_stats["actor_sigma"])
+                sig_arr = np.asarray(s_stats["actor_sigma"], dtype=np.float64)
                 sigma_means.append(float(np.mean(sig_arr[r_idx] if sig_arr.ndim >= 2 else sig_arr)))
             else:
                 sigma_means.append(float("nan"))
