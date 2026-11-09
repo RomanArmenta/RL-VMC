@@ -16,7 +16,13 @@ import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 
 from rl_vmc.config import PostProcessConfig, Experiment1DConfig
-from rl_vmc.core.io_bundle import load_run_bundle_h5
+from rl_vmc.core.io_bundle import (
+    atomic_copy_file,
+    atomic_write_csv,
+    atomic_write_json,
+    load_run_bundle_h5,
+    locked_upsert_csv,
+)
 from rl_vmc.postprocess.diagnostics import (
     summarize_bundle_diagnostics,
     compute_acf_1d,
@@ -811,6 +817,8 @@ def plot_article_densities_comparison(
         e_mean_m = d_sum_m.get("E_mean", float("nan"))
         se_e_m = d_sum_m.get("SE_E", float("nan"))
         cas_e_m = binfo.get("casscf_energy", float("nan"))
+        if not np.isfinite(cas_e_m) and casscf_ref is not None:
+            cas_e_m = casscf_ref.get("energy", float("nan"))
         title_lines_m = [binfo["label"]]
         if np.isfinite(e_mean_m):
             e_str_m = f"$\\langle E \\rangle = {e_mean_m:.6f}"
@@ -1111,12 +1119,10 @@ def plot_article_kl_divergence(
             else "kl_convergence_vs_casscf.csv"
         )
         kl_csv_path = os.path.join(out_dir, kl_fname)
-        df_kl.to_csv(kl_csv_path, index=False)
+        atomic_write_csv(df_kl, kl_csv_path, index=False)
         if getattr(cfg, "csv_collect_dir", ""):
-            import shutil
-
             os.makedirs(cfg.csv_collect_dir, exist_ok=True)
-            shutil.copy2(kl_csv_path, os.path.join(cfg.csv_collect_dir, kl_fname))
+            atomic_copy_file(kl_csv_path, os.path.join(cfg.csv_collect_dir, kl_fname))
 
 
 def plot_efficiency_bars(
@@ -1246,13 +1252,17 @@ def plot_hyperparameter_evolution(
         arr = np.asarray(series, dtype=np.float64)
         return np.where(np.isfinite(arr) & (arr >= 0), arr, 0.0)
 
+    def _has_pos_finite(values: Any) -> bool:
+        arr = np.asarray(values, dtype=np.float64)
+        return bool(np.any(np.isfinite(arr) & (arr > 0)))
+
     # Paneles 1 a 5: Evolución vs Actor Amplitude A_mu (con MALA en A_mu = 0 y líneas horizontales discontinuas '--')
     mala_taus = sorted(df_mala["tau"].unique())
     mala_palette = ["#333333", "#7f7f7f", "#8c564b", "#c0392b", "#d35400", "#555555", "#990000"]
     mala_colors = {t: mala_palette[i % len(mala_palette)] for i, t in enumerate(mala_taus)}
 
     # 1. D_KL Spin Promedio vs Actor Amplitude
-    if "kl_casscf_spin_mean" in df_plot.columns and df_plot["kl_casscf_spin_mean"].notna().any():
+    if "kl_casscf_spin_mean" in df_plot.columns and df_plot["kl_casscf_spin_mean"].dropna().size > 0:
         for _, m_row in df_mala.iterrows():
             t_v = float(m_row["tau"])
             y_v = float(m_row["kl_casscf_spin_mean"])
@@ -1278,10 +1288,13 @@ def plot_hyperparameter_evolution(
             x_v = g_df["actor_amplitude"].to_numpy(dtype=np.float64)
             y_v = g_df["kl_casscf_spin_mean"].to_numpy(dtype=np.float64)
             y_e = _safe_err(g_df.get("kl_casscf_spin_std", pd.Series(np.zeros(len(g_df)))))
+            mask_v = np.isfinite(x_v) & np.isfinite(y_v)
+            if not np.any(mask_v):
+                continue
             ax_kl_spin.errorbar(
-                x_v,
-                y_v,
-                yerr=y_e,
+                x_v[mask_v],
+                y_v[mask_v],
+                yerr=y_e[mask_v],
                 fmt=f"-{mk}",
                 color=c,
                 lw=2.0,
@@ -1290,8 +1303,9 @@ def plot_hyperparameter_evolution(
                 label=f"RL-MALA ($\\tau={t_val:.2f}, \\lambda={p_val:.2f}$)",
             )
 
-        best_spin_idx = df_plot["kl_casscf_spin_mean"].idxmin()
-        if pd.notna(best_spin_idx):
+        valid_spin = df_plot["kl_casscf_spin_mean"].dropna()
+        if not valid_spin.empty:
+            best_spin_idx = valid_spin.idxmin()
             b_r = df_plot.loc[best_spin_idx]
             ax_kl_spin.scatter(
                 [b_r["actor_amplitude"]],
@@ -1303,7 +1317,8 @@ def plot_hyperparameter_evolution(
                 zorder=10,
                 label=f"★ Mejor: {b_r['label']}",
             )
-        ax_kl_spin.set_yscale("log")
+        if _has_pos_finite(df_plot["kl_casscf_spin_mean"]):
+            ax_kl_spin.set_yscale("log")
         ax_kl_spin.set_title(
             r"Cruce Nodal: $D_{\mathrm{KL}}^{\mathrm{spin}} = \frac{1}{2}(D_{\mathrm{KL}}^\uparrow + D_{\mathrm{KL}}^\downarrow)$ vs $A_\mu$",
             weight="bold",
@@ -1314,7 +1329,7 @@ def plot_hyperparameter_evolution(
         ax_kl_spin.legend(fontsize=7.2, loc="best", frameon=True, ncol=1 if len(rl_groups) <= 6 else 2)
 
     # 2. D_KL Total vs Actor Amplitude
-    if "kl_casscf_total_mean" in df_plot.columns and df_plot["kl_casscf_total_mean"].notna().any():
+    if "kl_casscf_total_mean" in df_plot.columns and df_plot["kl_casscf_total_mean"].dropna().size > 0:
         for _, m_row in df_mala.iterrows():
             t_v = float(m_row["tau"])
             y_v = float(m_row["kl_casscf_total_mean"])
@@ -1339,10 +1354,13 @@ def plot_hyperparameter_evolution(
             x_v = g_df["actor_amplitude"].to_numpy(dtype=np.float64)
             y_v = g_df["kl_casscf_total_mean"].to_numpy(dtype=np.float64)
             y_e = _safe_err(g_df.get("kl_casscf_total_std", pd.Series(np.zeros(len(g_df)))))
+            mask_v = np.isfinite(x_v) & np.isfinite(y_v)
+            if not np.any(mask_v):
+                continue
             ax_kl_tot.errorbar(
-                x_v,
-                y_v,
-                yerr=y_e,
+                x_v[mask_v],
+                y_v[mask_v],
+                yerr=y_e[mask_v],
                 fmt=f"-{mk}",
                 color=c,
                 lw=2.0,
@@ -1350,7 +1368,8 @@ def plot_hyperparameter_evolution(
                 capsize=4,
                 label=f"RL-MALA ($\\tau={t_val:.2f}, \\lambda={p_val:.2f}$)",
             )
-        ax_kl_tot.set_yscale("log")
+        if _has_pos_finite(df_plot["kl_casscf_total_mean"]):
+            ax_kl_tot.set_yscale("log")
         ax_kl_tot.set_title(
             r"Precisión de Densidad Total: $D_{\mathrm{KL}}(\rho_{\mathrm{tot}} \parallel \rho_{\mathrm{CASSCF}})$ vs $A_\mu$",
             weight="bold",
@@ -1361,41 +1380,47 @@ def plot_hyperparameter_evolution(
 
     # 3. Precisión Energética: <E_L> - E_CASSCF +/- SE(E) vs Actor Amplitude
     ax_de.axhline(0.0, color="black", linestyle=":", lw=1.8, label="Exact CASSCF ($\\Delta E = 0$)")
-    for _, m_row in df_mala.iterrows():
-        t_v = float(m_row["tau"])
-        de_v = float(m_row.get("delta_E_vs_CASSCF", m_row["E_mean"]))
-        se_v = float(m_row.get("SE_E", 0.0))
-        if np.isfinite(de_v) and abs(de_v) < 0.05:
+    has_de_col = "delta_E_vs_CASSCF" in df_plot.columns and df_plot["delta_E_vs_CASSCF"].dropna().size > 0
+    if has_de_col:
+        de_all = pd.to_numeric(df_plot["delta_E_vs_CASSCF"], errors="coerce")
+        use_tight_de_filter = bool((de_all.abs() < 0.05).any())
+        for _, m_row in df_mala.iterrows():
+            t_v = float(m_row["tau"])
+            de_v = float(m_row["delta_E_vs_CASSCF"])
+            se_v = float(m_row.get("SE_E", 0.0))
+            if np.isfinite(de_v) and ((not use_tight_de_filter) or abs(de_v) < 0.05):
+                ax_de.errorbar(
+                    [0.0],
+                    [de_v * 1e3],
+                    yerr=[(se_v if np.isfinite(se_v) else 0.0) * 1e3],
+                    fmt="X",
+                    color=mala_colors.get(t_v, "gray"),
+                    markersize=8,
+                    capsize=4,
+                    label=f"MALA -- ($\\tau={t_v:.2f}$)",
+                )
+        for g_idx, ((t_val, p_val), g_df) in enumerate(rl_groups):
+            c = group_colors[g_idx % len(group_colors)]
+            mk = group_markers[g_idx % len(group_markers)]
+            de_sub = pd.to_numeric(g_df["delta_E_vs_CASSCF"], errors="coerce")
+            mask_sub = np.isfinite(de_sub) & ((~use_tight_de_filter) | (de_sub.abs() < 0.05))
+            sub = g_df[mask_sub]
+            if len(sub) == 0:
+                continue
+            x_v = sub["actor_amplitude"].to_numpy(dtype=np.float64)
+            y_v = sub["delta_E_vs_CASSCF"].to_numpy(dtype=np.float64) * 1e3
+            y_e = _safe_err(sub["SE_E"]) * 1e3
             ax_de.errorbar(
-                [0.0],
-                [de_v * 1e3],
-                yerr=[(se_v if np.isfinite(se_v) else 0.0) * 1e3],
-                fmt="X",
-                color=mala_colors.get(t_v, "gray"),
-                markersize=8,
+                x_v,
+                y_v,
+                yerr=y_e,
+                fmt=f"-{mk}",
+                color=c,
+                lw=2.0,
+                markersize=6.5,
                 capsize=4,
-                label=f"MALA -- ($\\tau={t_v:.2f}$)",
+                label=f"RL-MALA ($\\tau={t_val:.2f}, \\lambda={p_val:.2f}$)",
             )
-    for g_idx, ((t_val, p_val), g_df) in enumerate(rl_groups):
-        c = group_colors[g_idx % len(group_colors)]
-        mk = group_markers[g_idx % len(group_markers)]
-        sub = g_df[g_df["delta_E_vs_CASSCF"].abs() < 0.05] if "delta_E_vs_CASSCF" in g_df else g_df
-        if len(sub) == 0:
-            continue
-        x_v = sub["actor_amplitude"].to_numpy(dtype=np.float64)
-        y_v = sub["delta_E_vs_CASSCF"].to_numpy(dtype=np.float64) * 1e3
-        y_e = _safe_err(sub["SE_E"]) * 1e3
-        ax_de.errorbar(
-            x_v,
-            y_v,
-            yerr=y_e,
-            fmt=f"-{mk}",
-            color=c,
-            lw=2.0,
-            markersize=6.5,
-            capsize=4,
-            label=f"RL-MALA ($\\tau={t_val:.2f}, \\lambda={p_val:.2f}$)",
-        )
     ax_de.set_title(
         r"Precisión Energética: $(\langle E_L \rangle - E_{\mathrm{CASSCF}}) \pm \mathrm{SE}(E)$ vs $A_\mu$",
         weight="bold",
@@ -1428,10 +1453,13 @@ def plot_hyperparameter_evolution(
         x_v = g_df["actor_amplitude"].to_numpy(dtype=np.float64)
         y_v = g_df["tau_int_E"].to_numpy(dtype=np.float64)
         y_e = _safe_err(g_df.get("tau_int_E_std", pd.Series(np.zeros(len(g_df)))))
+        mask_v = np.isfinite(x_v) & np.isfinite(y_v)
+        if not np.any(mask_v):
+            continue
         ax_tau.errorbar(
-            x_v,
-            y_v,
-            yerr=y_e,
+            x_v[mask_v],
+            y_v[mask_v],
+            yerr=y_e[mask_v],
             fmt=f"-{mk}",
             color=c,
             lw=2.0,
@@ -1439,8 +1467,9 @@ def plot_hyperparameter_evolution(
             capsize=4,
             label=f"RL-MALA ($\\tau={t_val:.2f}, \\lambda={p_val:.2f}$)",
         )
-    best_tau_idx = df_plot["tau_int_E"].idxmin()
-    if pd.notna(best_tau_idx):
+    valid_tau = df_plot["tau_int_E"].dropna() if "tau_int_E" in df_plot.columns else pd.Series(dtype=float)
+    if not valid_tau.empty:
+        best_tau_idx = valid_tau.idxmin()
         b_r = df_plot.loc[best_tau_idx]
         ax_tau.scatter(
             [b_r["actor_amplitude"]],
@@ -1452,7 +1481,8 @@ def plot_hyperparameter_evolution(
             zorder=10,
             label=f"★ Mín $\\tau_{{\\mathrm{{int}}}}$: {b_r['label']}",
         )
-    ax_tau.set_yscale("log")
+    if "tau_int_E" in df_plot.columns and _has_pos_finite(df_plot["tau_int_E"]):
+        ax_tau.set_yscale("log")
     ax_tau.set_title(
         r"Tiempo de Autocorrelación Integrado $\tau_{\mathrm{int}}(E)$ vs $A_\mu$ (menor es mejor)",
         weight="bold",
@@ -1486,10 +1516,13 @@ def plot_hyperparameter_evolution(
         x_v = g_df["actor_amplitude"].to_numpy(dtype=np.float64)
         y_v = g_df["ESJD"].to_numpy(dtype=np.float64)
         y_e = _safe_err(g_df.get("ESJD_std", pd.Series(np.zeros(len(g_df)))))
+        mask_v = np.isfinite(x_v) & np.isfinite(y_v)
+        if not np.any(mask_v):
+            continue
         ax_esjd.errorbar(
-            x_v,
-            y_v,
-            yerr=y_e,
+            x_v[mask_v],
+            y_v[mask_v],
+            yerr=y_e[mask_v],
             fmt=f"-{mk}",
             color=c,
             lw=2.0,
@@ -1506,27 +1539,38 @@ def plot_hyperparameter_evolution(
 
     # 6. Comparativa Directa MALA (discontinua '--') vs RL-MALA (continua '-') en función de tau (ESS/s)
     if len(df_mala) > 0:
-        ax_ess.errorbar(
-            df_mala["tau"].to_numpy(dtype=np.float64),
-            df_mala["ESS_per_sec"].to_numpy(dtype=np.float64),
-            yerr=_safe_err(df_mala.get("ESS_per_sec_std", pd.Series(np.zeros(len(df_mala))))),
-            fmt="--X",
-            color="#e74c3c",
-            lw=2.5,
-            markersize=9,
-            capsize=5,
-            label="MALA Clásico -- (barrido en $\\tau$)",
-        )
+        xm = df_mala["tau"].to_numpy(dtype=np.float64)
+        ym = df_mala["ESS_per_sec"].to_numpy(dtype=np.float64)
+        em = _safe_err(df_mala.get("ESS_per_sec_std", pd.Series(np.zeros(len(df_mala)))))
+        mask_m = np.isfinite(xm) & np.isfinite(ym)
+        if np.any(mask_m):
+            ax_ess.errorbar(
+                xm[mask_m],
+                ym[mask_m],
+                yerr=em[mask_m],
+                fmt="--X",
+                color="#e74c3c",
+                lw=2.5,
+                markersize=9,
+                capsize=5,
+                label="MALA Clásico -- (barrido en $\\tau$)",
+            )
     for g_idx, ((amp_val, p_val), g_df) in enumerate(
         df_rl.groupby(["actor_amplitude", "penalty_factor"])
     ):
         c = group_colors[g_idx % len(group_colors)]
         mk = group_markers[g_idx % len(group_markers)]
         g_sorted = g_df.sort_values("tau")
+        xr = g_sorted["tau"].to_numpy(dtype=np.float64)
+        yr = g_sorted["ESS_per_sec"].to_numpy(dtype=np.float64)
+        er = _safe_err(g_sorted.get("ESS_per_sec_std", pd.Series(np.zeros(len(g_sorted)))))
+        mask_r = np.isfinite(xr) & np.isfinite(yr)
+        if not np.any(mask_r):
+            continue
         ax_ess.errorbar(
-            g_sorted["tau"].to_numpy(dtype=np.float64),
-            g_sorted["ESS_per_sec"].to_numpy(dtype=np.float64),
-            yerr=_safe_err(g_sorted.get("ESS_per_sec_std", pd.Series(np.zeros(len(g_sorted))))),
+            xr[mask_r],
+            yr[mask_r],
+            yerr=er[mask_r],
             fmt=f"-{mk}",
             color=c,
             lw=2.0,
@@ -1534,8 +1578,9 @@ def plot_hyperparameter_evolution(
             capsize=4,
             label=f"RL-MALA - ($A_\\mu={amp_val:.2f}, \\lambda={p_val:.2f}$)",
         )
-    best_ess_idx = df_plot["ESS_per_sec"].idxmax()
-    if pd.notna(best_ess_idx):
+    valid_ess = df_plot["ESS_per_sec"].dropna() if "ESS_per_sec" in df_plot.columns else pd.Series(dtype=float)
+    if not valid_ess.empty:
+        best_ess_idx = valid_ess.idxmax()
         b_r = df_plot.loc[best_ess_idx]
         ax_ess.scatter(
             [b_r["tau"]],
@@ -1590,22 +1635,30 @@ def plot_time_to_solution(
 
     _apply_plot_style(cfg)
     fig, ax = plt.subplots(figsize=(8.0, 4.8))
+    has_pos_x = False
+    has_pos_y = bool(np.isfinite(cfg.target_se_epsilon) and cfg.target_se_epsilon > 0)
     for idx, binfo in enumerate(valid):
         summary = binfo["diagnostics"]["summary"]
         e_series = summary["e_step_series"]
         wtime = max(1e-6, summary.get("wall_time_sec", 1.0))
-        tau_e = max(1.0, summary.get("tau_int_E", 1.0))
+        tau_raw = summary.get("tau_int_E", 1.0)
+        tau_e = max(1.0, float(tau_raw)) if np.isfinite(tau_raw) else 1.0
         t_grid = np.linspace(wtime / len(e_series), wtime, len(e_series))
-        se_t = np.std(e_series) * np.sqrt(tau_e / np.arange(1, len(e_series) + 1))
+        e_std = float(np.std(e_series)) if np.isfinite(np.std(e_series)) else 0.0
+        se_t = e_std * np.sqrt(tau_e / np.arange(1, len(e_series) + 1))
+        mask_p = np.isfinite(t_grid) & (t_grid > 0) & np.isfinite(se_t) & (se_t > 0)
         color, ls = _get_model_style(binfo, idx)
-        ax.plot(
-            t_grid,
-            se_t,
-            color=color,
-            linestyle=ls,
-            lw=2.2,
-            label=f"{binfo['label']} ($T_\\epsilon={summary['time_to_solution_sec']:.2f}$ s)",
-        )
+        if np.any(mask_p):
+            has_pos_x = True
+            has_pos_y = True
+            ax.plot(
+                t_grid[mask_p],
+                se_t[mask_p],
+                color=color,
+                linestyle=ls,
+                lw=2.2,
+                label=f"{binfo['label']} ($T_\\epsilon={summary['time_to_solution_sec']:.2f}$ s)",
+            )
 
     ax.axhline(
         cfg.target_se_epsilon,
@@ -1614,8 +1667,10 @@ def plot_time_to_solution(
         lw=1.4,
         label=f"Umbral $\\epsilon = {cfg.target_se_epsilon:.1e}$ Ha",
     )
-    ax.set_xscale("log")
-    ax.set_yscale("log")
+    if has_pos_x:
+        ax.set_xscale("log")
+    if has_pos_y:
+        ax.set_yscale("log")
     ax.set_xlabel("Tiempo de Reloj en Pared (s)")
     ax.set_ylabel("Error Estándar $\\mathrm{SE}(E)$ (Ha)")
     ax.set_title("Time-to-Solution: Error Estándar vs Tiempo de Cómputo")
@@ -1718,6 +1773,8 @@ def plot_walker_trace(
         e_mean = summary.get("E_mean", float("nan"))
         se_e = summary.get("SE_E", float("nan"))
         cas_e = binfo.get("casscf_energy", float("nan"))
+        if not np.isfinite(cas_e) and casscf_ref is not None:
+            cas_e = casscf_ref.get("energy", float("nan"))
         tau_val = summary.get("tau_int_E", float("nan"))
         kl_spin_val = unc.get("kl_spin_mean", float("nan"))
 
@@ -1956,12 +2013,10 @@ def run_postprocessing_pipeline(cfg: PostProcessConfig) -> pd.DataFrame:
                     else f"observables_{safe_lbl}.csv"
                 )
                 obs_csv_path = os.path.join(cfg.out_dir, obs_fname)
-                df_obs.to_csv(obs_csv_path, index=False)
+                atomic_write_csv(df_obs, obs_csv_path, index=False)
                 if getattr(cfg, "csv_collect_dir", ""):
-                    import shutil
-
                     os.makedirs(cfg.csv_collect_dir, exist_ok=True)
-                    shutil.copy2(obs_csv_path, os.path.join(cfg.csv_collect_dir, obs_fname))
+                    atomic_copy_file(obs_csv_path, os.path.join(cfg.csv_collect_dir, obs_fname))
 
             if cfg.plot_kl_divergence and (n_up + n_dn) == 2:
                 ckpts = bundle.get("checkpoints", {})
@@ -2004,12 +2059,10 @@ def run_postprocessing_pipeline(cfg: PostProcessConfig) -> pd.DataFrame:
                         else "casscf_exact_density.csv"
                     )
                     cas_csv_path = os.path.join(cfg.out_dir, cas_fname)
-                    df_cas_ex.to_csv(cas_csv_path, index=False)
+                    atomic_write_csv(df_cas_ex, cas_csv_path, index=False)
                     if getattr(cfg, "csv_collect_dir", ""):
-                        import shutil
-
                         os.makedirs(cfg.csv_collect_dir, exist_ok=True)
-                        shutil.copy2(cas_csv_path, os.path.join(cfg.csv_collect_dir, cas_fname))
+                        atomic_copy_file(cas_csv_path, os.path.join(cfg.csv_collect_dir, cas_fname))
             else:
                 print(
                     f"[PostProcess] Sin baseline CASSCF pre-entrenada para "
@@ -2120,6 +2173,7 @@ def run_postprocessing_pipeline(cfg: PostProcessConfig) -> pd.DataFrame:
             {
                 "label": label,
                 "h5_path": str(h5_path),
+                "casscf_energy": cas_e_val,
                 "bundle": bundle,
                 "diagnostics": diag,
                 "observables": obs,
@@ -2148,17 +2202,17 @@ def run_postprocessing_pipeline(cfg: PostProcessConfig) -> pd.DataFrame:
         try:
             bundle_dir = os.path.dirname(os.path.abspath(r["h5_path"]))
             indiv_summary_path = os.path.join(bundle_dir, "summary.json")
+            comp_block = {
+                "G_RL_speedup": r["G_RL_speedup"],
+                "ESS_speedup_vs_baseline": r["ESS_speedup_vs_baseline"],
+                "delta_E_vs_baseline": r["delta_E_vs_baseline"],
+                "postprocess_out_dir": str(cfg.out_dir),
+            }
             if os.path.exists(indiv_summary_path):
                 with open(indiv_summary_path, "r", encoding="utf-8") as f_in:
                     indiv_data = json.load(f_in)
-                indiv_data["comparative_postprocess"] = {
-                    "G_RL_speedup": r["G_RL_speedup"],
-                    "ESS_speedup_vs_baseline": r["ESS_speedup_vs_baseline"],
-                    "delta_E_vs_baseline": r["delta_E_vs_baseline"],
-                    "postprocess_out_dir": str(cfg.out_dir),
-                }
-                with open(indiv_summary_path, "w", encoding="utf-8") as f_out:
-                    json.dump(indiv_data, f_out, indent=2)
+                indiv_data["comparative_postprocess"] = comp_block
+                atomic_write_json(indiv_summary_path, indiv_data, indent=2)
             else:
                 fallback_summary = {
                     "run_name": r.get("label", ""),
@@ -2181,17 +2235,11 @@ def run_postprocessing_pipeline(cfg: PostProcessConfig) -> pd.DataFrame:
                         "kl_casscf_total_mean": r.get("kl_casscf_total_mean", float("nan")),
                         "kl_casscf_spin_mean": r.get("kl_casscf_spin_mean", float("nan")),
                     },
-                    "comparative_postprocess": {
-                        "G_RL_speedup": r.get("G_RL_speedup", 1.0),
-                        "ESS_speedup_vs_baseline": r.get("ESS_speedup_vs_baseline", 1.0),
-                        "delta_E_vs_baseline": r.get("delta_E_vs_baseline", 0.0),
-                        "postprocess_out_dir": str(cfg.out_dir),
-                    },
+                    "comparative_postprocess": comp_block,
                 }
-                with open(indiv_summary_path, "w", encoding="utf-8") as f_out:
-                    json.dump(fallback_summary, f_out, indent=2)
-        except Exception:
-            pass
+                atomic_write_json(indiv_summary_path, fallback_summary, indent=2)
+        except Exception as exc_sum:
+            print(f"  [Aviso IO] No se pudo enriquecer summary.json para {r.get('label', '')}: {exc_sum}")
 
     df = pd.DataFrame(summary_rows)
     sys_tag = getattr(cfg, "system_tag", "")
@@ -2200,7 +2248,7 @@ def run_postprocessing_pipeline(cfg: PostProcessConfig) -> pd.DataFrame:
         json_fname = f"summary_{sys_tag}.json" if sys_tag else "summary.json"
         csv_path = os.path.join(cfg.out_dir, csv_fname)
         json_path = os.path.join(cfg.out_dir, json_fname)
-        df.to_csv(csv_path, index=False)
+        atomic_write_csv(df, csv_path, index=False)
         summary_dict_payload = {
             "system_tag": sys_tag,
             "out_dir": str(cfg.out_dir),
@@ -2211,35 +2259,21 @@ def run_postprocessing_pipeline(cfg: PostProcessConfig) -> pd.DataFrame:
             },
             "models": summary_rows,
         }
-        with open(json_path, "w", encoding="utf-8") as f:
-            json.dump(summary_dict_payload, f, indent=2)
+        atomic_write_json(json_path, summary_dict_payload, indent=2)
         if getattr(cfg, "csv_collect_dir", ""):
-            import shutil
-
             os.makedirs(cfg.csv_collect_dir, exist_ok=True)
-            shutil.copy2(csv_path, os.path.join(cfg.csv_collect_dir, csv_fname))
+            atomic_copy_file(csv_path, os.path.join(cfg.csv_collect_dir, csv_fname))
         print(f"[PostProcess] Tabla resumen guardada en: {csv_path}")
 
     if getattr(cfg, "master_comparison_csv", None):
         try:
-            import fcntl
-
-            m_csv = os.path.abspath(cfg.master_comparison_csv)
-            os.makedirs(os.path.dirname(m_csv) or ".", exist_ok=True)
-            lock_file = m_csv + ".lock"
-            with open(lock_file, "w") as f_lock:
-                fcntl.flock(f_lock, fcntl.LOCK_EX)
-                try:
-                    write_hdr = not os.path.exists(m_csv) or os.path.getsize(m_csv) == 0
-                    df.to_csv(m_csv, mode="a", header=write_hdr, index=False)
-                    if getattr(cfg, "csv_collect_dir", ""):
-                        import shutil
-
-                        os.makedirs(cfg.csv_collect_dir, exist_ok=True)
-                        shutil.copy2(m_csv, os.path.join(cfg.csv_collect_dir, os.path.basename(m_csv)))
-                finally:
-                    fcntl.flock(f_lock, fcntl.LOCK_UN)
-            print(f"[PostProcess] Comparativa agregada en vivo a: {m_csv}")
+            m_csv = locked_upsert_csv(
+                df,
+                cfg.master_comparison_csv,
+                key_cols=["label", "N", "omega", "g"],
+                collect_dir=getattr(cfg, "csv_collect_dir", ""),
+            )
+            print(f"[PostProcess] Comparativa actualizada en vivo en: {m_csv}")
         except Exception as exc:
             print(f"  [Aviso] No se pudo escribir en master_comparison_csv: {exc}")
 

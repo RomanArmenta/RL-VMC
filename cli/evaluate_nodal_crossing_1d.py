@@ -49,12 +49,18 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from rl_vmc.core.io_bundle import load_run_bundle_h5
+from rl_vmc.core.io_bundle import (
+    atomic_copy_file,
+    atomic_write_csv,
+    load_run_bundle_h5,
+    locked_upsert_csv,
+)
 from rl_vmc.postprocess.casscf_baseline import (
     compute_exact_casscf_1body_density,
     discover_casscf_baselines,
     find_matching_casscf_baseline,
 )
+from rl_vmc.postprocess.diagnostics import summarize_bundle_diagnostics
 from rl_vmc.postprocess.plotter import (
     _apply_plot_style,
     _extract_hyperparams,
@@ -283,7 +289,7 @@ def _copy_csv(csv_path: Path, collect_dir: Optional[str]) -> None:
     cdir = Path(collect_dir)
     cdir.mkdir(parents=True, exist_ok=True)
     if csv_path.resolve() != (cdir / csv_path.name).resolve():
-        shutil.copy2(csv_path, cdir / csv_path.name)
+        atomic_copy_file(csv_path, cdir / csv_path.name)
 
 
 def _extract_walkers_4d(bundle: dict) -> Optional[np.ndarray]:
@@ -764,6 +770,13 @@ def _load_models_from_postprocess_dir(
                 "sign_flips": flips_cnt,
             }
 
+        e_mean_val = float(row.get("E_mean", float("nan")))
+        cas_e_val = float(
+            row.get(
+                "casscf_energy",
+                casscf_ref.get("energy", float("nan")) if casscf_ref is not None else float("nan"),
+            )
+        )
         mod = {
             "label": lbl,
             "is_neural": hp["is_neural"],
@@ -781,6 +794,9 @@ def _load_models_from_postprocess_dir(
             "omega": float(row.get("omega", 0.1)),
             "g": float(row.get("g", 4.0)),
             "softening": float(row.get("softening", 0.1)),
+            "E_mean": e_mean_val,
+            "SE_E": se_e_val,
+            "casscf_energy": cas_e_val,
             "densities": dens,
             "observables": obs_dict,
             "walker_trace_data": w_trace_fallback,
@@ -912,17 +928,40 @@ def main(argv: Optional[list[str]] = None) -> None:
             )
             hp = _extract_hyperparams(str(label), bundle)
 
-            summary_json_path = p.parent / "summary.json"
-            obs_metrics = {}
-            if summary_json_path.exists():
-                import json
+            import json
 
+            obs_metrics = {}
+            summary_candidates = [
+                p.parent / "summary.json",
+                *sorted(p.parent.glob("summary_*.json")),
+            ]
+            for s_path in summary_candidates:
+                if not s_path.exists():
+                    continue
                 try:
-                    with summary_json_path.open("r", encoding="utf-8") as f:
+                    with s_path.open("r", encoding="utf-8") as f:
                         sdata = json.load(f)
-                    obs_metrics = sdata.get("observables", {})
+                    cand_obs = sdata.get("observables", {})
+                    if isinstance(cand_obs, dict) and cand_obs:
+                        obs_metrics = cand_obs
+                        if np.isfinite(float(obs_metrics.get("E_mean", float("nan")))):
+                            break
                 except Exception:
-                    obs_metrics = {}
+                    continue
+
+            if (
+                not obs_metrics
+                or not np.isfinite(float(obs_metrics.get("E_mean", float("nan"))))
+            ) and bundle.get("production", {}).get("local_energy") is not None:
+                try:
+                    diag_fb = summarize_bundle_diagnostics(bundle, pp_style_cfg)
+                    fb_summary = diag_fb.get("summary", {})
+                    if fb_summary:
+                        merged_obs = dict(fb_summary)
+                        merged_obs.update({k: v for k, v in obs_metrics.items() if v is not None})
+                        obs_metrics = merged_obs
+                except Exception:
+                    pass
 
             w4d = _extract_walkers_4d(bundle)
             if w4d is None:
@@ -1054,6 +1093,9 @@ def main(argv: Optional[list[str]] = None) -> None:
                     "omega": omega,
                     "g": g_val,
                     "softening": softening,
+                    "E_mean": e_mean,
+                    "SE_E": float(obs_metrics.get("SE_E", float("nan"))),
+                    "casscf_energy": cas_e,
                     "obs_metrics": obs_metrics,
                     "densities": dens,
                     "trace_df": trace_df,
@@ -1075,32 +1117,27 @@ def main(argv: Optional[list[str]] = None) -> None:
         models, casscf_ref, df_summary = _load_models_from_postprocess_dir(
             pp_fallback_dir, args.system_tag
         )
+        if not models or df_summary.empty:
+            print("[Error] No se pudieron reconstruir modelos válidos desde postprocess_standard.")
+            sys.exit(1)
         m0 = models[0]
         omega = m0["omega"]
     else:
         print("[Error] No se encontraron archivos .h5 ni directorio postprocess_standard.")
-        return
+        sys.exit(1)
+
+    if not models or df_summary.empty:
+        print("[Error] Ningún modelo válido con caminantes/métricas pudo procesarse.")
+        sys.exit(1)
 
     if "system_tag" not in df_summary.columns:
         df_summary.insert(0, "system_tag", str(args.system_tag))
     summary_csv = out_dir / f"nodal_crossing_summary_{args.system_tag}.csv"
-    df_summary.to_csv(summary_csv, index=False)
+    atomic_write_csv(df_summary, summary_csv, index=False)
     _copy_csv(summary_csv, args.csv_collect_dir)
     if args.csv_collect_dir:
-        cdir = Path(args.csv_collect_dir)
-        cdir.mkdir(parents=True, exist_ok=True)
-        master_comp_csv = cdir / "master_nodal_crossing_comparison.csv"
-        if master_comp_csv.exists():
-            try:
-                old_df = pd.read_csv(master_comp_csv)
-                if "system_tag" in old_df.columns:
-                    old_df = old_df[old_df["system_tag"] != str(args.system_tag)]
-                merged_df = pd.concat([old_df, df_summary], ignore_index=True)
-            except Exception:
-                merged_df = df_summary
-        else:
-            merged_df = df_summary
-        merged_df.to_csv(master_comp_csv, index=False)
+        master_comp_csv = Path(args.csv_collect_dir) / "master_nodal_crossing_comparison.csv"
+        locked_upsert_csv(df_summary, master_comp_csv, key_cols=["system_tag", "label"])
     print(f"[CSV] Resumen de cruce nodal guardado en: {summary_csv}")
 
     # Seleccionar Top-K MALA y Top-K RL-MALA
@@ -1163,9 +1200,12 @@ def main(argv: Optional[list[str]] = None) -> None:
             is_n = bool(mod["is_neural"])
             kind_prefix = "RL-MALA" if is_n else "MALA"
             ls_tot = "-" if is_n else "--"
-            e_mean_m = mod.get("E_mean", float("nan"))
-            se_e_m = mod.get("SE_E", float("nan"))
-            cas_e_m = mod.get("casscf_energy", float("nan"))
+            d_sum_m = mod.get("diagnostics", {}).get("summary", {})
+            e_mean_m = mod.get("E_mean", d_sum_m.get("E_mean", float("nan")))
+            se_e_m = mod.get("SE_E", d_sum_m.get("SE_E", float("nan")))
+            cas_e_m = mod.get("casscf_energy", d_sum_m.get("casscf_energy", float("nan")))
+            if not np.isfinite(cas_e_m) and casscf_ref is not None:
+                cas_e_m = float(casscf_ref.get("energy", float("nan")))
             title_lines_m = [f"{kind_prefix}: {mod['label']}"]
             if np.isfinite(e_mean_m):
                 e_str_m = f"$\\langle E \\rangle = {e_mean_m:.6f}"
@@ -1269,7 +1309,7 @@ def main(argv: Optional[list[str]] = None) -> None:
                     best_mala["densities"]["x"], casscf_ref["x"], rho_dn_ex
                 )
             dens_csv = out_dir / f"data_densities_{args.system_tag}.csv"
-            pd.DataFrame(dens_dict).to_csv(dens_csv, index=False)
+            atomic_write_csv(pd.DataFrame(dens_dict), dens_csv, index=False)
             _copy_csv(dens_csv, args.csv_collect_dir)
 
     # =========================================================================
@@ -1285,6 +1325,7 @@ def main(argv: Optional[list[str]] = None) -> None:
         mala_colors = ["#e74c3c", "#c0392b", "#d35400", "#7f8c8d"]
         rl_colors = ["#2ecc71", "#1f77b4", "#9b59b6", "#16a085"]
 
+        any_pos_kl = False
         for ax, (col, std_col, title) in zip(axes, kl_cols):
             for idx_m, m in enumerate(top_mala):
                 if m["kl_df"].empty:
@@ -1297,19 +1338,24 @@ def main(argv: Optional[list[str]] = None) -> None:
                     if std_col in m["kl_df"]
                     else np.zeros_like(y_mean)
                 )
+                fin_m = np.isfinite(s_grid) & np.isfinite(y_mean)
+                if not np.any(fin_m):
+                    continue
+                if np.any(y_mean[fin_m] > 0):
+                    any_pos_kl = True
                 ax.plot(
-                    s_grid,
-                    y_mean,
+                    s_grid[fin_m],
+                    y_mean[fin_m],
                     color=c,
                     lw=2.5 if idx_m == 0 else 2.0,
                     linestyle="--",
                     label=f"MALA #{idx_m+1} [--]: {m['label']}",
                 )
-                if np.any(y_std > 0):
+                if np.any(y_std[fin_m] > 0):
                     ax.fill_between(
-                        s_grid,
-                        np.maximum(1e-8, y_mean - y_std),
-                        y_mean + y_std,
+                        s_grid[fin_m],
+                        np.maximum(1e-8, y_mean[fin_m] - y_std[fin_m]),
+                        y_mean[fin_m] + y_std[fin_m],
                         color=c,
                         alpha=0.16,
                     )
@@ -1325,28 +1371,37 @@ def main(argv: Optional[list[str]] = None) -> None:
                     if std_col in m["kl_df"]
                     else np.zeros_like(y_mean)
                 )
+                fin_r = np.isfinite(s_grid) & np.isfinite(y_mean)
+                if not np.any(fin_r):
+                    continue
+                if np.any(y_mean[fin_r] > 0):
+                    any_pos_kl = True
                 ax.plot(
-                    s_grid,
-                    y_mean,
+                    s_grid[fin_r],
+                    y_mean[fin_r],
                     color=c,
                     lw=2.7 if idx_r == 0 else 2.1,
                     linestyle="-",
                     label=f"RL-MALA #{idx_r+1} [-]: {m['label']}",
                 )
-                if np.any(y_std > 0):
+                if np.any(y_std[fin_r] > 0):
                     ax.fill_between(
-                        s_grid,
-                        np.maximum(1e-8, y_mean - y_std),
-                        y_mean + y_std,
+                        s_grid[fin_r],
+                        np.maximum(1e-8, y_mean[fin_r] - y_std[fin_r]),
+                        y_mean[fin_r] + y_std[fin_r],
                         color=c,
                         alpha=0.20,
                     )
 
-            ax.set_yscale("log")
             ax.set_title(title, fontsize=13, fontweight="bold")
             ax.set_xlabel("MCMC Production Steps", fontsize=11)
             ax.grid(True, which="both", ls="-", alpha=0.25)
-            ax.legend(fontsize=8.8, loc="best", frameon=True)
+            h_kl, l_kl = ax.get_legend_handles_labels()
+            if h_kl:
+                ax.legend(fontsize=8.8, loc="best", frameon=True)
+
+        if any_pos_kl:
+            axes[0].set_yscale("log")
 
         axes[0].set_ylabel(
             r"KL Divergence $D_{\mathrm{KL}}(P_t \parallel P_{\mathrm{CASSCF}})$",
@@ -1372,7 +1427,7 @@ def main(argv: Optional[list[str]] = None) -> None:
             kl_merged["kl_up_rl"] = best_rl["kl_df"]["kl_up"]
             kl_merged["kl_dn_rl"] = best_rl["kl_df"]["kl_dn"]
         kl_csv = out_dir / f"data_kl_divergence_{args.system_tag}.csv"
-        kl_merged.to_csv(kl_csv, index=False)
+        atomic_write_csv(kl_merged, kl_csv, index=False)
         _copy_csv(kl_csv, args.csv_collect_dir)
 
     # =========================================================================
@@ -1388,9 +1443,9 @@ def main(argv: Optional[list[str]] = None) -> None:
             src_w = out_dir / f"fig6_walker_traces_{args.system_tag}.{ext}"
             dst_w = out_dir / f"Article_Walker_Traces_{args.system_tag}.{ext}"
             if src_w.exists():
-                shutil.copy2(src_w, dst_w)
+                atomic_copy_file(src_w, dst_w)
                 if not valid_h5 and pp_fallback_dir.exists():
-                    shutil.copy2(src_w, pp_fallback_dir / src_w.name)
+                    atomic_copy_file(src_w, pp_fallback_dir / src_w.name)
                 src_w.unlink()
 
     # =========================================================================
@@ -1461,9 +1516,37 @@ def main(argv: Optional[list[str]] = None) -> None:
     # =========================================================================
     # FIGURA 4: Article_Training_Metrics (Diagnóstico del entrenamiento TD3)
     # =========================================================================
-    trn_hist = best_rl.get("bundle", {}).get("training", {})
-    if trn_hist and "Step" in trn_hist and len(trn_hist["Step"]) > 0:
-        steps_t = np.asarray(trn_hist["Step"])
+    trn_bundle = best_rl.get("bundle", {})
+    trn_df = trn_bundle.get("training_df", None)
+    trn_hist: Optional[dict[str, Any]] = None
+    if isinstance(trn_df, pd.DataFrame) and not trn_df.empty:
+        if "Phase" in trn_df.columns:
+            phase_num = pd.to_numeric(trn_df["Phase"], errors="coerce")
+            if (phase_num == 1.0).any():
+                sub_phase = trn_df.loc[phase_num == 1.0]
+                if not sub_phase.empty:
+                    trn_df = sub_phase
+        trn_hist = {
+            col: pd.to_numeric(trn_df[col], errors="coerce").to_numpy(dtype=np.float64)
+            for col in trn_df.columns
+            if pd.api.types.is_numeric_dtype(trn_df[col])
+        }
+    elif isinstance(trn_bundle.get("training"), dict) and trn_bundle.get("training"):
+        trn_hist = trn_bundle.get("training")
+
+    n_trn_pts = 0
+    if trn_hist:
+        if "Step" in trn_hist:
+            n_trn_pts = len(trn_hist["Step"])
+        elif "RL_Reward" in trn_hist:
+            n_trn_pts = len(trn_hist["RL_Reward"])
+
+    if trn_hist and n_trn_pts > 0:
+        steps_t = (
+            np.asarray(trn_hist["Step"], dtype=np.float64)
+            if "Step" in trn_hist and len(trn_hist["Step"]) == n_trn_pts
+            else np.arange(1, n_trn_pts + 1, dtype=np.float64)
+        )
         fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(11, 11), sharex=True)
 
         ax1.plot(steps_t, trn_hist.get("RL_Reward", np.zeros_like(steps_t)), color="black", lw=2.0, label="Total Reward")
@@ -1479,25 +1562,33 @@ def main(argv: Optional[list[str]] = None) -> None:
         ax1.grid(True, alpha=0.25)
 
         ax2_r = ax2.twinx()
-        c_loss = np.asarray(trn_hist.get("Critic_Loss", np.zeros_like(steps_t)))
-        a_loss = np.asarray(trn_hist.get("Actor_Loss", np.zeros_like(steps_t)))
+        c_loss = np.asarray(trn_hist.get("Critic_Loss", np.zeros_like(steps_t)), dtype=np.float64)
+        a_loss = np.asarray(trn_hist.get("Actor_Loss", np.zeros_like(steps_t)), dtype=np.float64)
         ax2.plot(steps_t, c_loss, color="#e74c3c", alpha=0.85, label="Critic MSE")
         ax2_r.plot(steps_t, a_loss, color="#2980b9", alpha=0.85, label="Actor Loss (-Q)")
         ax2.set_title("TD3 Network Losses", fontsize=13, fontweight="bold")
         ax2.set_ylabel("Critic MSE", color="#e74c3c", fontsize=11)
         ax2_r.set_ylabel("Actor Loss", color="#2980b9", fontsize=11)
+        h2, l2 = ax2.get_legend_handles_labels()
+        h2r, l2r = ax2_r.get_legend_handles_labels()
+        if h2 or h2r:
+            ax2.legend(h2 + h2r, l2 + l2r, loc="best", fontsize=9.5)
         ax2.grid(True, alpha=0.25)
 
         ax3_r = ax3.twinx()
-        acc_t = np.asarray(trn_hist.get("Acceptance", np.zeros_like(steps_t)))
-        disp_t = np.asarray(trn_hist.get("Proposed_Disp", np.zeros_like(steps_t)))
+        acc_t = np.asarray(trn_hist.get("Acceptance", np.zeros_like(steps_t)), dtype=np.float64)
+        disp_t = np.asarray(trn_hist.get("Proposed_Disp", np.zeros_like(steps_t)), dtype=np.float64)
         ax3.plot(steps_t, acc_t, color="#2ecc71", alpha=0.8, label="Acceptance Rate")
-        ax3.axhline(0.574, color="black", linestyle=":", alpha=0.5)
+        ax3.axhline(0.574, color="black", linestyle=":", alpha=0.5, label="Target (0.574)")
         ax3_r.plot(steps_t, disp_t, color="#8e44ad", alpha=0.8, label="Displacement (Bohr)")
         ax3.set_title("Training Phase MCMC Diagnostics", fontsize=13, fontweight="bold")
         ax3.set_xlabel("TD3 Training Sweeps", fontsize=11)
         ax3.set_ylabel("Acceptance Rate", color="#2ecc71", fontsize=11)
         ax3_r.set_ylabel("Displacement (Bohr)", color="#8e44ad", fontsize=11)
+        h3, l3 = ax3.get_legend_handles_labels()
+        h3r, l3r = ax3_r.get_legend_handles_labels()
+        if h3 or h3r:
+            ax3.legend(h3 + h3r, l3 + l3r, loc="best", fontsize=9.5)
         ax3.grid(True, alpha=0.25)
 
         plt.tight_layout()
@@ -1521,7 +1612,7 @@ def main(argv: Optional[list[str]] = None) -> None:
             src_f = out_dir / f"fig9_hyperparameter_evolution_{args.system_tag}.{ext}"
             dst_f = out_dir / f"Hyperparameter_Evolution_{args.system_tag}.{ext}"
             if src_f.exists():
-                shutil.copy2(src_f, dst_f)
+                atomic_copy_file(src_f, dst_f)
                 src_f.unlink()
 
         # Si estamos reconstruyendo desde pp_fallback_dir, actualizar también las figuras de postprocess_standard con Top-K
@@ -1552,9 +1643,8 @@ def main(argv: Optional[list[str]] = None) -> None:
                 kl_src = out_dir / f"Article_KL_Divergence_{args.system_tag}.{ext}"
                 kl_dst = pp_fallback_dir / f"fig8_article_kl_divergence_{args.system_tag}.{ext}"
                 if kl_src.exists():
-                    shutil.copy2(kl_src, kl_dst)
+                    atomic_copy_file(kl_src, kl_dst)
 
-    # =========================================================================
     # =========================================================================
     # FIGURA 6: Parameter_Search_Comparison (Ranking de todos los modelos con barras de error)
     # =========================================================================
@@ -1569,14 +1659,45 @@ def main(argv: Optional[list[str]] = None) -> None:
         def _clean_err(col_name: str) -> np.ndarray:
             if col_name not in df_summary.columns:
                 return np.zeros(len(df_summary))
-            arr = df_summary[col_name].fillna(0.0).to_numpy(dtype=np.float64)
+            arr = pd.to_numeric(df_summary[col_name], errors="coerce").to_numpy(dtype=np.float64)
             return np.where(np.isfinite(arr) & (arr >= 0), arr, 0.0)
+
+        def _draw_bars(
+            ax: plt.Axes,
+            vals_arr: np.ndarray,
+            errs_arr: np.ndarray,
+            log_scale: bool = False,
+            floor_min: Optional[float] = None,
+        ) -> None:
+            mask = np.isfinite(vals_arr)
+            if log_scale and floor_min is not None:
+                vals_plot = np.where(mask, np.maximum(vals_arr, floor_min), np.nan)
+                errs_plot = np.where(mask, np.minimum(errs_arr, 0.85 * np.maximum(vals_plot, floor_min)), 0.0)
+            else:
+                vals_plot = vals_arr
+                errs_plot = np.where(mask, errs_arr, 0.0)
+            idx_ok = np.flatnonzero(mask)
+            if len(idx_ok) > 0:
+                bars = ax.bar(
+                    x_pos[idx_ok],
+                    vals_plot[idx_ok],
+                    yerr=errs_plot[idx_ok],
+                    capsize=3.5,
+                    color=[colors_s[i] for i in idx_ok],
+                    alpha=0.85,
+                    edgecolor="black",
+                )
+                for bar, i_row in zip(bars, idx_ok):
+                    if hatches_s[i_row]:
+                        bar.set_hatch(hatches_s[i_row])
+                if log_scale and np.any(vals_plot[idx_ok] > 0):
+                    ax.set_yscale("log")
 
         # Panel (0, 0): Energía Final <E> +/- SE(E) con referencia CASSCF
         ax_e = axes[0, 0]
-        e_vals = df_summary["E_mean"].fillna(0.0).to_numpy(dtype=np.float64)
+        e_vals = pd.to_numeric(df_summary["E_mean"], errors="coerce").to_numpy(dtype=np.float64)
         se_vals = _clean_err("SE_E")
-        b_e = ax_e.bar(x_pos, e_vals, yerr=se_vals, capsize=3.5, color=colors_s, alpha=0.85, edgecolor="black")
+        _draw_bars(ax_e, e_vals, se_vals, log_scale=False)
         if casscf_ref is not None and np.isfinite(casscf_ref.get("energy", float("nan"))):
             cas_e_ref = float(casscf_ref["energy"])
             ax_e.axhline(
@@ -1588,10 +1709,12 @@ def main(argv: Optional[list[str]] = None) -> None:
             )
             ax_e.legend(loc="best", fontsize=9.0, frameon=True)
             # Acotar y-limits para no aplastar barras si la energía es cercana
-            valid_e = e_vals[np.isfinite(e_vals) & (e_vals > 0)]
+            valid_e = e_vals[np.isfinite(e_vals)]
             if len(valid_e) > 0:
-                y_min = min(float(np.min(valid_e)), cas_e_ref) - 0.015
-                y_max = max(float(np.max(valid_e)), cas_e_ref) + 0.015
+                span = max(float(np.max(valid_e) - np.min(valid_e)), 0.015)
+                pad = max(0.015, 0.25 * span)
+                y_min = min(float(np.min(valid_e)), cas_e_ref) - pad
+                y_max = max(float(np.max(valid_e)), cas_e_ref) + pad
                 ax_e.set_ylim(y_min, y_max)
         ax_e.set_title(r"Final Energy $\langle E \rangle \pm \mathrm{SE}(E)$", fontweight="bold")
         ax_e.set_ylabel(r"Energy $\langle E \rangle$ (Ha)")
@@ -1601,9 +1724,9 @@ def main(argv: Optional[list[str]] = None) -> None:
 
         # Panel (0, 1): Error de Energía Delta E +/- SE(E) en mHa
         ax_de = axes[0, 1]
-        de_vals = (df_summary["delta_E_vs_CASSCF"].fillna(0.0).to_numpy(dtype=np.float64)) * 1e3
+        de_vals = pd.to_numeric(df_summary["delta_E_vs_CASSCF"], errors="coerce").to_numpy(dtype=np.float64) * 1e3
         de_errs = se_vals * 1e3
-        b_de = ax_de.bar(x_pos, de_vals, yerr=de_errs, capsize=3.5, color=colors_s, alpha=0.85, edgecolor="black")
+        _draw_bars(ax_de, de_vals, de_errs, log_scale=False)
         ax_de.axhline(0.0, color="black", linestyle="--", lw=1.8, label=r"CASSCF Reference ($\Delta E = 0$)")
         ax_de.set_title(r"Energy Error $\Delta E = \langle E \rangle - E_{\mathrm{CASSCF}}$", fontweight="bold")
         ax_de.set_ylabel(r"$\Delta E$ (mHa)")
@@ -1614,10 +1737,9 @@ def main(argv: Optional[list[str]] = None) -> None:
 
         # Panel (0, 2): Spin-Resolved D_KL (cruce de barreras nodales)
         ax_kl = axes[0, 2]
-        kl_vals = np.maximum(df_summary["final_kl_spin_mean"].fillna(0.0).to_numpy(dtype=np.float64), 1e-7)
-        kl_errs = np.minimum(_clean_err("final_kl_spin_std"), 0.85 * kl_vals)
-        b0 = ax_kl.bar(x_pos, kl_vals, yerr=kl_errs, capsize=3.5, color=colors_s, alpha=0.85, edgecolor="black")
-        ax_kl.set_yscale("log")
+        kl_vals = pd.to_numeric(df_summary["final_kl_spin_mean"], errors="coerce").to_numpy(dtype=np.float64)
+        kl_errs = _clean_err("final_kl_spin_std")
+        _draw_bars(ax_kl, kl_vals, kl_errs, log_scale=True, floor_min=1e-7)
         ax_kl.set_title("Spin-Resolved KL Divergence (Nodal Crossing)", fontweight="bold")
         ax_kl.set_ylabel(r"$\frac{1}{2}(D_{\mathrm{KL}}^{\uparrow} + D_{\mathrm{KL}}^{\downarrow})$ (log)")
         ax_kl.set_xticks(x_pos)
@@ -1626,10 +1748,9 @@ def main(argv: Optional[list[str]] = None) -> None:
 
         # Panel (1, 0): Total Density D_KL
         ax_klt = axes[1, 0]
-        klt_vals = np.maximum(df_summary["final_kl_tot"].fillna(0.0).to_numpy(dtype=np.float64), 1e-7)
-        klt_errs = np.minimum(_clean_err("final_kl_tot_std"), 0.85 * klt_vals)
-        b1 = ax_klt.bar(x_pos, klt_vals, yerr=klt_errs, capsize=3.5, color=colors_s, alpha=0.85, edgecolor="black")
-        ax_klt.set_yscale("log")
+        klt_vals = pd.to_numeric(df_summary["final_kl_tot"], errors="coerce").to_numpy(dtype=np.float64)
+        klt_errs = _clean_err("final_kl_tot_std")
+        _draw_bars(ax_klt, klt_vals, klt_errs, log_scale=True, floor_min=1e-7)
         ax_klt.set_title("Total One-Body Density KL Divergence", fontweight="bold")
         ax_klt.set_ylabel(r"$D_{\mathrm{KL}}(\rho_{\mathrm{tot}} \parallel \rho_{\mathrm{CASSCF}})$ (log)")
         ax_klt.set_xticks(x_pos)
@@ -1638,9 +1759,9 @@ def main(argv: Optional[list[str]] = None) -> None:
 
         # Panel (1, 1): ESJD (Expected Squared Jump Distance)
         ax_esjd = axes[1, 1]
-        esjd_vals = df_summary["ESJD"].fillna(0.0).to_numpy(dtype=np.float64)
+        esjd_vals = pd.to_numeric(df_summary["ESJD"], errors="coerce").to_numpy(dtype=np.float64)
         esjd_errs = _clean_err("ESJD_std")
-        b2 = ax_esjd.bar(x_pos, esjd_vals, yerr=esjd_errs, capsize=3.5, color=colors_s, alpha=0.85, edgecolor="black")
+        _draw_bars(ax_esjd, esjd_vals, esjd_errs, log_scale=False)
         ax_esjd.set_title("Expected Squared Jump Distance (ESJD)", fontweight="bold")
         ax_esjd.set_ylabel(r"ESJD ($\mathrm{Bohr}^2$/step)")
         ax_esjd.set_xticks(x_pos)
@@ -1649,20 +1770,14 @@ def main(argv: Optional[list[str]] = None) -> None:
 
         # Panel (1, 2): Integrated Autocorrelation Time tau_int(E)
         ax_tau = axes[1, 2]
-        tau_vals = np.maximum(df_summary["tau_int_E"].fillna(0.0).to_numpy(dtype=np.float64), 1e-2)
-        tau_errs = np.minimum(_clean_err("tau_int_E_std"), 0.85 * tau_vals)
-        b3 = ax_tau.bar(x_pos, tau_vals, yerr=tau_errs, capsize=3.5, color=colors_s, alpha=0.85, edgecolor="black")
-        ax_tau.set_yscale("log")
+        tau_vals = pd.to_numeric(df_summary["tau_int_E"], errors="coerce").to_numpy(dtype=np.float64)
+        tau_errs = _clean_err("tau_int_E_std")
+        _draw_bars(ax_tau, tau_vals, tau_errs, log_scale=True, floor_min=1e-2)
         ax_tau.set_title(r"Autocorrelation Time $\tau_{\mathrm{int}}(E)$ (Lower = Better)", fontweight="bold")
         ax_tau.set_ylabel(r"$\tau_{\mathrm{int}}(E)$ (steps, log)")
         ax_tau.set_xticks(x_pos)
         ax_tau.set_xticklabels(labels_s, rotation=32, ha="right", fontsize=8.5)
         ax_tau.grid(True, axis="y", which="both", alpha=0.25)
-
-        for bg in (b_e, b_de, b0, b1, b2, b3):
-            for bar, ht in zip(bg, hatches_s):
-                if ht:
-                    bar.set_hatch(ht)
 
         plt.suptitle(
             f"Hyperparameter Search Comparison — {args.system_tag} (Hatched=MALA, Filled=RL-MALA)",

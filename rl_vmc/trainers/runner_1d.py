@@ -21,6 +21,10 @@ from rl_vmc.core.io_bundle import (
     save_run_bundle_h5,
     load_run_bundle_h5,
     export_h5_to_legacy_dir,
+    atomic_write_csv,
+    atomic_write_json,
+    atomic_copy_file,
+    locked_upsert_csv,
 )
 
 
@@ -729,12 +733,11 @@ def run_experiment_1d(cfg: Experiment1DConfig) -> str:
                     }
                     if getattr(cfg.io, "save_training_csv", True) or getattr(cfg.io, "save_training_history", True):
                         train_csv_sys = saved_path.parent / f"training_history_{safe_run_tag}.csv"
-                        df_train_hist.to_csv(train_csv_sys, index=False)
+                        atomic_write_csv(df_train_hist, train_csv_sys, index=False)
                         if getattr(cfg.io, "csv_collect_dir", ""):
-                            import shutil
                             cdir = Path(cfg.io.csv_collect_dir)
                             cdir.mkdir(parents=True, exist_ok=True)
-                            shutil.copy2(train_csv_sys, cdir / train_csv_sys.name)
+                            atomic_copy_file(train_csv_sys, cdir / train_csv_sys.name)
                 except Exception as _exc_th:
                     print(f"  [Aviso] No se pudo exportar training_history.csv: {_exc_th}")
 
@@ -794,10 +797,8 @@ def run_experiment_1d(cfg: Experiment1DConfig) -> str:
                 try:
                     summary_json_path = saved_path.parent / "summary.json"
                     summary_sys_json_path = saved_path.parent / f"summary_{safe_run_tag}.json"
-                    with summary_json_path.open("w", encoding="utf-8") as f_json:
-                        json.dump(summary_payload, f_json, indent=2)
-                    with summary_sys_json_path.open("w", encoding="utf-8") as f_json_sys:
-                        json.dump(summary_payload, f_json_sys, indent=2)
+                    atomic_write_json(summary_json_path, summary_payload, indent=2)
+                    atomic_write_json(summary_sys_json_path, summary_payload, indent=2)
                     print(f"[IO] Resumen estructurado guardado en: {summary_sys_json_path}")
                 except Exception as _exc_sj:
                     print(f"  [Aviso IO] No se pudo guardar summary.json: {_exc_sj}")
@@ -849,31 +850,25 @@ def run_experiment_1d(cfg: Experiment1DConfig) -> str:
             try:
                 df_row = pd.DataFrame([flat_row])
                 indiv_csv_path = saved_path.parent / f"production_metrics_{safe_run_tag}.csv"
-                df_row.to_csv(indiv_csv_path, index=False)
+                atomic_write_csv(df_row, indiv_csv_path, index=False)
 
+                collect_dir_cfg = getattr(cfg.io, "csv_collect_dir", "")
                 if cfg.io.master_csv_path:
-                    csv_file = Path(cfg.io.master_csv_path)
-                    csv_file.parent.mkdir(parents=True, exist_ok=True)
-                    lock_path = csv_file.with_suffix(".csv.lock")
-                    with lock_path.open("w") as f_lock:
-                        fcntl.flock(f_lock, fcntl.LOCK_EX)
-                        try:
-                            write_header = not csv_file.exists() or csv_file.stat().st_size == 0
-                            df_row.to_csv(csv_file, mode="a", header=write_header, index=False)
-                            if getattr(cfg.io, "csv_collect_dir", ""):
-                                import shutil
-                                cdir = Path(cfg.io.csv_collect_dir)
-                                cdir.mkdir(parents=True, exist_ok=True)
-                                shutil.copy2(csv_file, cdir / csv_file.name)
-                                shutil.copy2(indiv_csv_path, cdir / indiv_csv_path.name)
-                        finally:
-                            fcntl.flock(f_lock, fcntl.LOCK_UN)
-                    print(f"[IO] Fila agregada en vivo a tabla maestra: {csv_file}")
-                elif getattr(cfg.io, "csv_collect_dir", ""):
-                    import shutil
-                    cdir = Path(cfg.io.csv_collect_dir)
+                    csv_file = locked_upsert_csv(
+                        df_row,
+                        cfg.io.master_csv_path,
+                        key_cols=["run_name"],
+                        collect_dir=collect_dir_cfg,
+                    )
+                    if collect_dir_cfg:
+                        cdir = Path(collect_dir_cfg)
+                        cdir.mkdir(parents=True, exist_ok=True)
+                        atomic_copy_file(indiv_csv_path, cdir / indiv_csv_path.name)
+                    print(f"[IO] Fila actualizada en vivo en tabla maestra: {csv_file}")
+                elif collect_dir_cfg:
+                    cdir = Path(collect_dir_cfg)
                     cdir.mkdir(parents=True, exist_ok=True)
-                    shutil.copy2(indiv_csv_path, cdir / indiv_csv_path.name)
+                    atomic_copy_file(indiv_csv_path, cdir / indiv_csv_path.name)
             except Exception as _exc_csv:
                 print(f"  [Aviso IO] No se pudo escribir fila CSV: {_exc_csv}")
         except Exception as exc:

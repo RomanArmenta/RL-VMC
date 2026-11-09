@@ -36,6 +36,7 @@ import os
 import re
 import sys
 import argparse
+import tempfile
 import numpy as np
 import pandas as pd
 import matplotlib
@@ -138,6 +139,24 @@ def load_and_clean_data(csv_path: str) -> pd.DataFrame:
     return df
 
 
+def _atomic_savefig(fig: plt.Figure, out_path: str, fmt: str, dpi: int, transparent: bool) -> None:
+    """Guarda una figura de matplotlib de forma atómica (temporal + os.replace)."""
+    out_dir = os.path.dirname(os.path.abspath(out_path))
+    os.makedirs(out_dir, exist_ok=True)
+    stem = os.path.basename(out_path)
+    fd, tmp_name = tempfile.mkstemp(prefix=f".{stem}.tmp.", suffix=f".{fmt}", dir=out_dir)
+    os.close(fd)
+    try:
+        fig.savefig(tmp_name, format=fmt, dpi=dpi, bbox_inches="tight", transparent=transparent)
+        os.replace(tmp_name, out_path)
+    finally:
+        if os.path.exists(tmp_name):
+            try:
+                os.unlink(tmp_name)
+            except OSError:
+                pass
+
+
 def _save_fig_custom(fig: plt.Figure, out_dir: str, stem: str, args: argparse.Namespace) -> None:
     os.makedirs(out_dir, exist_ok=True)
     if getattr(args, "no_titles", False):
@@ -165,11 +184,11 @@ def _save_fig_custom(fig: plt.Figure, out_dir: str, stem: str, args: argparse.Na
     transparent = bool(getattr(args, "transparent_bg", False))
     if fmt in ("png", "both"):
         out_png = os.path.join(out_dir, f"{stem}.png")
-        fig.savefig(out_png, dpi=dpi, bbox_inches="tight", transparent=transparent)
+        _atomic_savefig(fig, out_png, "png", dpi=dpi, transparent=transparent)
         print(f"[+] Figura guardada: {out_png}")
     if fmt in ("pdf", "both"):
         out_pdf = os.path.join(out_dir, f"{stem}.pdf")
-        fig.savefig(out_pdf, dpi=dpi, bbox_inches="tight", transparent=transparent)
+        _atomic_savefig(fig, out_pdf, "pdf", dpi=dpi, transparent=transparent)
         print(f"[+] Figura guardada: {out_pdf}")
     plt.close(fig)
 
@@ -180,6 +199,33 @@ def _get_err_series(sub: pd.DataFrame, err_col: str) -> np.ndarray | None:
         if np.any(np.isfinite(vals) & (vals > 0)):
             return np.where(np.isfinite(vals) & (vals >= 0), vals, 0.0)
     return None
+
+
+def _finite_xy(sub: pd.DataFrame, x_col: str, y_col: str, err_col: str | None = None):
+    """Extrae pares finitos (x, y) y barras de error alineadas cuando existen."""
+    if x_col not in sub.columns or y_col not in sub.columns:
+        return np.array([]), np.array([]), None
+    x = pd.to_numeric(sub[x_col], errors="coerce").to_numpy(dtype=float)
+    y = pd.to_numeric(sub[y_col], errors="coerce").to_numpy(dtype=float)
+    mask = np.isfinite(x) & np.isfinite(y)
+    if not np.any(mask):
+        return np.array([]), np.array([]), None
+    x_fin = x[mask]
+    y_fin = y[mask]
+    yerr_fin = None
+    if err_col is not None:
+        yerr_all = _get_err_series(sub, err_col)
+        if yerr_all is not None:
+            cand = yerr_all[mask]
+            if np.any(cand > 0):
+                yerr_fin = cand
+    return x_fin, y_fin, yerr_fin
+
+
+def _legend_if_nonempty(ax: plt.Axes, **kwargs) -> None:
+    handles, labels = ax.get_legend_handles_labels()
+    if handles:
+        ax.legend(**kwargs)
 
 
 def plot_evolution_vs_g(df: pd.DataFrame, out_dir: str, args: argparse.Namespace) -> None:
@@ -193,7 +239,7 @@ def plot_evolution_vs_g(df: pd.DataFrame, out_dir: str, args: argparse.Namespace
     fig, axes = plt.subplots(2, 3, figsize=(19, 11), sharex=True)
 
     metrics = [
-        (axes[0, 0], "kl_casscf_spin_mean", "kl_casscf_spin_std", r"Cruce Nodal $D_{\mathrm{KL}}^{\mathrm{spin}}$", " Divergencia KL de Espín vs $g$ (Menor es Mejor)", True),
+        (axes[0, 0], "kl_casscf_spin_mean", "kl_casscf_spin_std", r"Cruce Nodal $D_{\mathrm{KL}}^{\mathrm{spin}}$", "Divergencia KL de Espín vs $g$ (Menor es Mejor)", True),
         (axes[0, 1], "kl_casscf_total_mean", "kl_casscf_total_std", r"Fidelidad $D_{\mathrm{KL}}^{\mathrm{tot}}(\rho \parallel \rho_{\mathrm{CASSCF}})$", "Divergencia KL Total vs $g$ (Menor es Mejor)", True),
         (axes[0, 2], "tau_int_E", "tau_int_E_std", r"Autocorrelación $\tau_{\mathrm{int}}(E)$ (pasos)", r"Tiempo de Autocorrelación $\tau_{\mathrm{int}}(E)$ vs $g$", False),
         (axes[1, 0], "ESJD", "ESJD_std", r"Movilidad Cuadrática $\mathrm{ESJD}$ ($\mathrm{Bohr}^2$)", "Salto Cuadrático Esperado (ESJD) vs $g$", False),
@@ -202,37 +248,38 @@ def plot_evolution_vs_g(df: pd.DataFrame, out_dir: str, args: argparse.Namespace
     ]
 
     for ax, col, err_col, ylabel, title, use_log in metrics:
-        if col not in df.columns:
-            continue
-        for n in n_values:
-            c = N_COLORS.get(int(n), "#333333")
-            mk = N_MARKERS.get(int(n), "o")
-            sub_m = p2_mala[p2_mala["N"] == n].sort_values("g")
-            sub_r = p2_rl[p2_rl["N"] == n].sort_values("g")
+        pos_plotted = False
+        if col in df.columns:
+            for n in n_values:
+                c = N_COLORS.get(int(n), "#333333")
+                mk = N_MARKERS.get(int(n), "o")
+                sub_m = p2_mala[p2_mala["N"] == n].sort_values("g")
+                sub_r = p2_rl[p2_rl["N"] == n].sort_values("g")
 
-            if not sub_m.empty and sub_m[col].notna().any():
-                y_m = sub_m[col].to_numpy(dtype=float)
-                yerr_m = _get_err_series(sub_m, err_col)
-                ax.errorbar(
-                    sub_m["g"], y_m, yerr=yerr_m,
-                    color=c, linestyle="--", marker="x", markersize=6.5,
-                    capsize=3, alpha=0.72, label=f"MALA N={int(n)}",
-                )
-            if not sub_r.empty and sub_r[col].notna().any():
-                y_r = sub_r[col].to_numpy(dtype=float)
-                yerr_r = _get_err_series(sub_r, err_col)
-                ax.errorbar(
-                    sub_r["g"], y_r, yerr=yerr_r,
-                    color=c, linestyle="-", marker=mk, markersize=7.0,
-                    capsize=3, alpha=0.95, label=f"RL-MALA N={int(n)}",
-                )
+                xm, ym, yerrm = _finite_xy(sub_m, "g", col, err_col)
+                if xm.size > 0:
+                    ax.errorbar(
+                        xm, ym, yerr=yerrm,
+                        color=c, linestyle="--", marker="x", markersize=6.5,
+                        capsize=3, alpha=0.72, label=f"MALA N={int(n)}",
+                    )
+                    if np.any(ym > 0):
+                        pos_plotted = True
+
+                xr, yr, yerrr = _finite_xy(sub_r, "g", col, err_col)
+                if xr.size > 0:
+                    ax.errorbar(
+                        xr, yr, yerr=yerrr,
+                        color=c, linestyle="-", marker=mk, markersize=7.0,
+                        capsize=3, alpha=0.95, label=f"RL-MALA N={int(n)}",
+                    )
+                    if np.any(yr > 0):
+                        pos_plotted = True
 
         if col == "delta_E_vs_CASSCF":
             ax.axhline(0.0, color="black", linestyle=":", lw=1.6, label=r"Exacto $\Delta E = 0$")
-        elif use_log:
-            pos_vals = df[col].dropna()
-            if (pos_vals > 0).any():
-                ax.set_yscale("log")
+        elif use_log and pos_plotted:
+            ax.set_yscale("log")
 
         ax.set_ylabel(ylabel)
         ax.set_title(title, weight="bold")
@@ -241,8 +288,8 @@ def plot_evolution_vs_g(df: pd.DataFrame, out_dir: str, args: argparse.Namespace
     for ax in axes[1, :]:
         ax.set_xlabel("Fuerza de Interacción $g$ (Hartree)")
 
-    axes[0, 0].legend(fontsize=8.5, ncol=2, loc="best")
-    axes[1, 2].legend(fontsize=8.5, ncol=2, loc="best")
+    _legend_if_nonempty(axes[0, 0], fontsize=8.5, ncol=2, loc="best")
+    _legend_if_nonempty(axes[1, 2], fontsize=8.5, ncol=2, loc="best")
 
     fig.suptitle(
         "Evolución Global respecto al Acoplamiento g (Por Sistema N): RL-MALA vs MALA",
@@ -273,36 +320,37 @@ def plot_evolution_vs_N(df: pd.DataFrame, out_dir: str, args: argparse.Namespace
     ]
 
     for ax, col, err_col, ylabel, title, use_log in metrics:
-        if col not in df.columns:
-            continue
-        for idx_g, g_val in enumerate(g_values):
-            c = G_CMAP_COLORS[idx_g % len(G_CMAP_COLORS)]
-            sub_m = p2_mala[np.isclose(p2_mala["g"], g_val)].sort_values("N")
-            sub_r = p2_rl[np.isclose(p2_rl["g"], g_val)].sort_values("N")
+        pos_plotted = False
+        if col in df.columns:
+            for idx_g, g_val in enumerate(g_values):
+                c = G_CMAP_COLORS[idx_g % len(G_CMAP_COLORS)]
+                sub_m = p2_mala[np.isclose(p2_mala["g"], g_val)].sort_values("N")
+                sub_r = p2_rl[np.isclose(p2_rl["g"], g_val)].sort_values("N")
 
-            if not sub_m.empty and sub_m[col].notna().any():
-                y_m = sub_m[col].to_numpy(dtype=float)
-                yerr_m = _get_err_series(sub_m, err_col)
-                ax.errorbar(
-                    sub_m["N"], y_m, yerr=yerr_m,
-                    color=c, linestyle="--", marker="x", markersize=6.0,
-                    capsize=3, alpha=0.68, label=f"MALA g={g_val:g}",
-                )
-            if not sub_r.empty and sub_r[col].notna().any():
-                y_r = sub_r[col].to_numpy(dtype=float)
-                yerr_r = _get_err_series(sub_r, err_col)
-                ax.errorbar(
-                    sub_r["N"], y_r, yerr=yerr_r,
-                    color=c, linestyle="-", marker="o", markersize=6.5,
-                    capsize=3, alpha=0.95, label=f"RL-MALA g={g_val:g}",
-                )
+                xm, ym, yerrm = _finite_xy(sub_m, "N", col, err_col)
+                if xm.size > 0:
+                    ax.errorbar(
+                        xm, ym, yerr=yerrm,
+                        color=c, linestyle="--", marker="x", markersize=6.0,
+                        capsize=3, alpha=0.68, label=f"MALA g={g_val:g}",
+                    )
+                    if np.any(ym > 0):
+                        pos_plotted = True
+
+                xr, yr, yerrr = _finite_xy(sub_r, "N", col, err_col)
+                if xr.size > 0:
+                    ax.errorbar(
+                        xr, yr, yerr=yerrr,
+                        color=c, linestyle="-", marker="o", markersize=6.5,
+                        capsize=3, alpha=0.95, label=f"RL-MALA g={g_val:g}",
+                    )
+                    if np.any(yr > 0):
+                        pos_plotted = True
 
         if col == "delta_E_vs_CASSCF":
             ax.axhline(0.0, color="black", linestyle=":", lw=1.6, label=r"Exacto $\Delta E = 0$")
-        elif use_log:
-            pos_vals = df[col].dropna()
-            if (pos_vals > 0).any():
-                ax.set_yscale("log")
+        elif use_log and pos_plotted:
+            ax.set_yscale("log")
 
         if len(n_values) > 0:
             ax.set_xticks([int(n) for n in n_values])
@@ -313,8 +361,8 @@ def plot_evolution_vs_N(df: pd.DataFrame, out_dir: str, args: argparse.Namespace
     for ax in axes[1, :]:
         ax.set_xlabel("Número de Electrones $N$")
 
-    axes[0, 0].legend(fontsize=7.8, ncol=2, loc="best")
-    axes[1, 2].legend(fontsize=7.8, ncol=2, loc="best")
+    _legend_if_nonempty(axes[0, 0], fontsize=7.8, ncol=2, loc="best")
+    _legend_if_nonempty(axes[1, 2], fontsize=7.8, ncol=2, loc="best")
 
     fig.suptitle(
         "Evolución Global respecto al Número de Electrones N (Por Acoplamiento g): RL-MALA vs MALA",
@@ -341,9 +389,10 @@ def plot_speedup_and_ess(df: pd.DataFrame, out_dir: str, args: argparse.Namespac
     ax = axes[0, 0]
     for n in n_values:
         sub = p2_rl[p2_rl["N"] == n].sort_values("g")
-        if not sub.empty:
+        xr, yr, _ = _finite_xy(sub, "g", "G_RL_speedup")
+        if xr.size > 0:
             ax.plot(
-                sub["g"], sub["G_RL_speedup"],
+                xr, yr,
                 color=N_COLORS.get(int(n), "black"),
                 marker=N_MARKERS.get(int(n), "o"),
                 linestyle="-",
@@ -354,16 +403,17 @@ def plot_speedup_and_ess(df: pd.DataFrame, out_dir: str, args: argparse.Namespac
     ax.set_ylabel(r"Factor de Aceleración $G_{\mathrm{RL}} = \tau_{\mathrm{int}}^{\mathrm{MALA}} / \tau_{\mathrm{int}}^{\mathrm{RL}}$")
     ax.set_title(r"Aceleración de Muestreo $G_{\mathrm{RL}}$ vs Acoplamiento $g$", weight="bold")
     ax.grid(True)
-    ax.legend(fontsize=9)
+    _legend_if_nonempty(ax, fontsize=9)
 
     # Panel (0, 1): Si hay P3 muestra P3 vs g; si solo hay P2 muestra G_RL vs N por cada g
     ax = axes[0, 1]
     if has_p3:
         for n in n_values:
             sub = p3_rl[p3_rl["N"] == n].sort_values("g")
-            if not sub.empty:
+            xr, yr, _ = _finite_xy(sub, "g", "G_RL_speedup")
+            if xr.size > 0:
                 ax.plot(
-                    sub["g"], sub["G_RL_speedup"],
+                    xr, yr,
                     color=N_COLORS.get(int(n), "black"),
                     marker=N_MARKERS.get(int(n), "o"),
                     linestyle="-",
@@ -376,9 +426,10 @@ def plot_speedup_and_ess(df: pd.DataFrame, out_dir: str, args: argparse.Namespac
     else:
         for idx_g, g_val in enumerate(g_values):
             sub = p2_rl[np.isclose(p2_rl["g"], g_val)].sort_values("N")
-            if not sub.empty:
+            xr, yr, _ = _finite_xy(sub, "N", "G_RL_speedup")
+            if xr.size > 0:
                 ax.plot(
-                    sub["N"], sub["G_RL_speedup"],
+                    xr, yr,
                     color=G_CMAP_COLORS[idx_g % len(G_CMAP_COLORS)],
                     marker="o",
                     linestyle="-",
@@ -391,37 +442,51 @@ def plot_speedup_and_ess(df: pd.DataFrame, out_dir: str, args: argparse.Namespac
         ax.set_ylabel(r"Factor de Aceleración $G_{\mathrm{RL}} = \tau_{\mathrm{int}}^{\mathrm{MALA}} / \tau_{\mathrm{int}}^{\mathrm{RL}}$")
         ax.set_title(r"Aceleración de Muestreo $G_{\mathrm{RL}}$ vs Tamaño del Sistema $N$", weight="bold")
     ax.grid(True)
-    ax.legend(fontsize=8.5, ncol=2)
+    _legend_if_nonempty(ax, fontsize=8.5, ncol=2)
 
     # Panel (1, 0): ESS/segundo en Pipeline 2 vs g
     ax = axes[1, 0]
+    pos_ess_g = False
     for n in n_values:
         sub_m = p2_mala[p2_mala["N"] == n].sort_values("g")
         sub_r = p2_rl[p2_rl["N"] == n].sort_values("g")
         c = N_COLORS.get(int(n), "black")
-        if not sub_m.empty:
-            ax.plot(sub_m["g"], sub_m["ESS_per_sec"], color=c, linestyle="--", marker="x", alpha=0.72, label=f"MALA N={int(n)}")
-        if not sub_r.empty:
-            ax.plot(sub_r["g"], sub_r["ESS_per_sec"], color=c, linestyle="-", marker=N_MARKERS.get(int(n), "o"), label=f"RL-MALA N={int(n)}")
-    if (df["ESS_per_sec"].dropna() > 0).any():
+        xm, ym, _ = _finite_xy(sub_m, "g", "ESS_per_sec")
+        if xm.size > 0:
+            ax.plot(xm, ym, color=c, linestyle="--", marker="x", alpha=0.72, label=f"MALA N={int(n)}")
+            if np.any(ym > 0):
+                pos_ess_g = True
+        xr, yr, _ = _finite_xy(sub_r, "g", "ESS_per_sec")
+        if xr.size > 0:
+            ax.plot(xr, yr, color=c, linestyle="-", marker=N_MARKERS.get(int(n), "o"), label=f"RL-MALA N={int(n)}")
+            if np.any(yr > 0):
+                pos_ess_g = True
+    if pos_ess_g:
         ax.set_yscale("log")
     ax.set_xlabel("Fuerza de Interacción $g$ (Hartree)")
     ax.set_ylabel("Muestras Efectivas por Segundo (ESS/s)")
     ax.set_title("Rendimiento Absoluto ESS/s vs $g$ (RL-MALA vs MALA)", weight="bold")
     ax.grid(True, which="both")
-    ax.legend(fontsize=8.5, ncol=2)
+    _legend_if_nonempty(ax, fontsize=8.5, ncol=2)
 
     # Panel (1, 1): ESS/segundo vs N (o P3 si existe)
     ax = axes[1, 1]
+    pos_ess_n = False
     if has_p3:
         for n in n_values:
             sub_m = p3_mala[p3_mala["N"] == n].sort_values("g")
             sub_r = p3_rl[p3_rl["N"] == n].sort_values("g")
             c = N_COLORS.get(int(n), "black")
-            if not sub_m.empty:
-                ax.plot(sub_m["g"], sub_m["ESS_per_sec"], color=c, linestyle="--", marker="x", alpha=0.72)
-            if not sub_r.empty:
-                ax.plot(sub_r["g"], sub_r["ESS_per_sec"], color=c, linestyle="-", marker=N_MARKERS.get(int(n), "o"), label=f"N = {int(n)}")
+            xm, ym, _ = _finite_xy(sub_m, "g", "ESS_per_sec")
+            if xm.size > 0:
+                ax.plot(xm, ym, color=c, linestyle="--", marker="x", alpha=0.72)
+                if np.any(ym > 0):
+                    pos_ess_n = True
+            xr, yr, _ = _finite_xy(sub_r, "g", "ESS_per_sec")
+            if xr.size > 0:
+                ax.plot(xr, yr, color=c, linestyle="-", marker=N_MARKERS.get(int(n), "o"), label=f"N = {int(n)}")
+                if np.any(yr > 0):
+                    pos_ess_n = True
         ax.set_xlabel("Fuerza de Interacción $g$ (Hartree)")
         ax.set_title("Pipeline 3: Rendimiento Absoluto ESS/s vs $g$", weight="bold")
     else:
@@ -429,19 +494,25 @@ def plot_speedup_and_ess(df: pd.DataFrame, out_dir: str, args: argparse.Namespac
             c = G_CMAP_COLORS[idx_g % len(G_CMAP_COLORS)]
             sub_m = p2_mala[np.isclose(p2_mala["g"], g_val)].sort_values("N")
             sub_r = p2_rl[np.isclose(p2_rl["g"], g_val)].sort_values("N")
-            if not sub_m.empty:
-                ax.plot(sub_m["N"], sub_m["ESS_per_sec"], color=c, linestyle="--", marker="x", alpha=0.68)
-            if not sub_r.empty:
-                ax.plot(sub_r["N"], sub_r["ESS_per_sec"], color=c, linestyle="-", marker="o", label=f"g = {g_val:g}")
+            xm, ym, _ = _finite_xy(sub_m, "N", "ESS_per_sec")
+            if xm.size > 0:
+                ax.plot(xm, ym, color=c, linestyle="--", marker="x", alpha=0.68)
+                if np.any(ym > 0):
+                    pos_ess_n = True
+            xr, yr, _ = _finite_xy(sub_r, "N", "ESS_per_sec")
+            if xr.size > 0:
+                ax.plot(xr, yr, color=c, linestyle="-", marker="o", label=f"g = {g_val:g}")
+                if np.any(yr > 0):
+                    pos_ess_n = True
         if len(n_values) > 0:
             ax.set_xticks([int(n) for n in n_values])
         ax.set_xlabel("Número de Electrones $N$")
         ax.set_title("Rendimiento Absoluto ESS/s vs $N$ (RL-MALA vs MALA)", weight="bold")
-    if (df["ESS_per_sec"].dropna() > 0).any():
+    if pos_ess_n:
         ax.set_yscale("log")
     ax.set_ylabel("Muestras Efectivas por Segundo (ESS/s)")
     ax.grid(True, which="both")
-    ax.legend(fontsize=8.5, ncol=2)
+    _legend_if_nonempty(ax, fontsize=8.5, ncol=2)
 
     fig.suptitle("Comportamiento Global del Actor RL-MALA: Aceleración y Velocidad Efectiva ESS/s", weight="bold")
     fig.tight_layout()
@@ -467,15 +538,17 @@ def plot_acceptance_and_esjd(df: pd.DataFrame, out_dir: str, args: argparse.Name
         sub_m = p2_mala[p2_mala["N"] == n].sort_values("g")
         sub_r = p2_rl[p2_rl["N"] == n].sort_values("g")
         c = N_COLORS.get(int(n), "black")
-        if not sub_m.empty:
-            ax.plot(sub_m["g"], sub_m["acceptance"] * 100.0, color=c, linestyle="--", marker="x", alpha=0.68, label=f"MALA N={int(n)}")
-        if not sub_r.empty:
-            ax.plot(sub_r["g"], sub_r["acceptance"] * 100.0, color=c, linestyle="-", marker=N_MARKERS.get(int(n), "o"), label=f"RL-MALA N={int(n)}")
+        xm, ym, _ = _finite_xy(sub_m, "g", "acceptance")
+        if xm.size > 0:
+            ax.plot(xm, ym * 100.0, color=c, linestyle="--", marker="x", alpha=0.68, label=f"MALA N={int(n)}")
+        xr, yr, _ = _finite_xy(sub_r, "g", "acceptance")
+        if xr.size > 0:
+            ax.plot(xr, yr * 100.0, color=c, linestyle="-", marker=N_MARKERS.get(int(n), "o"), label=f"RL-MALA N={int(n)}")
     ax.set_xlabel("Fuerza de Interacción $g$ (Hartree)")
     ax.set_ylabel("Tasa de Aceptación (%)")
     ax.set_title("Tasa de Aceptación MCMC vs $g$", weight="bold")
     ax.grid(True)
-    ax.legend(fontsize=8.5, ncol=2)
+    _legend_if_nonempty(ax, fontsize=8.5, ncol=2)
 
     # Panel (0, 1): Aceptación vs N (o P3 si existe)
     ax = axes[0, 1]
@@ -484,10 +557,12 @@ def plot_acceptance_and_esjd(df: pd.DataFrame, out_dir: str, args: argparse.Name
             sub_m = p3_mala[p3_mala["N"] == n].sort_values("g")
             sub_r = p3_rl[p3_rl["N"] == n].sort_values("g")
             c = N_COLORS.get(int(n), "black")
-            if not sub_m.empty:
-                ax.plot(sub_m["g"], sub_m["acceptance"] * 100.0, color=c, linestyle="--", marker="x", alpha=0.68)
-            if not sub_r.empty:
-                ax.plot(sub_r["g"], sub_r["acceptance"] * 100.0, color=c, linestyle="-", marker=N_MARKERS.get(int(n), "o"), label=f"N = {int(n)}")
+            xm, ym, _ = _finite_xy(sub_m, "g", "acceptance")
+            if xm.size > 0:
+                ax.plot(xm, ym * 100.0, color=c, linestyle="--", marker="x", alpha=0.68)
+            xr, yr, _ = _finite_xy(sub_r, "g", "acceptance")
+            if xr.size > 0:
+                ax.plot(xr, yr * 100.0, color=c, linestyle="-", marker=N_MARKERS.get(int(n), "o"), label=f"N = {int(n)}")
         ax.set_xlabel("Fuerza de Interacción $g$ (Hartree)")
         ax.set_title("Pipeline 3: Tasa de Aceptación MCMC vs $g$", weight="bold")
     else:
@@ -495,17 +570,19 @@ def plot_acceptance_and_esjd(df: pd.DataFrame, out_dir: str, args: argparse.Name
             c = G_CMAP_COLORS[idx_g % len(G_CMAP_COLORS)]
             sub_m = p2_mala[np.isclose(p2_mala["g"], g_val)].sort_values("N")
             sub_r = p2_rl[np.isclose(p2_rl["g"], g_val)].sort_values("N")
-            if not sub_m.empty:
-                ax.plot(sub_m["N"], sub_m["acceptance"] * 100.0, color=c, linestyle="--", marker="x", alpha=0.68)
-            if not sub_r.empty:
-                ax.plot(sub_r["N"], sub_r["acceptance"] * 100.0, color=c, linestyle="-", marker="o", label=f"g = {g_val:g}")
+            xm, ym, _ = _finite_xy(sub_m, "N", "acceptance")
+            if xm.size > 0:
+                ax.plot(xm, ym * 100.0, color=c, linestyle="--", marker="x", alpha=0.68)
+            xr, yr, _ = _finite_xy(sub_r, "N", "acceptance")
+            if xr.size > 0:
+                ax.plot(xr, yr * 100.0, color=c, linestyle="-", marker="o", label=f"g = {g_val:g}")
         if len(n_values) > 0:
             ax.set_xticks([int(n) for n in n_values])
         ax.set_xlabel("Número de Electrones $N$")
         ax.set_title("Tasa de Aceptación MCMC vs $N$", weight="bold")
     ax.set_ylabel("Tasa de Aceptación (%)")
     ax.grid(True)
-    ax.legend(fontsize=8.5, ncol=2)
+    _legend_if_nonempty(ax, fontsize=8.5, ncol=2)
 
     # Panel (1, 0): ESJD en P2 vs g
     ax = axes[1, 0]
@@ -513,15 +590,17 @@ def plot_acceptance_and_esjd(df: pd.DataFrame, out_dir: str, args: argparse.Name
         sub_m = p2_mala[p2_mala["N"] == n].sort_values("g")
         sub_r = p2_rl[p2_rl["N"] == n].sort_values("g")
         c = N_COLORS.get(int(n), "black")
-        if not sub_m.empty:
-            ax.plot(sub_m["g"], sub_m["ESJD"], color=c, linestyle="--", marker="x", alpha=0.68, label=f"MALA N={int(n)}")
-        if not sub_r.empty:
-            ax.plot(sub_r["g"], sub_r["ESJD"], color=c, linestyle="-", marker=N_MARKERS.get(int(n), "o"), label=f"RL-MALA N={int(n)}")
+        xm, ym, _ = _finite_xy(sub_m, "g", "ESJD")
+        if xm.size > 0:
+            ax.plot(xm, ym, color=c, linestyle="--", marker="x", alpha=0.68, label=f"MALA N={int(n)}")
+        xr, yr, _ = _finite_xy(sub_r, "g", "ESJD")
+        if xr.size > 0:
+            ax.plot(xr, yr, color=c, linestyle="-", marker=N_MARKERS.get(int(n), "o"), label=f"RL-MALA N={int(n)}")
     ax.set_xlabel("Fuerza de Interacción $g$ (Hartree)")
     ax.set_ylabel(r"Distancia Cuadrática de Salto $\mathrm{ESJD}$ ($\mathrm{Bohr}^2$)")
     ax.set_title("Movilidad Espacial ESJD vs $g$", weight="bold")
     ax.grid(True)
-    ax.legend(fontsize=8.5, ncol=2)
+    _legend_if_nonempty(ax, fontsize=8.5, ncol=2)
 
     # Panel (1, 1): ESJD vs N (o P3 si existe)
     ax = axes[1, 1]
@@ -530,10 +609,12 @@ def plot_acceptance_and_esjd(df: pd.DataFrame, out_dir: str, args: argparse.Name
             sub_m = p3_mala[p3_mala["N"] == n].sort_values("g")
             sub_r = p3_rl[p3_rl["N"] == n].sort_values("g")
             c = N_COLORS.get(int(n), "black")
-            if not sub_m.empty:
-                ax.plot(sub_m["g"], sub_m["ESJD"], color=c, linestyle="--", marker="x", alpha=0.68)
-            if not sub_r.empty:
-                ax.plot(sub_r["g"], sub_r["ESJD"], color=c, linestyle="-", marker=N_MARKERS.get(int(n), "o"), label=f"N = {int(n)}")
+            xm, ym, _ = _finite_xy(sub_m, "g", "ESJD")
+            if xm.size > 0:
+                ax.plot(xm, ym, color=c, linestyle="--", marker="x", alpha=0.68)
+            xr, yr, _ = _finite_xy(sub_r, "g", "ESJD")
+            if xr.size > 0:
+                ax.plot(xr, yr, color=c, linestyle="-", marker=N_MARKERS.get(int(n), "o"), label=f"N = {int(n)}")
         ax.set_xlabel("Fuerza de Interacción $g$ (Hartree)")
         ax.set_title("Pipeline 3: Movilidad Espacial ESJD vs $g$", weight="bold")
     else:
@@ -541,17 +622,19 @@ def plot_acceptance_and_esjd(df: pd.DataFrame, out_dir: str, args: argparse.Name
             c = G_CMAP_COLORS[idx_g % len(G_CMAP_COLORS)]
             sub_m = p2_mala[np.isclose(p2_mala["g"], g_val)].sort_values("N")
             sub_r = p2_rl[np.isclose(p2_rl["g"], g_val)].sort_values("N")
-            if not sub_m.empty:
-                ax.plot(sub_m["N"], sub_m["ESJD"], color=c, linestyle="--", marker="x", alpha=0.68)
-            if not sub_r.empty:
-                ax.plot(sub_r["N"], sub_r["ESJD"], color=c, linestyle="-", marker="o", label=f"g = {g_val:g}")
+            xm, ym, _ = _finite_xy(sub_m, "N", "ESJD")
+            if xm.size > 0:
+                ax.plot(xm, ym, color=c, linestyle="--", marker="x", alpha=0.68)
+            xr, yr, _ = _finite_xy(sub_r, "N", "ESJD")
+            if xr.size > 0:
+                ax.plot(xr, yr, color=c, linestyle="-", marker="o", label=f"g = {g_val:g}")
         if len(n_values) > 0:
             ax.set_xticks([int(n) for n in n_values])
         ax.set_xlabel("Número de Electrones $N$")
         ax.set_title("Movilidad Espacial ESJD vs $N$", weight="bold")
     ax.set_ylabel(r"Distancia Cuadrática de Salto $\mathrm{ESJD}$ ($\mathrm{Bohr}^2$)")
     ax.grid(True)
-    ax.legend(fontsize=8.5, ncol=2)
+    _legend_if_nonempty(ax, fontsize=8.5, ncol=2)
 
     fig.suptitle("Exploración del Espacio de Configuración: Aceptación y Movilidad Cuadrática ESJD", weight="bold")
     fig.tight_layout()
@@ -568,55 +651,65 @@ def plot_fidelity_and_energy(df: pd.DataFrame, out_dir: str, args: argparse.Name
 
     # Panel 0: Divergencia KL de Espín (Cruce Nodal) vs g
     ax = axes[0]
+    pos_spin = False
     for n in n_values:
         sub_m = p2_mala[p2_mala["N"] == n].sort_values("g")
         sub_r = p2_rl[p2_rl["N"] == n].sort_values("g")
         c = N_COLORS.get(int(n), "black")
-        if not sub_m.empty and "kl_casscf_spin_mean" in sub_m.columns:
+        xm, ym, yerrm = _finite_xy(sub_m, "g", "kl_casscf_spin_mean", "kl_casscf_spin_std")
+        if xm.size > 0:
             ax.errorbar(
-                sub_m["g"], sub_m["kl_casscf_spin_mean"],
-                yerr=_get_err_series(sub_m, "kl_casscf_spin_std"),
+                xm, ym, yerr=yerrm,
                 color=c, linestyle="--", marker="x", capsize=3, alpha=0.72, label=f"MALA N={int(n)}"
             )
-        if not sub_r.empty and "kl_casscf_spin_mean" in sub_r.columns:
+            if np.any(ym > 0):
+                pos_spin = True
+        xr, yr, yerrr = _finite_xy(sub_r, "g", "kl_casscf_spin_mean", "kl_casscf_spin_std")
+        if xr.size > 0:
             ax.errorbar(
-                sub_r["g"], sub_r["kl_casscf_spin_mean"],
-                yerr=_get_err_series(sub_r, "kl_casscf_spin_std"),
+                xr, yr, yerr=yerrr,
                 color=c, linestyle="-", marker=N_MARKERS.get(int(n), "o"), capsize=3, label=f"RL-MALA N={int(n)}"
             )
-    if "kl_casscf_spin_mean" in df.columns and (df["kl_casscf_spin_mean"].dropna() > 0).any():
+            if np.any(yr > 0):
+                pos_spin = True
+    if pos_spin:
         ax.set_yscale("log")
     ax.set_xlabel("Fuerza de Interacción $g$ (Hartree)")
     ax.set_ylabel(r"Divergencia KL de Espín $D_{\mathrm{KL}}^{\mathrm{spin}}$")
     ax.set_title("Cruce Nodal y Simetría de Espín vs CASSCF (Menor es Mejor)", weight="bold")
     ax.grid(True, which="both")
-    ax.legend(fontsize=8.5, ncol=2)
+    _legend_if_nonempty(ax, fontsize=8.5, ncol=2)
 
     # Panel 1: Divergencia KL Total respecto a CASSCF
     ax = axes[1]
+    pos_tot = False
     for n in n_values:
         sub_m = p2_mala[p2_mala["N"] == n].sort_values("g")
         sub_r = p2_rl[p2_rl["N"] == n].sort_values("g")
         c = N_COLORS.get(int(n), "black")
-        if not sub_m.empty and "kl_casscf_total_mean" in sub_m.columns:
+        xm, ym, yerrm = _finite_xy(sub_m, "g", "kl_casscf_total_mean", "kl_casscf_total_std")
+        if xm.size > 0:
             ax.errorbar(
-                sub_m["g"], sub_m["kl_casscf_total_mean"],
-                yerr=_get_err_series(sub_m, "kl_casscf_total_std"),
+                xm, ym, yerr=yerrm,
                 color=c, linestyle="--", marker="x", capsize=3, alpha=0.72,
             )
-        if not sub_r.empty and "kl_casscf_total_mean" in sub_r.columns:
+            if np.any(ym > 0):
+                pos_tot = True
+        xr, yr, yerrr = _finite_xy(sub_r, "g", "kl_casscf_total_mean", "kl_casscf_total_std")
+        if xr.size > 0:
             ax.errorbar(
-                sub_r["g"], sub_r["kl_casscf_total_mean"],
-                yerr=_get_err_series(sub_r, "kl_casscf_total_std"),
+                xr, yr, yerr=yerrr,
                 color=c, linestyle="-", marker=N_MARKERS.get(int(n), "o"), capsize=3, label=f"N = {int(n)}"
             )
-    if "kl_casscf_total_mean" in df.columns and (df["kl_casscf_total_mean"].dropna() > 0).any():
+            if np.any(yr > 0):
+                pos_tot = True
+    if pos_tot:
         ax.set_yscale("log")
     ax.set_xlabel("Fuerza de Interacción $g$ (Hartree)")
     ax.set_ylabel(r"Divergencia KL Total $D_{\mathrm{KL}}^{\mathrm{tot}}(\rho \parallel \rho_{\mathrm{CASSCF}})$")
     ax.set_title("Fidelidad de la Densidad Total vs CASSCF (Menor es Mejor)", weight="bold")
     ax.grid(True, which="both")
-    ax.legend(fontsize=9)
+    _legend_if_nonempty(ax, fontsize=9)
 
     # Panel 2: Energía MCMC <E> +/- SE(E) y Desviación Delta E respecto a CASSCF
     ax = axes[2]
@@ -624,16 +717,18 @@ def plot_fidelity_and_energy(df: pd.DataFrame, out_dir: str, args: argparse.Name
         sub_m = p2_mala[p2_mala["N"] == n].sort_values("g")
         sub_r = p2_rl[p2_rl["N"] == n].sort_values("g")
         c = N_COLORS.get(int(n), "black")
-        if not sub_m.empty and "delta_E_vs_CASSCF" in sub_m.columns:
+        xm, ym, yerrm = _finite_xy(sub_m, "g", "delta_E_vs_CASSCF", "SE_E")
+        if xm.size > 0:
             ax.errorbar(
-                sub_m["g"], sub_m["delta_E_vs_CASSCF"] * 1e3,
-                yerr=(_get_err_series(sub_m, "SE_E") * 1e3 if _get_err_series(sub_m, "SE_E") is not None else None),
+                xm, ym * 1e3,
+                yerr=(yerrm * 1e3 if yerrm is not None else None),
                 color=c, linestyle="--", marker="x", capsize=3, alpha=0.72, label=f"MALA N={int(n)}"
             )
-        if not sub_r.empty and "delta_E_vs_CASSCF" in sub_r.columns:
+        xr, yr, yerrr = _finite_xy(sub_r, "g", "delta_E_vs_CASSCF", "SE_E")
+        if xr.size > 0:
             ax.errorbar(
-                sub_r["g"], sub_r["delta_E_vs_CASSCF"] * 1e3,
-                yerr=(_get_err_series(sub_r, "SE_E") * 1e3 if _get_err_series(sub_r, "SE_E") is not None else None),
+                xr, yr * 1e3,
+                yerr=(yerrr * 1e3 if yerrr is not None else None),
                 color=c, linestyle="-", marker=N_MARKERS.get(int(n), "o"), capsize=3, label=f"RL-MALA N={int(n)}"
             )
     ax.axhline(0.0, color="black", linestyle=":", lw=1.6, label=r"Referencia $E_{\mathrm{CASSCF}}$ ($\Delta E = 0$)")
@@ -641,7 +736,7 @@ def plot_fidelity_and_energy(df: pd.DataFrame, out_dir: str, args: argparse.Name
     ax.set_ylabel(r"$\Delta E = \langle E \rangle - E_{\mathrm{CASSCF}} \pm \mathrm{SE}(E)$ (mHa)")
     ax.set_title("Precisión de Energía Local con Barras de Error vs CASSCF", weight="bold")
     ax.grid(True, which="both")
-    ax.legend(fontsize=8.5, ncol=2)
+    _legend_if_nonempty(ax, fontsize=8.5, ncol=2)
 
     fig.suptitle("Fidelidad Física, Cruce Nodal y Convergencia de Energía respecto a CASSCF", weight="bold")
     fig.tight_layout()
@@ -658,35 +753,44 @@ def plot_executive_dashboard(df: pd.DataFrame, out_dir: str, args: argparse.Name
         ("P3: VMC + MALA (SJB)", "P3 VMC+MALA"),
         ("P3: Coupled VMC + RL-MALA (SJB)", "P3 Coupled RL"),
     ]
-    active_methods = [
-        (m, lbl) for m, lbl in candidate_methods
-        if not df[df["pipeline_category"] == m]["tau_int_E"].dropna().empty
-    ]
 
     # Panel 0: Distribución de Tiempos de Autocorrelación tau_int por Método
     ax = axes[0, 0]
-    if active_methods:
-        data_tau = [df[df["pipeline_category"] == m]["tau_int_E"].dropna() for m, _ in active_methods]
-        labels_clean = [lbl for _, lbl in active_methods]
-        ax.boxplot(
-            data_tau, tick_labels=labels_clean, patch_artist=True,
-            boxprops=dict(facecolor="#cce5ff", color="#004085"),
-            medianprops=dict(color="red", lw=2),
-        )
-        if any((s > 0).any() for s in data_tau):
-            ax.set_yscale("log")
+    if "tau_int_E" in df.columns:
+        active_tau = []
+        for m, lbl in candidate_methods:
+            s = pd.to_numeric(df[df["pipeline_category"] == m]["tau_int_E"], errors="coerce").dropna()
+            s = s[np.isfinite(s)]
+            if not s.empty:
+                active_tau.append((lbl, s))
+        if active_tau:
+            labels_tau = [lbl for lbl, _ in active_tau]
+            data_tau = [s for _, s in active_tau]
+            ax.boxplot(
+                data_tau, tick_labels=labels_tau, patch_artist=True,
+                boxprops=dict(facecolor="#cce5ff", color="#004085"),
+                medianprops=dict(color="red", lw=2),
+            )
+            if any((s > 0).any() for s in data_tau):
+                ax.set_yscale("log")
     ax.set_ylabel(r"Tiempo de Autocorrelación $\tau_{\mathrm{int}}(E)$ (pasos)")
     ax.set_title("Distribución de Autocorrelación por Método (Menor es Mejor)", weight="bold")
     ax.grid(True, which="both")
 
-    # Panel 1: Distribución de D_KL^spin (Cruce Nodal) por Método
+    # Panel 1: Distribución de D_KL^spin (Cruce Nodal) por Método (filtrado independiente)
     ax = axes[0, 1]
-    if active_methods and "kl_casscf_spin_mean" in df.columns:
-        data_kl = [df[df["pipeline_category"] == m]["kl_casscf_spin_mean"].dropna() for m, _ in active_methods]
-        labels_clean = [lbl for _, lbl in active_methods]
-        if any(len(s) > 0 for s in data_kl):
+    if "kl_casscf_spin_mean" in df.columns:
+        active_kl = []
+        for m, lbl in candidate_methods:
+            s = pd.to_numeric(df[df["pipeline_category"] == m]["kl_casscf_spin_mean"], errors="coerce").dropna()
+            s = s[np.isfinite(s)]
+            if not s.empty:
+                active_kl.append((lbl, s))
+        if active_kl:
+            labels_kl = [lbl for lbl, _ in active_kl]
+            data_kl = [s for _, s in active_kl]
             ax.boxplot(
-                data_kl, tick_labels=labels_clean, patch_artist=True,
+                data_kl, tick_labels=labels_kl, patch_artist=True,
                 boxprops=dict(facecolor="#d4edda", color="#155724"),
                 medianprops=dict(color="darkgreen", lw=2),
             )
@@ -696,46 +800,84 @@ def plot_executive_dashboard(df: pd.DataFrame, out_dir: str, args: argparse.Name
     ax.set_title(r"Cruce Nodal: Distribución de $D_{\mathrm{KL}}^{\mathrm{spin}}$ (Menor es Mejor)", weight="bold")
     ax.grid(True, which="both")
 
-    # Panel 2: ESS/s promedio por Sistema N con barras de error
+    # Panel 2: ESS/s promedio por Sistema N
     ax = axes[1, 0]
     n_values = sorted(df["N"].dropna().unique())
     x_pos = np.arange(len(n_values))
     width = 0.36
 
-    p2_m_means = [df[(df["pipeline_category"] == "P2: MALA (CASSCF Fijo)") & (df["N"] == n)]["ESS_per_sec"].mean() for n in n_values]
-    p2_r_means = [df[(df["pipeline_category"] == "P2: RL-MALA TD3 (CASSCF Fijo)") & (df["N"] == n)]["ESS_per_sec"].mean() for n in n_values]
-
-    ax.bar(x_pos - width / 2, p2_m_means, width, label="MALA (CASSCF Fijo)", color="#7f8c8d", edgecolor="black", linestyle="--", alpha=0.8)
-    ax.bar(x_pos + width / 2, p2_r_means, width, label="RL-MALA TD3 (CASSCF Fijo)", color="#c0392b", edgecolor="black", alpha=0.9)
-    ax.set_xticks(x_pos)
-    ax.set_xticklabels([f"N = {int(n)}" for n in n_values])
-    if any(np.isfinite(v) and v > 0 for v in p2_m_means + p2_r_means):
-        ax.set_yscale("log")
+    if "ESS_per_sec" in df.columns and len(n_values) > 0:
+        p2_m_means = [
+            pd.to_numeric(
+                df[(df["pipeline_category"] == "P2: MALA (CASSCF Fijo)") & (df["N"] == n)]["ESS_per_sec"],
+                errors="coerce",
+            ).mean()
+            for n in n_values
+        ]
+        p2_r_means = [
+            pd.to_numeric(
+                df[(df["pipeline_category"] == "P2: RL-MALA TD3 (CASSCF Fijo)") & (df["N"] == n)]["ESS_per_sec"],
+                errors="coerce",
+            ).mean()
+            for n in n_values
+        ]
+        m_pairs = [(float(x) - width / 2, float(v)) for x, v in zip(x_pos, p2_m_means) if np.isfinite(v)]
+        r_pairs = [(float(x) + width / 2, float(v)) for x, v in zip(x_pos, p2_r_means) if np.isfinite(v)]
+        if m_pairs:
+            ax.bar(
+                [p[0] for p in m_pairs], [p[1] for p in m_pairs], width,
+                label="MALA (CASSCF Fijo)", color="#7f8c8d", edgecolor="black", linestyle="--", alpha=0.8,
+            )
+        if r_pairs:
+            ax.bar(
+                [p[0] for p in r_pairs], [p[1] for p in r_pairs], width,
+                label="RL-MALA TD3 (CASSCF Fijo)", color="#c0392b", edgecolor="black", alpha=0.9,
+            )
+        ax.set_xticks(x_pos)
+        ax.set_xticklabels([f"N = {int(n)}" for n in n_values])
+        if any(p[1] > 0 for p in m_pairs + r_pairs):
+            ax.set_yscale("log")
     ax.set_ylabel("ESS/segundo Promedio")
     ax.set_title("Velocidad Efectiva Promedio vs Tamaño del Sistema $N$", weight="bold")
     ax.grid(True, which="both")
-    ax.legend()
+    _legend_if_nonempty(ax)
 
     # Panel 3: Frente de Pareto: Cruce Nodal D_KL^spin vs Autocorrelación tau_int(E)
     ax = axes[1, 1]
-    y_col = "kl_casscf_spin_mean" if ("kl_casscf_spin_mean" in df.columns and df["kl_casscf_spin_mean"].notna().any()) else "delta_E_vs_CASSCF"
-    for cat, color, marker in [
-        ("P2: MALA (CASSCF Fijo)", "#7f8c8d", "o"),
-        ("P2: RL-MALA TD3 (CASSCF Fijo)", "#c0392b", "*"),
-        ("P3: VMC + MALA (SJB)", "#2980b9", "s"),
-        ("P3: Coupled VMC + RL-MALA (SJB)", "#8e44ad", "^"),
-    ]:
-        sub = df[df["pipeline_category"] == cat]
-        if not sub.empty and sub[y_col].notna().any():
-            y_vals = np.abs(sub[y_col])
-            ax.scatter(
-                sub["tau_int_E"], y_vals,
-                color=color, marker=marker, s=95 if marker == "*" else 65,
-                alpha=0.85, edgecolors="black", linewidths=0.5, label=cat,
-            )
-    if (df["tau_int_E"].dropna() > 0).any():
+    y_col = None
+    if "kl_casscf_spin_mean" in df.columns and df["kl_casscf_spin_mean"].notna().any():
+        y_col = "kl_casscf_spin_mean"
+    elif "delta_E_vs_CASSCF" in df.columns and df["delta_E_vs_CASSCF"].notna().any():
+        y_col = "delta_E_vs_CASSCF"
+
+    pos_x = False
+    pos_y = False
+    if y_col is not None and "tau_int_E" in df.columns:
+        for cat, color, marker in [
+            ("P2: MALA (CASSCF Fijo)", "#7f8c8d", "o"),
+            ("P2: RL-MALA TD3 (CASSCF Fijo)", "#c0392b", "*"),
+            ("P3: VMC + MALA (SJB)", "#2980b9", "s"),
+            ("P3: Coupled VMC + RL-MALA (SJB)", "#8e44ad", "^"),
+        ]:
+            sub = df[df["pipeline_category"] == cat]
+            if not sub.empty:
+                x_vals = pd.to_numeric(sub["tau_int_E"], errors="coerce").to_numpy(dtype=float)
+                y_vals = np.abs(pd.to_numeric(sub[y_col], errors="coerce").to_numpy(dtype=float))
+                mask = np.isfinite(x_vals) & np.isfinite(y_vals)
+                if np.any(mask):
+                    xp, yp = x_vals[mask], y_vals[mask]
+                    ax.scatter(
+                        xp, yp,
+                        color=color, marker=marker, s=95 if marker == "*" else 65,
+                        alpha=0.85, edgecolors="black", linewidths=0.5, label=cat,
+                    )
+                    if np.any(xp > 0):
+                        pos_x = True
+                    if np.any(yp > 0):
+                        pos_y = True
+    if pos_x:
         ax.set_xscale("log")
-    if (np.abs(df[y_col].dropna()) > 0).any():
+    if pos_y:
         ax.set_yscale("log")
     ax.set_xlabel(r"Tiempo de Autocorrelación $\tau_{\mathrm{int}}(E)$ (Menor es Mejor)")
     if y_col == "kl_casscf_spin_mean":
@@ -745,7 +887,7 @@ def plot_executive_dashboard(df: pd.DataFrame, out_dir: str, args: argparse.Name
         ax.set_ylabel(r"Error Absoluto de Energía $|E - E_{\mathrm{CASSCF}}|$ (Ha)")
         ax.set_title("Frente de Pareto: Precisión de Energía vs Rapidez MCMC", weight="bold")
     ax.grid(True, which="both")
-    ax.legend(fontsize=8.5)
+    _legend_if_nonempty(ax, fontsize=8.5)
 
     fig.suptitle("Dashboard Ejecutivo: Evaluación Panorámica de los Modelos del Benchmark", weight="bold")
     fig.tight_layout()

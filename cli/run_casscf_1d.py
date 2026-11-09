@@ -15,11 +15,9 @@ Envuelve la paquetería del asesor (`uhf_1d_ho_v270826_m-determinants/src/uhf1d`
 from __future__ import annotations
 
 import argparse
-import fcntl
 import json
 import math
 import os
-import shutil
 import sys
 import time
 from pathlib import Path
@@ -39,6 +37,12 @@ for uhf_d in UHF_DIRS:
     if src_d.is_dir() and str(src_d) not in sys.path:
         sys.path.insert(0, str(src_d))
 
+from rl_vmc.core.io_bundle import (
+    atomic_copy_file,
+    atomic_write_csv,
+    atomic_write_json,
+    locked_upsert_csv,
+)
 from rl_vmc.postprocess.casscf_baseline import (
     compute_exact_casscf_1body_density,
     discover_casscf_baselines,
@@ -135,18 +139,17 @@ def get_advisor_safe_casscf_defaults(
     }
 
 
-def _append_master_csv(csv_path: str | Path, row: dict[str, Any]) -> None:
-    csv_file = Path(csv_path)
-    csv_file.parent.mkdir(parents=True, exist_ok=True)
-    lock_path = csv_file.with_suffix(".csv.lock")
-    with lock_path.open("w") as f_lock:
-        fcntl.flock(f_lock, fcntl.LOCK_EX)
-        try:
-            df = pd.DataFrame([row])
-            write_header = not csv_file.exists() or csv_file.stat().st_size == 0
-            df.to_csv(csv_file, mode="a", header=write_header, index=False)
-        finally:
-            fcntl.flock(f_lock, fcntl.LOCK_UN)
+def _append_master_csv(
+    csv_path: str | Path,
+    row: dict[str, Any],
+    collect_dir: str | Path | None = None,
+) -> None:
+    locked_upsert_csv(
+        pd.DataFrame([row]),
+        csv_path,
+        key_cols=["system_tag"],
+        collect_dir=collect_dir,
+    )
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -323,7 +326,7 @@ def main() -> None:
                 print(f"[Pipeline 1 - CASSCF] Copiando referencia ya convergida (b={match.get('n_basis')}) desde: {src_dir}")
                 for item in src_dir.iterdir():
                     if item.is_file():
-                        shutil.copy2(item, outdir / item.name)
+                        atomic_copy_file(item, outdir / item.name)
                 reused = True
 
     # 3. Ejecutar cálculo variacional CASSCF desde cero usando la paquetería del asesor
@@ -352,9 +355,9 @@ def main() -> None:
                 }
             )
             hist_csv = outdir / f"casscf_convergence_history_{sys_tag}.csv"
-            hist_df.to_csv(hist_csv, index=False)
+            atomic_write_csv(hist_df, hist_csv, index=False)
             if csv_collect_dir is not None:
-                shutil.copy2(hist_csv, csv_collect_dir / hist_csv.name)
+                atomic_copy_file(hist_csv, csv_collect_dir / hist_csv.name)
 
         initial_energy = (
             float(result.history["energy"][0])
@@ -382,11 +385,11 @@ def main() -> None:
 
     # Copiar archivo .npz y figuras con nombre referenciado al sistema
     if npz_target.exists():
-        shutil.copy2(npz_target, npz_tagged)
+        atomic_copy_file(npz_target, npz_tagged)
     for fig_stem in ("densities", "ci_weights", "natural_occupations", "orbital_4panel", "energy_history"):
         src_fig = outdir / f"{fig_stem}.png"
         if src_fig.exists():
-            shutil.copy2(src_fig, outdir / f"{fig_stem}_{sys_tag}.png")
+            atomic_copy_file(src_fig, outdir / f"{fig_stem}_{sys_tag}.png")
 
     # Evaluar densidad exacta de 1 cuerpo en malla uniforme y exportar CSV con referencia al sistema
     ref_density = compute_exact_casscf_1body_density(
@@ -409,10 +412,10 @@ def main() -> None:
             "p_down": ref_density["p_down"],
         }
     )
-    df_dens.to_csv(density_csv_path, index=False)
-    df_dens.to_csv(density_csv_tagged, index=False)
+    atomic_write_csv(df_dens, density_csv_path, index=False)
+    atomic_write_csv(df_dens, density_csv_tagged, index=False)
     if csv_collect_dir is not None:
-        df_dens.to_csv(csv_collect_dir / f"casscf_exact_density_{sys_tag}.csv", index=False)
+        atomic_write_csv(df_dens, csv_collect_dir / f"casscf_exact_density_{sys_tag}.csv", index=False)
 
     # Calcular radio RMS analítico sobre la densidad exacta
     x_grid = ref_density["x"]
@@ -437,10 +440,8 @@ def main() -> None:
         "n_determinants": int(summary_dict.get("n_determinants", expected_n_dets)),
     }
 
-    with summary_target.open("w", encoding="utf-8") as f:
-        json.dump(summary_dict, f, indent=2)
-    with summary_tagged.open("w", encoding="utf-8") as f:
-        json.dump(summary_dict, f, indent=2)
+    atomic_write_json(summary_target, summary_dict, indent=2)
+    atomic_write_json(summary_tagged, summary_dict, indent=2)
 
     print(
         f"[Pipeline 1 - CASSCF] Completado en {wall_time:.2f}s | "
@@ -475,11 +476,11 @@ def main() -> None:
         "outdir": str(outdir),
     }
     if args.master_csv:
-        _append_master_csv(args.master_csv, row)
+        _append_master_csv(args.master_csv, row, collect_dir=csv_collect_dir)
         print(f"[Pipeline 1 - CASSCF] Fila agregada en vivo a: {args.master_csv}")
     if csv_collect_dir is not None:
         central_p1_csv = csv_collect_dir / "live_pipeline1_casscf_summary.csv"
-        if not args.master_csv or os.path.abspath(args.master_csv) != os.path.abspath(central_p1_csv):
+        if not args.master_csv or Path(args.master_csv).name != central_p1_csv.name:
             _append_master_csv(central_p1_csv, row)
 
 

@@ -42,6 +42,8 @@
 
 set -u
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 export PYTHONUNBUFFERED=1
 export JAX_ENABLE_X64=True
 export OMP_NUM_THREADS=1
@@ -170,13 +172,18 @@ MASTER_START_TIME=$(date "+%Y-%m-%d %H:%M:%S")
 MASTER_PID=$$
 
 # ------------------------------------------------------------------------------
-# Directorio temporal atómico para tracking de trabajos y locks de graficación
+# Directorio temporal atómico para tracking de trabajos, fallos y locks de graficación
 # ------------------------------------------------------------------------------
 TRACKER_DIR=$(mktemp -d /tmp/rl_vmc_gpu_tracker_XXXXXX 2>/dev/null || mktemp -d -t 'rl_vmc_gpu_tracker')
 GLOBAL_PLOT_LOCK="${TRACKER_DIR}/global_plot.lock"
+FAILED_JOBS_DIR="${TRACKER_DIR}/failures"
+mkdir -p "$FAILED_JOBS_DIR"
 
 cleanup_on_exit() {
     local exit_status=$?
+    if [ "${BASH_SUBSHELL:-0}" -gt 0 ] || { [ -n "${BASHPID:-}" ] && [ "${BASHPID}" != "${MASTER_PID}" ]; }; then
+        exit "$exit_status"
+    fi
     if [ -d "$TRACKER_DIR" ]; then
         for f in "$TRACKER_DIR"/job_*.meta; do
             [ -e "$f" ] || continue
@@ -252,14 +259,57 @@ format_duration() {
 
 is_h5_completed() {
     local h5_file="$1"
-    if [ -f "$h5_file" ]; then
-        local fsize
-        fsize=$(wc -c < "$h5_file" 2>/dev/null | tr -d ' ' || echo "0")
-        if [ "${fsize:-0}" -gt 10240 ]; then
-            return 0
+    [ -f "$h5_file" ] || return 1
+    [ -s "$h5_file" ] || return 1
+    env CUDA_VISIBLE_DEVICES="" JAX_PLATFORMS=cpu python3 -c '
+import importlib.util
+import sys
+
+io_path, h5_path = sys.argv[1], sys.argv[2]
+spec = importlib.util.spec_from_file_location("io_bundle", io_path)
+if spec is None or spec.loader is None:
+    sys.exit(2)
+mod = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(mod)
+ok, _reason = mod.validate_run_bundle_h5(h5_path, require_production=True, require_walkers=True)
+sys.exit(0 if ok else 1)
+' "${SCRIPT_DIR}/rl_vmc/core/io_bundle.py" "$h5_file" >/dev/null 2>&1
+}
+
+quarantine_corrupt_h5() {
+    local h5_file="$1"
+    if [ -e "$h5_file" ] && [ "$FORCE_RERUN" -eq 0 ]; then
+        if ! is_h5_completed "$h5_file"; then
+            local stamp backup_path
+            stamp=$(date +%Y%m%d_%H%M%S)
+            backup_path="${h5_file}.corrupt_${stamp}"
+            echo "  [WARN] Archivo HDF5 inválido o corrupto detectado: $h5_file -> moviendo a $backup_path"
+            mv -f "$h5_file" "$backup_path" || return 1
         fi
     fi
-    return 1
+    return 0
+}
+
+atomic_copy_to_dir() {
+    local src_file="$1"
+    local dest_dir="$2"
+    [ -e "$src_file" ] || return 0
+    mkdir -p "$dest_dir" || return 1
+    local base tmp_dest
+    base=$(basename "$src_file")
+    tmp_dest="${dest_dir}/.${base}.tmp.${BASHPID:-$$}"
+    cp -f "$src_file" "$tmp_dest" && mv -f "$tmp_dest" "${dest_dir}/${base}"
+}
+
+record_failure() {
+    local stage="$1"
+    local sys_tag="$2"
+    local detail="$3"
+    mkdir -p "$FAILED_JOBS_DIR"
+    local safe_tag f_fail
+    safe_tag=$(printf '%s' "$sys_tag" | tr -cs 'A-Za-z0-9._-' '_')
+    f_fail=$(mktemp "${FAILED_JOBS_DIR}/fail_${safe_tag}_XXXXXX" 2>/dev/null || echo "${FAILED_JOBS_DIR}/fail_${safe_tag}_${BASHPID:-$$}_$(date +%s)")
+    printf '[%s] %s | %s | %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$stage" "$sys_tag" "$detail" > "$f_fail"
 }
 
 acquire_global_plot_lock() {
@@ -272,10 +322,53 @@ release_global_plot_lock() {
     rmdir "$GLOBAL_PLOT_LOCK" 2>/dev/null || true
 }
 
+sync_live_all_models_csv() {
+    acquire_global_plot_lock
+    env CUDA_VISIBLE_DEVICES="" JAX_PLATFORMS=cpu python3 -c '
+import importlib.util
+import os
+import sys
+import pandas as pd
+
+io_path, p2_csv, p3_csv, out_csv, collect_dir = sys.argv[1:6]
+spec = importlib.util.spec_from_file_location("io_bundle", io_path)
+if spec is None or spec.loader is None:
+    sys.exit(2)
+io_mod = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(io_mod)
+
+frames = []
+for src in (p2_csv, p3_csv):
+    if os.path.isfile(src) and os.path.getsize(src) > 0:
+        try:
+            df_part = pd.read_csv(src)
+            if not df_part.empty:
+                frames.append(df_part)
+        except Exception as exc:
+            print(f"[WARN] No se pudo leer CSV parcial {src}: {exc}", file=sys.stderr)
+
+if not frames:
+    sys.exit(0)
+
+df_all = pd.concat(frames, ignore_index=True)
+if "label" in df_all.columns:
+    df_all = df_all.drop_duplicates(subset=["label"], keep="last").reset_index(drop=True)
+
+io_mod.atomic_write_csv(df_all, out_csv, index=False)
+if collect_dir:
+    os.makedirs(collect_dir, exist_ok=True)
+    io_mod.atomic_copy_file(out_csv, os.path.join(collect_dir, "live_all_models_master.csv"))
+' "${SCRIPT_DIR}/rl_vmc/core/io_bundle.py" "$LIVE_CSV_P2_COMP" "$LIVE_CSV_P3_COMP" "$LIVE_CSV_ALL" "$CSV_COLLECT_DIR"
+    local rc=$?
+    release_global_plot_lock
+    return "$rc"
+}
+
 update_global_all_models_figures() {
     local reason_msg="$1"
     acquire_global_plot_lock
     local target_csv=""
+    local rc=0
     if [ -f "$LIVE_CSV_ALL" ] && [ -s "$LIVE_CSV_ALL" ]; then
         target_csv="$LIVE_CSV_ALL"
     elif [ -f "$LIVE_CSV_P2_COMP" ] && [ -s "$LIVE_CSV_P2_COMP" ]; then
@@ -287,9 +380,14 @@ update_global_all_models_figures() {
         env CUDA_VISIBLE_DEVICES="" JAX_PLATFORMS=cpu python3 -u scripts/plot_benchmark_all_models_summary.py \
             --csv "$target_csv" \
             --out_dir "$FIG_ALL_MODELS_DIR" \
-            "${PLOT_STYLE_ARGS[@]}" || true
+            "${PLOT_STYLE_ARGS[@]}"
+        rc=$?
+        if [ "$rc" -ne 0 ]; then
+            echo "  [ERROR Global Plots] plot_benchmark_all_models_summary.py falló (exit=${rc}) tras ${reason_msg}." >&2
+        fi
     fi
     release_global_plot_lock
+    return "$rc"
 }
 
 run_logged_command() {
@@ -423,6 +521,19 @@ cleanup_finished_jobs() {
                 echo "   Figuras Globales   : ${FIG_ALL_MODELS_DIR}"
                 echo "=============================================================================="
             } >&2
+            if [ "$exit_code" -ne 0 ]; then
+                local safe_tag has_rec=0
+                safe_tag=$(printf '%s' "$sys" | tr -cs 'A-Za-z0-9._-' '_')
+                for rf in "$FAILED_JOBS_DIR"/fail_"${safe_tag}"_*; do
+                    if [ -e "$rf" ]; then
+                        has_rec=1
+                        break
+                    fi
+                done
+                if [ "$has_rec" -eq 0 ]; then
+                    record_failure "$stage_name" "$sys" "Worker PID $pid terminó con código ${exit_code} -> ${LOG_DIR}/${sys_log_file}"
+                fi
+            fi
             rm -f "$f"
         fi
     done
@@ -455,8 +566,10 @@ get_total_active_jobs() {
     echo "$count"
 }
 
+SELECTED_GPU=""
 wait_for_free_gpu_slot() {
     local stage_name="$1"
+    SELECTED_GPU=""
     while true; do
         cleanup_finished_jobs "$stage_name"
         local total_active
@@ -473,7 +586,7 @@ wait_for_free_gpu_slot() {
                 fi
             done
             if [ -n "$best_gpu" ]; then
-                echo "$best_gpu"
+                SELECTED_GPU="$best_gpu"
                 return 0
             fi
         fi
@@ -631,22 +744,34 @@ run_pipeline_1() {
                     --master_csv "$LIVE_CSV_P1" \
                     --csv_collect_dir "$CSV_COLLECT_DIR" \
                     $EXTRA_FLAGS
+            local p1_rc=$?
+            if [ "$p1_rc" -ne 0 ] || [ ! -f "${OUT_CASSCF}/casscf_state.npz" ]; then
+                echo "  [ERROR PIPELINE 1] Falló CASSCF para ${SYS_TAG} (exit=${p1_rc}). Ver log: ${SYS_LOG}" >&2
+                record_failure "PIPELINE 1" "$SYS_TAG" "cli/run_casscf_1d.py falló (exit=${p1_rc}) o no generó casscf_state.npz -> ${SYS_LOG}"
+                continue
+            fi
 
             # Copiar inmediatamente las figuras diagnósticas del CASSCF al directorio central de figuras
             mkdir -p "$FIG_SYS_P1"
             for f_img in "$OUT_CASSCF"/*.png "$OUT_CASSCF"/*.pdf "$OUT_CASSCF"/summary*.json; do
-                [ -e "$f_img" ] && cp -f "$f_img" "$FIG_SYS_P1/" 2>/dev/null || true
+                if [ -e "$f_img" ]; then
+                    if ! atomic_copy_to_dir "$f_img" "$FIG_SYS_P1"; then
+                        echo "  [ERROR PIPELINE 1] Falló al copiar $(basename "$f_img") a ${FIG_SYS_P1}" >&2
+                        record_failure "PIPELINE 1 (COPY)" "$SYS_TAG" "No se pudo copiar $(basename "$f_img") a ${FIG_SYS_P1}"
+                    fi
+                fi
             done
         done
     done
     echo ""
-    echo " [PIPELINE 1] Todos los cálculos CASSCF en CPU han terminado. Resumen en: $LIVE_CSV_P1"
+    echo " [PIPELINE 1] Etapa CASSCF en CPU finalizada. Resumen en: $LIVE_CSV_P1"
 }
 
 # ==============================================================================
 # PIPELINE 2: MUESTREO PURO SOBRE CASSCF CONGELADO (MALA vs RL-MALA TD3)
 # ==============================================================================
 run_sistema_pipeline_2() {
+    trap - EXIT INT TERM
     local GPU_ID=$1
     local N=$2
     local G=$3
@@ -665,17 +790,19 @@ run_sistema_pipeline_2() {
     local MALA_H5="${MALA_DIR}/run_bundle.h5"
     local RL_H5="${RL_DIR}/run_bundle.h5"
 
-    # Compatibilidad con nombres previos si ya existían corridas anteriores
-    if [ -f "${SYS_OUT}/MALA_FixedCASSCF/run_bundle.h5" ] && ! is_h5_completed "$MALA_H5"; then
+    # Compatibilidad con nombres previos si ya existían corridas anteriores válidas
+    if [ "$FORCE_RERUN" -eq 0 ] && ! is_h5_completed "$MALA_H5" && is_h5_completed "${SYS_OUT}/MALA_FixedCASSCF/run_bundle.h5"; then
         MALA_DIR="${SYS_OUT}/MALA_FixedCASSCF"
         MALA_H5="${MALA_DIR}/run_bundle.h5"
     fi
-    if [ -f "${SYS_OUT}/RL_TD3_FixedCASSCF/run_bundle.h5" ] && ! is_h5_completed "$RL_H5"; then
+    if [ "$FORCE_RERUN" -eq 0 ] && ! is_h5_completed "$RL_H5" && is_h5_completed "${SYS_OUT}/RL_TD3_FixedCASSCF/run_bundle.h5"; then
         RL_DIR="${SYS_OUT}/RL_TD3_FixedCASSCF"
         RL_H5="${RL_DIR}/run_bundle.h5"
     fi
 
     mkdir -p "$MALA_DIR" "$RL_DIR" "$COMP_DIR" "$FIG_SYS_P2"
+
+    local sys_failed=0
 
     if [ "$POSTPROCESS_ONLY" -eq 0 ]; then
         if [ ! -f "$CASSCF_NPZ" ]; then
@@ -693,97 +820,131 @@ run_sistema_pipeline_2() {
                     --master_csv "$LIVE_CSV_P1" \
                     --csv_collect_dir "$CSV_COLLECT_DIR" \
                     --reuse_existing --copy_from_advisor_if_available
+            local p2_cas_rc=$?
+            if [ "$p2_cas_rc" -ne 0 ]; then
+                echo "  [Error Pipeline 2] Fallback CASSCF falló (exit=${p2_cas_rc}) para ${SYS_TAG}." >&2
+                record_failure "PIPELINE 2 (CASSCF)" "$SYS_TAG" "Fallback cli/run_casscf_1d.py falló (exit=${p2_cas_rc})"
+                return 1
+            fi
         fi
 
         if [ ! -f "$CASSCF_NPZ" ]; then
-            echo "  [Error Pipeline 2] No se pudo generar $CASSCF_NPZ para ${SYS_TAG}. Omitiendo este sistema en Pipeline 2."
+            echo "  [Error Pipeline 2] No se pudo generar $CASSCF_NPZ para ${SYS_TAG}. Omitiendo este sistema en Pipeline 2." >&2
+            record_failure "PIPELINE 2 (CASSCF)" "$SYS_TAG" "No existe ${CASSCF_NPZ}"
             return 1
         fi
 
         # 2A. Muestreo puro con MALA estándar sobre CASSCF congelado (desde spin_ordered_offset)
         if [ "$FORCE_RERUN" -eq 1 ] || ! is_h5_completed "$MALA_H5"; then
-            run_logged_step "[Pipeline 2 | MALA (tau=${TAU}) | ${SYS_TAG} | GPU ${GPU_ID}]" \
-                env CUDA_VISIBLE_DEVICES="$GPU_ID" python3 -u cli/run_1d.py \
-                    --run_name "P2_MALA_FixedCASSCF_${SYS_TAG}" \
-                    --pipeline_stage "pipeline2_pure_sampling" \
-                    --train_mode eval_only \
-                    --n_elec "$N" --n_up "$N_UP" --n_dn "$N_DN" \
-                    --omega "$OMEGA" --g "$G" --softening "$SOFT" \
-                    --ansatz_type casscf_npz \
-                    --casscf_npz_path "$CASSCF_NPZ" \
-                    --no-casscf_trainable \
-                    --proposal_type mala \
-                    --tau "$TAU" \
-                    --batch_size "$N_WALKERS" \
-                    --init_mode "$INIT_MODE" \
-                    --init_std "$INIT_STD" \
-                    --eval_init_mode "$EVAL_INIT_MODE" \
-                    --n_eval_chains "$N_EVAL_CHAINS" \
-                    --eval_burn_in "$EVAL_BURN_IN" \
-                    --measure_steps "$MEASURE_STEPS" \
-                    --eloc_chunk_size "$ELOC_CHUNK_SIZE" \
-                    --save_walkers_max_batch "$SAVE_WALKERS_MAX_BATCH" \
-                    --output_h5 "$MALA_H5" \
-                    --reference_casscf_npz "$CASSCF_NPZ" \
-                    --master_csv "$LIVE_CSV_P2_RUNS" \
-                    --csv_collect_dir "$CSV_COLLECT_DIR" \
-                    --export_legacy_files
+            if ! quarantine_corrupt_h5 "$MALA_H5"; then
+                record_failure "PIPELINE 2 (MALA)" "$SYS_TAG" "No se pudo respaldar HDF5 inválido ${MALA_H5}"
+                sys_failed=1
+            else
+                run_logged_step "[Pipeline 2 | MALA (tau=${TAU}) | ${SYS_TAG} | GPU ${GPU_ID}]" \
+                    env CUDA_VISIBLE_DEVICES="$GPU_ID" python3 -u cli/run_1d.py \
+                        --run_name "P2_MALA_FixedCASSCF_${SYS_TAG}" \
+                        --pipeline_stage "pipeline2_pure_sampling" \
+                        --train_mode eval_only \
+                        --n_elec "$N" --n_up "$N_UP" --n_dn "$N_DN" \
+                        --omega "$OMEGA" --g "$G" --softening "$SOFT" \
+                        --ansatz_type casscf_npz \
+                        --casscf_npz_path "$CASSCF_NPZ" \
+                        --no-casscf_trainable \
+                        --proposal_type mala \
+                        --tau "$TAU" \
+                        --batch_size "$N_WALKERS" \
+                        --init_mode "$INIT_MODE" \
+                        --init_std "$INIT_STD" \
+                        --eval_init_mode "$EVAL_INIT_MODE" \
+                        --n_eval_chains "$N_EVAL_CHAINS" \
+                        --eval_burn_in "$EVAL_BURN_IN" \
+                        --measure_steps "$MEASURE_STEPS" \
+                        --eloc_chunk_size "$ELOC_CHUNK_SIZE" \
+                        --save_walkers_max_batch "$SAVE_WALKERS_MAX_BATCH" \
+                        --output_h5 "$MALA_H5" \
+                        --reference_casscf_npz "$CASSCF_NPZ" \
+                        --master_csv "$LIVE_CSV_P2_RUNS" \
+                        --csv_collect_dir "$CSV_COLLECT_DIR" \
+                        --export_legacy_files
+                local mala_rc=$?
+                if [ "$mala_rc" -ne 0 ] || ! is_h5_completed "$MALA_H5"; then
+                    echo "  [Error Pipeline 2] Falló MALA para ${SYS_TAG} (exit=${mala_rc})." >&2
+                    record_failure "PIPELINE 2 (MALA)" "$SYS_TAG" "cli/run_1d.py MALA falló (exit=${mala_rc}) o bundle inválido en ${MALA_H5}"
+                    sys_failed=1
+                fi
+            fi
         else
             echo "  [SKIP] MALA ya completado para ${SYS_TAG}: $MALA_H5"
         fi
 
         # 2B. Entrenamiento del Actor RL-MALA (TD3 DeepSet + CDLB) sobre CASSCF congelado + Evaluación de Cruce Nodal
         if [ "$FORCE_RERUN" -eq 1 ] || ! is_h5_completed "$RL_H5"; then
-            run_logged_step "[Pipeline 2 | RL-TD3 (tau=${TAU}, amp=${ACTOR_AMP}, pen=${PENALTY}) | ${SYS_TAG} | GPU ${GPU_ID}]" \
-                env CUDA_VISIBLE_DEVICES="$GPU_ID" python3 -u cli/run_1d.py \
-                    --run_name "P2_RL_TD3_FixedCASSCF_${SYS_TAG}" \
-                    --pipeline_stage "pipeline2_pure_sampling" \
-                    --train_mode rl_only \
-                    --n_elec "$N" --n_up "$N_UP" --n_dn "$N_DN" \
-                    --omega "$OMEGA" --g "$G" --softening "$SOFT" \
-                    --ansatz_type casscf_npz \
-                    --casscf_npz_path "$CASSCF_NPZ" \
-                    --no-casscf_trainable \
-                    --proposal_type neural_deepset \
-                    --proposal_mode residual_mala \
-                    --rl_algorithm td3 \
-                    --reward_type "$REWARD_TYPE" \
-                    --actor_amplitude "$ACTOR_AMP" \
-                    --penalty_factor "$PENALTY" \
-                    --sigma_action_scale "$SIG_SCALE" \
-                    --max_phys_jump_factor "$MAX_PHYS_JUMP_FACTOR" \
-                    --no-use_lr_scheduler \
-                    --lr_actor "$LR_ACTOR" \
-                    --lr_critic "$LR_CRITIC" \
-                    --n_ter "$N_BURN_IN" \
-                    --train_steps "$RL_ONLY_STEPS" \
-                    --tau "$TAU" \
-                    --batch_size "$N_WALKERS" \
-                    --init_mode "$INIT_MODE" \
-                    --init_std "$INIT_STD" \
-                    --eval_init_mode "$EVAL_INIT_MODE" \
-                    --n_eval_chains "$N_EVAL_CHAINS" \
-                    --eval_burn_in "$EVAL_BURN_IN" \
-                    --measure_steps "$MEASURE_STEPS" \
-                    --eloc_chunk_size "$ELOC_CHUNK_SIZE" \
-                    --save_walkers_max_batch "$SAVE_WALKERS_MAX_BATCH" \
-                    --output_h5 "$RL_H5" \
-                    --reference_casscf_npz "$CASSCF_NPZ" \
-                    --master_csv "$LIVE_CSV_P2_RUNS" \
-                    --csv_collect_dir "$CSV_COLLECT_DIR" \
-                    --export_legacy_files
+            if ! quarantine_corrupt_h5 "$RL_H5"; then
+                record_failure "PIPELINE 2 (RL-TD3)" "$SYS_TAG" "No se pudo respaldar HDF5 inválido ${RL_H5}"
+                sys_failed=1
+            else
+                run_logged_step "[Pipeline 2 | RL-TD3 (tau=${TAU}, amp=${ACTOR_AMP}, pen=${PENALTY}) | ${SYS_TAG} | GPU ${GPU_ID}]" \
+                    env CUDA_VISIBLE_DEVICES="$GPU_ID" python3 -u cli/run_1d.py \
+                        --run_name "P2_RL_TD3_FixedCASSCF_${SYS_TAG}" \
+                        --pipeline_stage "pipeline2_pure_sampling" \
+                        --train_mode rl_only \
+                        --n_elec "$N" --n_up "$N_UP" --n_dn "$N_DN" \
+                        --omega "$OMEGA" --g "$G" --softening "$SOFT" \
+                        --ansatz_type casscf_npz \
+                        --casscf_npz_path "$CASSCF_NPZ" \
+                        --no-casscf_trainable \
+                        --proposal_type neural_deepset \
+                        --proposal_mode residual_mala \
+                        --rl_algorithm td3 \
+                        --reward_type "$REWARD_TYPE" \
+                        --actor_amplitude "$ACTOR_AMP" \
+                        --penalty_factor "$PENALTY" \
+                        --sigma_action_scale "$SIG_SCALE" \
+                        --max_phys_jump_factor "$MAX_PHYS_JUMP_FACTOR" \
+                        --no-use_lr_scheduler \
+                        --lr_actor "$LR_ACTOR" \
+                        --lr_critic "$LR_CRITIC" \
+                        --n_ter "$N_BURN_IN" \
+                        --train_steps "$RL_ONLY_STEPS" \
+                        --tau "$TAU" \
+                        --batch_size "$N_WALKERS" \
+                        --init_mode "$INIT_MODE" \
+                        --init_std "$INIT_STD" \
+                        --eval_init_mode "$EVAL_INIT_MODE" \
+                        --n_eval_chains "$N_EVAL_CHAINS" \
+                        --eval_burn_in "$EVAL_BURN_IN" \
+                        --measure_steps "$MEASURE_STEPS" \
+                        --eloc_chunk_size "$ELOC_CHUNK_SIZE" \
+                        --save_walkers_max_batch "$SAVE_WALKERS_MAX_BATCH" \
+                        --output_h5 "$RL_H5" \
+                        --reference_casscf_npz "$CASSCF_NPZ" \
+                        --master_csv "$LIVE_CSV_P2_RUNS" \
+                        --csv_collect_dir "$CSV_COLLECT_DIR" \
+                        --export_legacy_files
+                local rl_rc=$?
+                if [ "$rl_rc" -ne 0 ] || ! is_h5_completed "$RL_H5"; then
+                    echo "  [Error Pipeline 2] Falló RL-TD3 para ${SYS_TAG} (exit=${rl_rc})." >&2
+                    record_failure "PIPELINE 2 (RL-TD3)" "$SYS_TAG" "cli/run_1d.py RL-TD3 falló (exit=${rl_rc}) o bundle inválido en ${RL_H5}"
+                    sys_failed=1
+                fi
+            fi
         else
             echo "  [SKIP] RL-MALA TD3 ya completado para ${SYS_TAG}: $RL_H5"
         fi
     fi
 
     # 2C. Post-procesamiento inmediato por sistema (8 figuras estándar + 4 figuras de cruce nodal + actualización global vs N y g)
-    if is_h5_completed "$MALA_H5" && is_h5_completed "$RL_H5"; then
+    if [ "$sys_failed" -eq 0 ] && is_h5_completed "$MALA_H5" && is_h5_completed "$RL_H5"; then
+        local EXTRA_CASSCF_FLAG=()
+        if [ -f "$CASSCF_NPZ" ]; then
+            EXTRA_CASSCF_FLAG=(--casscf_npz_path "$CASSCF_NPZ")
+        fi
+
         run_logged_step "[Pipeline 2 | Postprocess 8 Figuras | ${SYS_TAG}]" \
             env CUDA_VISIBLE_DEVICES="" JAX_PLATFORMS=cpu python3 -u cli/postprocess.py \
                 --inputs "$MALA_H5" "$RL_H5" \
                 --labels "P2_MALA_FixedCASSCF_${SYS_TAG}" "P2_RL_TD3_FixedCASSCF_${SYS_TAG}" \
-                --casscf_npz_path "$CASSCF_NPZ" \
+                "${EXTRA_CASSCF_FLAG[@]}" \
                 --out_dir "$COMP_DIR" \
                 --system_tag "P2_${SYS_TAG}" \
                 --top_k_models "$TOP_K_MODELS" \
@@ -791,41 +952,76 @@ run_sistema_pipeline_2() {
                 --master_comparison_csv "$LIVE_CSV_P2_COMP" \
                 --csv_collect_dir "$CSV_COLLECT_DIR" \
                 "${PLOT_STYLE_ARGS[@]}"
-
-        # Sincronizar también en LIVE_CSV_ALL para las figuras globales
-        acquire_global_plot_lock
-        cp -f "$LIVE_CSV_P2_COMP" "$LIVE_CSV_ALL" 2>/dev/null || true
-        if [ -f "$LIVE_CSV_P3_COMP" ] && [ -s "$LIVE_CSV_P3_COMP" ]; then
-            tail -n +2 "$LIVE_CSV_P3_COMP" >> "$LIVE_CSV_ALL" 2>/dev/null || true
+        local pp_rc=$?
+        if [ "$pp_rc" -ne 0 ]; then
+            echo "  [Error Pipeline 2] Falló cli/postprocess.py para ${SYS_TAG} (exit=${pp_rc})." >&2
+            record_failure "PIPELINE 2 (POSTPROCESS)" "$SYS_TAG" "cli/postprocess.py falló (exit=${pp_rc})"
+            sys_failed=1
         fi
-        cp -f "$LIVE_CSV_ALL" "${CSV_COLLECT_DIR}/live_all_models_master.csv" 2>/dev/null || true
-        release_global_plot_lock
+
+        if [ "$pp_rc" -eq 0 ]; then
+            if ! sync_live_all_models_csv; then
+                echo "  [Error Pipeline 2] Falló sincronización de live_all_models_master.csv tras ${SYS_TAG}." >&2
+                record_failure "PIPELINE 2 (CSV_SYNC)" "$SYS_TAG" "sync_live_all_models_csv falló"
+                sys_failed=1
+            fi
+        fi
 
         # Ejecutar evaluación dedicada de Cruce Nodal y Trazas de 1 Caminante (4 figuras de artículo)
         run_logged_step "[Pipeline 2 | Nodal Crossing & Walker Traces | ${SYS_TAG}]" \
             env CUDA_VISIBLE_DEVICES="" JAX_PLATFORMS=cpu python3 -u cli/evaluate_nodal_crossing_1d.py \
                 --inputs "$MALA_H5" "$RL_H5" \
                 --labels "P2_MALA_FixedCASSCF_${SYS_TAG}" "P2_RL_TD3_FixedCASSCF_${SYS_TAG}" \
-                --casscf_npz_path "$CASSCF_NPZ" \
+                "${EXTRA_CASSCF_FLAG[@]}" \
                 --system_tag "$SYS_TAG" \
                 --out_dir "$FIG_SYS_P2" \
                 --csv_collect_dir "$CSV_COLLECT_DIR" \
                 --top_k_models "$TOP_K_MODELS" \
                 --walker_trace_top_k "$WALKER_TRACE_TOP_K" \
                 "${PLOT_STYLE_ARGS[@]}"
+        local nc_rc=$?
+        if [ "$nc_rc" -ne 0 ]; then
+            echo "  [Error Pipeline 2] Falló cli/evaluate_nodal_crossing_1d.py para ${SYS_TAG} (exit=${nc_rc})." >&2
+            record_failure "PIPELINE 2 (NODAL_CROSSING)" "$SYS_TAG" "cli/evaluate_nodal_crossing_1d.py falló (exit=${nc_rc})"
+            sys_failed=1
+        fi
 
         # Copiar las 8 figuras estándar a la carpeta central de figuras del sistema
         for f_out in "$COMP_DIR"/*.png "$COMP_DIR"/*.pdf "$COMP_DIR"/*.csv "$COMP_DIR"/*.json; do
-            [ -e "$f_out" ] && cp -f "$f_out" "$FIG_SYS_P2/" 2>/dev/null || true
+            if [ -e "$f_out" ]; then
+                if ! atomic_copy_to_dir "$f_out" "$FIG_SYS_P2"; then
+                    echo "  [Error Pipeline 2] No se pudo copiar $(basename "$f_out") a ${FIG_SYS_P2}" >&2
+                    record_failure "PIPELINE 2 (COPY)" "$SYS_TAG" "No se pudo copiar $(basename "$f_out") a ${FIG_SYS_P2}"
+                    sys_failed=1
+                fi
+            fi
         done
 
         # Actualizar en tiempo real las figuras globales de TODOS los modelos respecto a N y a g
-        update_global_all_models_figures "P2_${SYS_TAG}"
+        if ! update_global_all_models_figures "P2_${SYS_TAG}"; then
+            record_failure "PIPELINE 2 (GLOBAL_PLOTS)" "$SYS_TAG" "plot_benchmark_all_models_summary.py falló tras P2_${SYS_TAG}"
+            sys_failed=1
+        fi
 
-        echo "  <- [Pipeline 2 | GPU ${GPU_ID}] Finalizado ${SYS_TAG}. Figuras del sistema en: ${FIG_SYS_P2} | Globales en: ${FIG_ALL_MODELS_DIR}"
+        if [ "$sys_failed" -eq 0 ]; then
+            echo "  <- [Pipeline 2 | GPU ${GPU_ID}] Finalizado ${SYS_TAG}. Figuras del sistema en: ${FIG_SYS_P2} | Globales en: ${FIG_ALL_MODELS_DIR}"
+        fi
     else
-        echo "  [Aviso Pipeline 2] No se encontraron ambos run_bundle.h5 completos para ${SYS_TAG}. Post-procesamiento omitido."
+        if [ "$POSTPROCESS_ONLY" -eq 1 ] && [ "$sys_failed" -eq 0 ]; then
+            echo "  [Aviso Pipeline 2] Modo --postprocess-only: no hay ambos run_bundle.h5 completos para ${SYS_TAG}. Post-procesamiento omitido."
+            return 0
+        fi
+        if [ "$sys_failed" -eq 0 ]; then
+            record_failure "PIPELINE 2" "$SYS_TAG" "Falta o es inválido run_bundle.h5 (${MALA_H5} / ${RL_H5})"
+        fi
+        echo "  [Error Pipeline 2] No se encontraron ambos run_bundle.h5 completos para ${SYS_TAG}. Post-procesamiento omitido." >&2
+        return 1
     fi
+
+    if [ "$sys_failed" -ne 0 ]; then
+        return 1
+    fi
+    return 0
 }
 
 run_pipeline_2() {
@@ -841,8 +1037,8 @@ run_pipeline_2() {
         for G in $G_LIST; do
             local SYS_TAG="N${N}_w${OMEGA}_g${G}"
             local SYS_LOG="p2_sampling_${SYS_TAG}.log"
-            local GPU_ID
-            GPU_ID=$(wait_for_free_gpu_slot "PIPELINE 2")
+            wait_for_free_gpu_slot "PIPELINE 2"
+            local GPU_ID="$SELECTED_GPU"
 
             local start_epoch
             start_epoch=$(date +%s)
@@ -873,15 +1069,18 @@ EOF
     done
 
     wait_all_stage_jobs "PIPELINE 2"
-    update_global_all_models_figures "FINAL_PIPELINE_2"
+    if ! update_global_all_models_figures "FINAL_PIPELINE_2"; then
+        record_failure "PIPELINE 2 (GLOBAL_PLOTS)" "FINAL_PIPELINE_2" "plot_benchmark_all_models_summary.py falló al cierre de Pipeline 2"
+    fi
     echo ""
-    echo " [PIPELINE 2] Todos los sistemas han terminado exitosamente."
+    echo " [PIPELINE 2] Etapa de muestreo puro completada."
 }
 
 # ==============================================================================
 # PIPELINE 3: ENTRENAMIENTO VARIACIONAL SLATER-JASTROW-BACKFLOW (OPCIONAL)
 # ==============================================================================
 run_sistema_pipeline_3() {
+    trap - EXIT INT TERM
     local GPU_ID=$1
     local N=$2
     local G=$3
@@ -902,78 +1101,106 @@ run_sistema_pipeline_3() {
 
     mkdir -p "$VMC_MALA_DIR" "$COUPLED_RL_DIR" "$COMP_DIR" "$FIG_SYS_P3"
 
+    local sys_failed=0
+
     if [ "$POSTPROCESS_ONLY" -eq 0 ]; then
         if [ "$FORCE_RERUN" -eq 1 ] || ! is_h5_completed "$VMC_MALA_H5"; then
-            run_logged_step "[Pipeline 3 | VMC-MALA | ${SYS_TAG} | GPU ${GPU_ID}]" \
-                env CUDA_VISIBLE_DEVICES="$GPU_ID" python3 -u cli/run_1d.py \
-                    --run_name "P3_VMC_MALA_SJB_${SYS_TAG}" \
-                    --pipeline_stage "pipeline3_variational_training" \
-                    --train_mode vmc_only \
-                    --n_elec "$N" --n_up "$N_UP" --n_dn "$N_DN" \
-                    --omega "$OMEGA" --g "$G" --softening "$SOFT" \
-                    --ansatz_type slater_jastrow_1d \
-                    --orbital_model backflow_ho \
-                    --correlation_model spin_rbf_jastrow \
-                    --proposal_type mala \
-                    --train_steps "$VMC_COUPLED_STEPS" \
-                    --tau "$TAU" \
-                    --batch_size "$N_WALKERS" \
-                    --init_mode "$INIT_MODE" \
-                    --init_std "$INIT_STD" \
-                    --eval_init_mode "$EVAL_INIT_MODE" \
-                    --n_eval_chains "$N_EVAL_CHAINS" \
-                    --eval_burn_in "$EVAL_BURN_IN" \
-                    --measure_steps "$MEASURE_STEPS" \
-                    --eloc_chunk_size "$ELOC_CHUNK_SIZE" \
-                    --save_walkers_max_batch "$SAVE_WALKERS_MAX_BATCH" \
-                    --output_h5 "$VMC_MALA_H5" \
-                    --reference_casscf_npz "$CASSCF_NPZ" \
-                    --master_csv "$LIVE_CSV_P3_RUNS" \
-                    --csv_collect_dir "$CSV_COLLECT_DIR" \
-                    --export_legacy_files
+            if ! quarantine_corrupt_h5 "$VMC_MALA_H5"; then
+                record_failure "PIPELINE 3 (VMC-MALA)" "$SYS_TAG" "No se pudo respaldar HDF5 inválido ${VMC_MALA_H5}"
+                sys_failed=1
+            else
+                run_logged_step "[Pipeline 3 | VMC-MALA | ${SYS_TAG} | GPU ${GPU_ID}]" \
+                    env CUDA_VISIBLE_DEVICES="$GPU_ID" python3 -u cli/run_1d.py \
+                        --run_name "P3_VMC_MALA_SJB_${SYS_TAG}" \
+                        --pipeline_stage "pipeline3_variational_training" \
+                        --train_mode vmc_only \
+                        --n_elec "$N" --n_up "$N_UP" --n_dn "$N_DN" \
+                        --omega "$OMEGA" --g "$G" --softening "$SOFT" \
+                        --ansatz_type slater_jastrow_1d \
+                        --orbital_model backflow_ho \
+                        --correlation_model spin_rbf_jastrow \
+                        --proposal_type mala \
+                        --train_steps "$VMC_COUPLED_STEPS" \
+                        --tau "$TAU" \
+                        --batch_size "$N_WALKERS" \
+                        --init_mode "$INIT_MODE" \
+                        --init_std "$INIT_STD" \
+                        --eval_init_mode "$EVAL_INIT_MODE" \
+                        --n_eval_chains "$N_EVAL_CHAINS" \
+                        --eval_burn_in "$EVAL_BURN_IN" \
+                        --measure_steps "$MEASURE_STEPS" \
+                        --eloc_chunk_size "$ELOC_CHUNK_SIZE" \
+                        --save_walkers_max_batch "$SAVE_WALKERS_MAX_BATCH" \
+                        --output_h5 "$VMC_MALA_H5" \
+                        --reference_casscf_npz "$CASSCF_NPZ" \
+                        --master_csv "$LIVE_CSV_P3_RUNS" \
+                        --csv_collect_dir "$CSV_COLLECT_DIR" \
+                        --export_legacy_files
+                local vmc_rc=$?
+                if [ "$vmc_rc" -ne 0 ] || ! is_h5_completed "$VMC_MALA_H5"; then
+                    echo "  [Error Pipeline 3] Falló VMC-MALA para ${SYS_TAG} (exit=${vmc_rc})." >&2
+                    record_failure "PIPELINE 3 (VMC-MALA)" "$SYS_TAG" "cli/run_1d.py VMC-MALA falló (exit=${vmc_rc}) o bundle inválido en ${VMC_MALA_H5}"
+                    sys_failed=1
+                fi
+            fi
+        else
+            echo "  [SKIP] VMC-MALA ya completado para ${SYS_TAG}: $VMC_MALA_H5"
         fi
 
         if [ "$FORCE_RERUN" -eq 1 ] || ! is_h5_completed "$COUPLED_RL_H5"; then
-            run_logged_step "[Pipeline 3 | Coupled VMC+RL | ${SYS_TAG} | GPU ${GPU_ID}]" \
-                env CUDA_VISIBLE_DEVICES="$GPU_ID" python3 -u cli/run_1d.py \
-                    --run_name "P3_Coupled_RL_TD3_SJB_${SYS_TAG}" \
-                    --pipeline_stage "pipeline3_variational_training" \
-                    --train_mode coupled \
-                    --n_elec "$N" --n_up "$N_UP" --n_dn "$N_DN" \
-                    --omega "$OMEGA" --g "$G" --softening "$SOFT" \
-                    --ansatz_type slater_jastrow_1d \
-                    --orbital_model backflow_ho \
-                    --correlation_model spin_rbf_jastrow \
-                    --proposal_type neural_deepset \
-                    --proposal_mode residual_mala \
-                    --rl_algorithm td3 \
-                    --reward_type "$REWARD_TYPE" \
-                    --actor_amplitude "$ACTOR_AMP" \
-                    --penalty_factor "$PENALTY" \
-                    --sigma_action_scale "$SIG_SCALE" \
-                    --max_phys_jump_factor "$MAX_PHYS_JUMP_FACTOR" \
-                    --lr_actor "$LR_ACTOR" \
-                    --lr_critic "$LR_CRITIC" \
-                    --train_steps "$VMC_COUPLED_STEPS" \
-                    --tau "$TAU" \
-                    --batch_size "$N_WALKERS" \
-                    --init_mode "$INIT_MODE" \
-                    --init_std "$INIT_STD" \
-                    --eval_init_mode "$EVAL_INIT_MODE" \
-                    --n_eval_chains "$N_EVAL_CHAINS" \
-                    --eval_burn_in "$EVAL_BURN_IN" \
-                    --measure_steps "$MEASURE_STEPS" \
-                    --eloc_chunk_size "$ELOC_CHUNK_SIZE" \
-                    --save_walkers_max_batch "$SAVE_WALKERS_MAX_BATCH" \
-                    --output_h5 "$COUPLED_RL_H5" \
-                    --reference_casscf_npz "$CASSCF_NPZ" \
-                    --master_csv "$LIVE_CSV_P3_RUNS" \
-                    --csv_collect_dir "$CSV_COLLECT_DIR" \
-                    --export_legacy_files
+            if ! quarantine_corrupt_h5 "$COUPLED_RL_H5"; then
+                record_failure "PIPELINE 3 (COUPLED)" "$SYS_TAG" "No se pudo respaldar HDF5 inválido ${COUPLED_RL_H5}"
+                sys_failed=1
+            else
+                run_logged_step "[Pipeline 3 | Coupled VMC+RL | ${SYS_TAG} | GPU ${GPU_ID}]" \
+                    env CUDA_VISIBLE_DEVICES="$GPU_ID" python3 -u cli/run_1d.py \
+                        --run_name "P3_Coupled_RL_TD3_SJB_${SYS_TAG}" \
+                        --pipeline_stage "pipeline3_variational_training" \
+                        --train_mode coupled \
+                        --n_elec "$N" --n_up "$N_UP" --n_dn "$N_DN" \
+                        --omega "$OMEGA" --g "$G" --softening "$SOFT" \
+                        --ansatz_type slater_jastrow_1d \
+                        --orbital_model backflow_ho \
+                        --correlation_model spin_rbf_jastrow \
+                        --proposal_type neural_deepset \
+                        --proposal_mode residual_mala \
+                        --rl_algorithm td3 \
+                        --reward_type "$REWARD_TYPE" \
+                        --actor_amplitude "$ACTOR_AMP" \
+                        --penalty_factor "$PENALTY" \
+                        --sigma_action_scale "$SIG_SCALE" \
+                        --max_phys_jump_factor "$MAX_PHYS_JUMP_FACTOR" \
+                        --lr_actor "$LR_ACTOR" \
+                        --lr_critic "$LR_CRITIC" \
+                        --train_steps "$VMC_COUPLED_STEPS" \
+                        --tau "$TAU" \
+                        --batch_size "$N_WALKERS" \
+                        --init_mode "$INIT_MODE" \
+                        --init_std "$INIT_STD" \
+                        --eval_init_mode "$EVAL_INIT_MODE" \
+                        --n_eval_chains "$N_EVAL_CHAINS" \
+                        --eval_burn_in "$EVAL_BURN_IN" \
+                        --measure_steps "$MEASURE_STEPS" \
+                        --eloc_chunk_size "$ELOC_CHUNK_SIZE" \
+                        --save_walkers_max_batch "$SAVE_WALKERS_MAX_BATCH" \
+                        --output_h5 "$COUPLED_RL_H5" \
+                        --reference_casscf_npz "$CASSCF_NPZ" \
+                        --master_csv "$LIVE_CSV_P3_RUNS" \
+                        --csv_collect_dir "$CSV_COLLECT_DIR" \
+                        --export_legacy_files
+                local coupled_rc=$?
+                if [ "$coupled_rc" -ne 0 ] || ! is_h5_completed "$COUPLED_RL_H5"; then
+                    echo "  [Error Pipeline 3] Falló Coupled VMC+RL para ${SYS_TAG} (exit=${coupled_rc})." >&2
+                    record_failure "PIPELINE 3 (COUPLED)" "$SYS_TAG" "cli/run_1d.py Coupled VMC+RL falló (exit=${coupled_rc}) o bundle inválido en ${COUPLED_RL_H5}"
+                    sys_failed=1
+                fi
+            fi
+        else
+            echo "  [SKIP] Coupled VMC+RL ya completado para ${SYS_TAG}: $COUPLED_RL_H5"
         fi
     fi
 
-    if is_h5_completed "$VMC_MALA_H5" && is_h5_completed "$COUPLED_RL_H5"; then
+    if [ "$sys_failed" -eq 0 ] && is_h5_completed "$VMC_MALA_H5" && is_h5_completed "$COUPLED_RL_H5"; then
         local EXTRA_CASSCF_FLAG=()
         if [ -f "$CASSCF_NPZ" ]; then
             EXTRA_CASSCF_FLAG=(--casscf_npz_path "$CASSCF_NPZ")
@@ -989,26 +1216,55 @@ run_sistema_pipeline_3() {
                 --master_comparison_csv "$LIVE_CSV_P3_COMP" \
                 --csv_collect_dir "$CSV_COLLECT_DIR" \
                 "${PLOT_STYLE_ARGS[@]}"
-
-        acquire_global_plot_lock
-        if [ -f "$LIVE_CSV_P2_COMP" ] && [ -s "$LIVE_CSV_P2_COMP" ]; then
-            cp -f "$LIVE_CSV_P2_COMP" "$LIVE_CSV_ALL" 2>/dev/null || true
-            tail -n +2 "$LIVE_CSV_P3_COMP" >> "$LIVE_CSV_ALL" 2>/dev/null || true
-        else
-            cp -f "$LIVE_CSV_P3_COMP" "$LIVE_CSV_ALL" 2>/dev/null || true
+        local pp_rc=$?
+        if [ "$pp_rc" -ne 0 ]; then
+            echo "  [Error Pipeline 3] Falló cli/postprocess.py para ${SYS_TAG} (exit=${pp_rc})." >&2
+            record_failure "PIPELINE 3 (POSTPROCESS)" "$SYS_TAG" "cli/postprocess.py falló (exit=${pp_rc})"
+            sys_failed=1
         fi
-        cp -f "$LIVE_CSV_ALL" "${CSV_COLLECT_DIR}/live_all_models_master.csv" 2>/dev/null || true
-        release_global_plot_lock
+
+        if [ "$pp_rc" -eq 0 ]; then
+            if ! sync_live_all_models_csv; then
+                echo "  [Error Pipeline 3] Falló sincronización de live_all_models_master.csv tras ${SYS_TAG}." >&2
+                record_failure "PIPELINE 3 (CSV_SYNC)" "$SYS_TAG" "sync_live_all_models_csv falló"
+                sys_failed=1
+            fi
+        fi
 
         for f_out in "$COMP_DIR"/*.png "$COMP_DIR"/*.pdf "$COMP_DIR"/*.csv "$COMP_DIR"/*.json; do
-            [ -e "$f_out" ] && cp -f "$f_out" "$FIG_SYS_P3/" 2>/dev/null || true
+            if [ -e "$f_out" ]; then
+                if ! atomic_copy_to_dir "$f_out" "$FIG_SYS_P3"; then
+                    echo "  [Error Pipeline 3] No se pudo copiar $(basename "$f_out") a ${FIG_SYS_P3}" >&2
+                    record_failure "PIPELINE 3 (COPY)" "$SYS_TAG" "No se pudo copiar $(basename "$f_out") a ${FIG_SYS_P3}"
+                    sys_failed=1
+                fi
+            fi
         done
 
-        update_global_all_models_figures "P3_${SYS_TAG}"
-        echo "  <- [Pipeline 3 | GPU ${GPU_ID}] Finalizado ${SYS_TAG}. Gráficas en: ${FIG_SYS_P3}"
+        if ! update_global_all_models_figures "P3_${SYS_TAG}"; then
+            record_failure "PIPELINE 3 (GLOBAL_PLOTS)" "$SYS_TAG" "plot_benchmark_all_models_summary.py falló tras P3_${SYS_TAG}"
+            sys_failed=1
+        fi
+
+        if [ "$sys_failed" -eq 0 ]; then
+            echo "  <- [Pipeline 3 | GPU ${GPU_ID}] Finalizado ${SYS_TAG}. Gráficas en: ${FIG_SYS_P3}"
+        fi
     else
-        echo "  [Aviso Pipeline 3] No se encontraron ambos run_bundle.h5 para ${SYS_TAG}. Post-procesamiento omitido."
+        if [ "$POSTPROCESS_ONLY" -eq 1 ] && [ "$sys_failed" -eq 0 ]; then
+            echo "  [Aviso Pipeline 3] Modo --postprocess-only: no hay ambos run_bundle.h5 para ${SYS_TAG}. Post-procesamiento omitido."
+            return 0
+        fi
+        if [ "$sys_failed" -eq 0 ]; then
+            record_failure "PIPELINE 3" "$SYS_TAG" "Falta o es inválido run_bundle.h5 (${VMC_MALA_H5} / ${COUPLED_RL_H5})"
+        fi
+        echo "  [Error Pipeline 3] No se encontraron ambos run_bundle.h5 para ${SYS_TAG}. Post-procesamiento omitido." >&2
+        return 1
     fi
+
+    if [ "$sys_failed" -ne 0 ]; then
+        return 1
+    fi
+    return 0
 }
 
 run_pipeline_3() {
@@ -1023,8 +1279,8 @@ run_pipeline_3() {
         for G in $G_LIST; do
             local SYS_TAG="N${N}_w${OMEGA}_g${G}"
             local SYS_LOG="p3_training_${SYS_TAG}.log"
-            local GPU_ID
-            GPU_ID=$(wait_for_free_gpu_slot "PIPELINE 3")
+            wait_for_free_gpu_slot "PIPELINE 3"
+            local GPU_ID="$SELECTED_GPU"
 
             local start_epoch
             start_epoch=$(date +%s)
@@ -1055,9 +1311,11 @@ EOF
     done
 
     wait_all_stage_jobs "PIPELINE 3"
-    update_global_all_models_figures "FINAL_PIPELINE_3"
+    if ! update_global_all_models_figures "FINAL_PIPELINE_3"; then
+        record_failure "PIPELINE 3 (GLOBAL_PLOTS)" "FINAL_PIPELINE_3" "plot_benchmark_all_models_summary.py falló al cierre de Pipeline 3"
+    fi
     echo ""
-    echo " [PIPELINE 3] Todos los sistemas han terminado exitosamente."
+    echo " [PIPELINE 3] Etapa variacional completada."
 }
 
 # ==============================================================================
@@ -1078,19 +1336,54 @@ MASTER_END_TIME=$(date "+%Y-%m-%d %H:%M:%S")
 MASTER_DURATION=$((MASTER_END_EPOCH - MASTER_START_EPOCH))
 MASTER_DURATION_FORMATTED=$(format_duration "$MASTER_DURATION")
 
+FAIL_COUNT=0
+FAIL_REPORT="${LOG_DIR}/failed_steps_latest.log"
+FAIL_FILES=()
+for ff in "$FAILED_JOBS_DIR"/fail_*; do
+    if [ -e "$ff" ]; then
+        FAIL_FILES+=("$ff")
+        FAIL_COUNT=$((FAIL_COUNT + 1))
+    fi
+done
+
 echo ""
 echo "=============================================================================="
-echo " BENCHMARK DE PRODUCCIÓN FINALIZADO EXITOSAMENTE"
-echo " PID del Master      : $MASTER_PID"
-echo " Hora de Inicio      : $MASTER_START_TIME"
-echo " Hora de Terminación : $MASTER_END_TIME"
-echo " Tiempo Total        : ${MASTER_DURATION}s ($MASTER_DURATION_FORMATTED)"
-echo " Tablas CSV maestras generadas en vivo:"
-echo "   - Pipeline 1 (CASSCF)       : $LIVE_CSV_P1"
-echo "   - Pipeline 2 (Muestreo)     : $LIVE_CSV_P2_COMP"
-echo "   - Tabla global consolidada  : $LIVE_CSV_ALL"
-echo " Directorios de figuras en tiempo real:"
-echo "   - Figuras CASSCF (P1)       : $FIG_P1_DIR"
-echo "   - Figuras por sistema (P2)  : $FIG_P2_DIR"
-echo "   - Figuras globales vs N y g : $FIG_ALL_MODELS_DIR"
-echo "=============================================================================="
+if [ "$FAIL_COUNT" -gt 0 ]; then
+    : > "$FAIL_REPORT"
+    for ff in "${FAIL_FILES[@]}"; do
+        cat "$ff" >> "$FAIL_REPORT"
+    done
+    echo " BENCHMARK DE PRODUCCIÓN FINALIZADO CON ${FAIL_COUNT} ERROR(ES)"
+    echo " PID del Master      : $MASTER_PID"
+    echo " Hora de Inicio      : $MASTER_START_TIME"
+    echo " Hora de Terminación : $MASTER_END_TIME"
+    echo " Tiempo Total        : ${MASTER_DURATION}s ($MASTER_DURATION_FORMATTED)"
+    echo " Reporte de fallos   : $FAIL_REPORT"
+    echo " Detalle de fallos registradas:"
+    while IFS= read -r line; do
+        echo "   - $line"
+    done < "$FAIL_REPORT"
+    echo " Tablas CSV maestras generadas en vivo:"
+    echo "   - Pipeline 1 (CASSCF)       : $LIVE_CSV_P1"
+    echo "   - Pipeline 2 (Muestreo)     : $LIVE_CSV_P2_COMP"
+    echo "   - Tabla global consolidada  : $LIVE_CSV_ALL"
+    echo "=============================================================================="
+    exit 1
+else
+    rm -f "$FAIL_REPORT"
+    echo " BENCHMARK DE PRODUCCIÓN FINALIZADO EXITOSAMENTE"
+    echo " PID del Master      : $MASTER_PID"
+    echo " Hora de Inicio      : $MASTER_START_TIME"
+    echo " Hora de Terminación : $MASTER_END_TIME"
+    echo " Tiempo Total        : ${MASTER_DURATION}s ($MASTER_DURATION_FORMATTED)"
+    echo " Tablas CSV maestras generadas en vivo:"
+    echo "   - Pipeline 1 (CASSCF)       : $LIVE_CSV_P1"
+    echo "   - Pipeline 2 (Muestreo)     : $LIVE_CSV_P2_COMP"
+    echo "   - Tabla global consolidada  : $LIVE_CSV_ALL"
+    echo " Directorios de figuras en tiempo real:"
+    echo "   - Figuras CASSCF (P1)       : $FIG_P1_DIR"
+    echo "   - Figuras por sistema (P2)  : $FIG_P2_DIR"
+    echo "   - Figuras globales vs N y g : $FIG_ALL_MODELS_DIR"
+    echo "=============================================================================="
+    exit 0
+fi

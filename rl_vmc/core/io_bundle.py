@@ -1,20 +1,252 @@
 from __future__ import annotations
 
 import datetime
+import fcntl
 import json
 import os
 from pathlib import Path
 import pickle
+import shutil
+import tempfile
 from typing import Any, Optional
 
 import h5py
-import jax
 import numpy as np
 import pandas as pd
 
 
+def _json_default(obj: Any) -> Any:
+    """Convierte tipos numpy/Path comunes para serialización JSON segura."""
+    if isinstance(obj, np.integer):
+        return int(obj)
+    if isinstance(obj, np.floating):
+        return float(obj)
+    if isinstance(obj, np.bool_):
+        return bool(obj)
+    if isinstance(obj, np.ndarray):
+        return obj.tolist()
+    if isinstance(obj, Path):
+        return str(obj)
+    raise TypeError(f"Object of type {type(obj).__name__} is not JSON serializable")
+
+
+def atomic_write_bytes(path: str | Path, data: bytes) -> Path:
+    """Escribe bytes de forma atómica (archivo temporal en el mismo directorio + fsync + os.replace)."""
+    target = Path(path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp_name = tempfile.mkstemp(prefix=f".{target.name}.tmp.", dir=str(target.parent))
+    try:
+        with os.fdopen(fd, "wb") as f:
+            f.write(data)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp_name, target)
+    except Exception:
+        if os.path.exists(tmp_name):
+            try:
+                os.unlink(tmp_name)
+            except OSError:
+                pass
+        raise
+    return target
+
+
+def atomic_write_text(path: str | Path, text: str, encoding: str = "utf-8") -> Path:
+    """Escribe texto de forma atómica."""
+    return atomic_write_bytes(path, text.encode(encoding))
+
+
+def atomic_write_json(path: str | Path, payload: Any, indent: int = 2) -> Path:
+    """Serializa y escribe un archivo JSON de forma atómica."""
+    text = json.dumps(payload, indent=indent, default=_json_default)
+    return atomic_write_text(path, text, encoding="utf-8")
+
+
+def atomic_write_pickle(path: str | Path, obj: Any) -> Path:
+    """Serializa y escribe un archivo pickle de forma atómica."""
+    return atomic_write_bytes(path, pickle.dumps(obj, protocol=pickle.HIGHEST_PROTOCOL))
+
+
+def atomic_write_csv(df: pd.DataFrame, path: str | Path, index: bool = False) -> Path:
+    """Escribe un DataFrame CSV de forma atómica en el mismo directorio."""
+    target = Path(path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp_name = tempfile.mkstemp(prefix=f".{target.name}.tmp.", dir=str(target.parent))
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="") as f:
+            df.to_csv(f, index=index)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp_name, target)
+    except Exception:
+        if os.path.exists(tmp_name):
+            try:
+                os.unlink(tmp_name)
+            except OSError:
+                pass
+        raise
+    return target
+
+
+def atomic_copy_file(src: str | Path, dst: str | Path) -> Path:
+    """Copia un archivo a otro destino de manera atómica evitando lecturas parciales."""
+    src_path = Path(src)
+    dst_path = Path(dst)
+    dst_path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp_name = tempfile.mkstemp(prefix=f".{dst_path.name}.tmp.", dir=str(dst_path.parent))
+    os.close(fd)
+    try:
+        shutil.copy2(src_path, tmp_name)
+        with open(tmp_name, "rb") as f_sync:
+            os.fsync(f_sync.fileno())
+        os.replace(tmp_name, dst_path)
+    except Exception:
+        if os.path.exists(tmp_name):
+            try:
+                os.unlink(tmp_name)
+            except OSError:
+                pass
+        raise
+    return dst_path
+
+
+def locked_upsert_csv(
+    df_new: pd.DataFrame,
+    csv_path: str | Path,
+    key_cols: list[str] | tuple[str, ...],
+    collect_dir: Optional[str | Path] = None,
+) -> Path:
+    """Actualiza o inserta filas en un CSV maestro bajo lock exclusivo fcntl y escritura atómica."""
+    csv_file = Path(csv_path)
+    csv_file.parent.mkdir(parents=True, exist_ok=True)
+    lock_path = Path(f"{csv_file}.lock")
+
+    with lock_path.open("a+", encoding="utf-8") as f_lock:
+        fcntl.flock(f_lock, fcntl.LOCK_EX)
+        try:
+            df_old = pd.DataFrame()
+            if csv_file.exists() and csv_file.stat().st_size > 0:
+                try:
+                    df_old = pd.read_csv(csv_file)
+                except pd.errors.EmptyDataError:
+                    df_old = pd.DataFrame()
+                except Exception as exc_read:
+                    backup_name = csv_file.with_name(
+                        f"{csv_file.name}.corrupt_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}"
+                    )
+                    try:
+                        shutil.copy2(csv_file, backup_name)
+                    except OSError:
+                        pass
+                    print(f"  [Aviso IO] CSV previo corrupto en {csv_file} ({exc_read}); respaldado en {backup_name}")
+                    df_old = pd.DataFrame()
+
+            if df_old.empty:
+                df_combined = df_new.copy()
+            elif df_new.empty:
+                df_combined = df_old.copy()
+            else:
+                df_combined = pd.concat([df_old, df_new], ignore_index=True, sort=False)
+
+            valid_keys = [k for k in key_cols if k in df_combined.columns]
+            if valid_keys and not df_combined.empty:
+                if len(valid_keys) == 1:
+                    dedup_key = df_combined[valid_keys[0]].astype(str)
+                else:
+                    dedup_key = df_combined[valid_keys].astype(str).agg("\x1f".join, axis=1)
+                keep_mask = ~dedup_key.duplicated(keep="last")
+                df_combined = df_combined.loc[keep_mask].reset_index(drop=True)
+
+            atomic_write_csv(df_combined, csv_file, index=False)
+
+            if collect_dir:
+                cdir = Path(collect_dir)
+                cdir.mkdir(parents=True, exist_ok=True)
+                atomic_copy_file(csv_file, cdir / csv_file.name)
+        finally:
+            fcntl.flock(f_lock, fcntl.LOCK_UN)
+
+    return csv_file
+
+
+def _touch_dataset_endpoints(ds: h5py.Dataset) -> None:
+    """Lee extremos de un dataset HDF5 para verificar que sus chunks no estén truncados."""
+    if ds.size <= 0:
+        raise ValueError(f"Dataset '{ds.name}' vacío (size=0)")
+    if ds.ndim == 0:
+        _ = ds[()]
+        return
+    first_idx = tuple(0 for _ in range(ds.ndim))
+    last_idx = tuple(-1 for _ in range(ds.ndim))
+    _ = ds[first_idx]
+    _ = ds[last_idx]
+
+
+def validate_run_bundle_h5(
+    h5_path: str | Path,
+    require_production: bool = True,
+    require_walkers: bool = True,
+) -> tuple[bool, str]:
+    """Valida rápidamente la integridad estructural y legibilidad de un archivo run_bundle.h5."""
+    path = Path(h5_path)
+    if not path.is_file():
+        return False, "archivo inexistente"
+    try:
+        if path.stat().st_size == 0:
+            return False, "archivo vacío (0 bytes)"
+    except OSError as exc:
+        return False, f"no se pudo inspeccionar tamaño: {exc}"
+
+    try:
+        with h5py.File(path, "r") as f:
+            if "config_json" not in f.attrs:
+                return False, "falta atributo config_json"
+            cfg_obj = json.loads(str(f.attrs["config_json"]))
+            if not isinstance(cfg_obj, dict) or not cfg_obj:
+                return False, "config_json inválido o vacío"
+
+            if "checkpoints" not in f:
+                return False, "falta grupo checkpoints"
+            ckpt_grp = f["checkpoints"]
+            for ckpt_name in ckpt_grp.keys():
+                _ = _deserialize_pytree(ckpt_grp[ckpt_name][:])
+
+            if "training" in f:
+                trn_grp = f["training"]
+                if "records_json" in trn_grp.attrs:
+                    recs = json.loads(str(trn_grp.attrs["records_json"]))
+                    if not isinstance(recs, list):
+                        return False, "records_json de training no es una lista"
+                for k in trn_grp.keys():
+                    _touch_dataset_endpoints(trn_grp[k])
+
+            if require_production:
+                if "production" not in f:
+                    return False, "falta grupo production"
+                prod_grp = f["production"]
+                if "local_energy" not in prod_grp:
+                    return False, "falta dataset production/local_energy"
+                _touch_dataset_endpoints(prod_grp["local_energy"])
+                for e_key in ("kinetic_energy", "potential_energy"):
+                    if e_key in prod_grp:
+                        _touch_dataset_endpoints(prod_grp[e_key])
+                if "sampler_stats" in prod_grp:
+                    for s_key in prod_grp["sampler_stats"].keys():
+                        _touch_dataset_endpoints(prod_grp["sampler_stats"][s_key])
+                if require_walkers:
+                    if "walkers" not in prod_grp:
+                        return False, "falta dataset production/walkers"
+                    _touch_dataset_endpoints(prod_grp["walkers"])
+    except Exception as exc:
+        return False, f"{type(exc).__name__}: {exc}"
+
+    return True, "ok"
+
+
 def _serialize_pytree(tree: Any) -> np.ndarray:
     """Serializa un PyTree de JAX/Flax (convirtiendo hojas a numpy) en un vector uint8."""
+    import jax
+
     np_tree = jax.tree_util.tree_map(lambda x: np.asarray(x), tree)
     raw_bytes = pickle.dumps(np_tree, protocol=pickle.HIGHEST_PROTOCOL)
     return np.frombuffer(raw_bytes, dtype=np.uint8)
@@ -39,80 +271,113 @@ def save_run_bundle_h5(
     production_data: Optional[dict[str, Any]] = None,
     extra_metadata: Optional[dict[str, Any]] = None,
 ) -> Path:
-    """Guarda todos los artefactos de una corrida en un único archivo HDF5 (.h5) respetando las banderas."""
+    """Guarda todos los artefactos de una corrida en un único archivo HDF5 (.h5) de forma atómica."""
     path = Path(h5_path)
     path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp_name = tempfile.mkstemp(prefix=f".{path.name}.tmp.", dir=str(path.parent))
+    os.close(fd)
+    tmp_path = Path(tmp_name)
 
-    with h5py.File(path, "w") as f:
-        f.attrs["schema_version"] = "1.0"
-        f.attrs["created_at"] = datetime.datetime.now().isoformat()
-        if extra_metadata:
-            for k, v in extra_metadata.items():
-                f.attrs[k] = json.dumps(v) if isinstance(v, (dict, list)) else str(v)
+    try:
+        with h5py.File(tmp_path, "w") as f:
+            f.attrs["schema_version"] = "1.0"
+            f.attrs["created_at"] = datetime.datetime.now().isoformat()
+            if extra_metadata:
+                for k, v in extra_metadata.items():
+                    f.attrs[k] = json.dumps(v) if isinstance(v, (dict, list)) else str(v)
 
-        # 1. Configuración
-        if getattr(io_flags, "save_config", True):
-            f.attrs["config_json"] = json.dumps(config_dict, indent=2)
+            # 1. Configuración
+            if getattr(io_flags, "save_config", True):
+                f.attrs["config_json"] = json.dumps(config_dict, indent=2, default=_json_default)
 
-        # 2. Checkpoints de redes entrenadas
-        ckpt_grp = f.create_group("checkpoints")
-        if getattr(io_flags, "save_ansatz_weights", True):
-            if ansatz_best is not None:
-                ckpt_grp.create_dataset("ansatz_best", data=_serialize_pytree(ansatz_best))
-            if ansatz_final is not None:
-                ckpt_grp.create_dataset("ansatz_final", data=_serialize_pytree(ansatz_final))
+            # 2. Checkpoints de redes entrenadas
+            ckpt_grp = f.create_group("checkpoints")
+            if getattr(io_flags, "save_ansatz_weights", True):
+                if ansatz_best is not None:
+                    ckpt_grp.create_dataset("ansatz_best", data=_serialize_pytree(ansatz_best))
+                if ansatz_final is not None:
+                    ckpt_grp.create_dataset("ansatz_final", data=_serialize_pytree(ansatz_final))
 
-        if getattr(io_flags, "save_actor_weights", True) and actor_final is not None:
-            ckpt_grp.create_dataset("actor_final", data=_serialize_pytree(actor_final))
+            if getattr(io_flags, "save_actor_weights", True) and actor_final is not None:
+                ckpt_grp.create_dataset("actor_final", data=_serialize_pytree(actor_final))
 
-        if getattr(io_flags, "save_critic_weights", True):
-            if critic1_final is not None:
-                ckpt_grp.create_dataset("critic1_final", data=_serialize_pytree(critic1_final))
-            if critic2_final is not None:
-                ckpt_grp.create_dataset("critic2_final", data=_serialize_pytree(critic2_final))
+            if getattr(io_flags, "save_critic_weights", True):
+                if critic1_final is not None:
+                    ckpt_grp.create_dataset("critic1_final", data=_serialize_pytree(critic1_final))
+                if critic2_final is not None:
+                    ckpt_grp.create_dataset("critic2_final", data=_serialize_pytree(critic2_final))
 
-        # 3. Historial de Entrenamiento
-        if getattr(io_flags, "save_training_history", True) and training_history:
-            trn_grp = f.create_group("training")
-            trn_grp.attrs["records_json"] = json.dumps(training_history)
-            df_trn = pd.DataFrame(training_history)
-            for col in df_trn.columns:
-                series = df_trn[col]
-                if pd.api.types.is_numeric_dtype(series):
-                    trn_grp.create_dataset(
-                        col, data=series.to_numpy(dtype=np.float64), compression="gzip"
-                    )
-
-        # 4. Datos de Producción / Evaluación MCMC
-        if production_data is not None:
-            prod_grp = f.create_group("production")
-            for meta_key in ("wall_time_sec", "n_chains", "n_burn_in", "measure_steps", "thin"):
-                if meta_key in production_data:
-                    prod_grp.attrs[meta_key] = production_data[meta_key]
-
-            if getattr(io_flags, "save_production_walkers", True) and "walkers" in production_data:
-                w_arr = np.asarray(production_data["walkers"])
-                max_b = getattr(io_flags, "save_walkers_max_batch", -1)
-                if max_b is not None and max_b > 0 and w_arr.ndim >= 3 and w_arr.shape[2] > max_b:
-                    w_arr = w_arr[:, :, :max_b, ...]
-                prod_grp.create_dataset("walkers", data=w_arr, compression="gzip")
-
-            if getattr(io_flags, "save_production_energies", True):
-                for e_key in ("local_energy", "kinetic_energy", "potential_energy"):
-                    if e_key in production_data and production_data[e_key] is not None:
-                        prod_grp.create_dataset(
-                            e_key,
-                            data=np.asarray(production_data[e_key]),
-                            compression="gzip",
+            # 3. Historial de Entrenamiento
+            if getattr(io_flags, "save_training_history", True) and training_history:
+                trn_grp = f.create_group("training")
+                trn_grp.attrs["records_json"] = json.dumps(training_history, default=_json_default)
+                df_trn = pd.DataFrame(training_history)
+                for col in df_trn.columns:
+                    series = df_trn[col]
+                    if pd.api.types.is_numeric_dtype(series):
+                        trn_grp.create_dataset(
+                            col, data=series.to_numpy(dtype=np.float64), compression="gzip"
                         )
 
-            if getattr(io_flags, "save_production_sampler_stats", True) and "sampler_stats" in production_data:
-                stats_grp = prod_grp.create_group("sampler_stats")
-                for s_key, s_val in production_data["sampler_stats"].items():
-                    if s_val is not None:
-                        stats_grp.create_dataset(
-                            s_key, data=np.asarray(s_val), compression="gzip"
-                        )
+            # 4. Datos de Producción / Evaluación MCMC
+            if production_data is not None:
+                prod_grp = f.create_group("production")
+                for meta_key in ("wall_time_sec", "n_chains", "n_burn_in", "measure_steps", "thin"):
+                    if meta_key in production_data:
+                        prod_grp.attrs[meta_key] = production_data[meta_key]
+
+                if getattr(io_flags, "save_production_walkers", True) and "walkers" in production_data:
+                    w_arr = np.asarray(production_data["walkers"])
+                    max_b = getattr(io_flags, "save_walkers_max_batch", -1)
+                    if max_b is not None and max_b > 0 and w_arr.ndim >= 3 and w_arr.shape[2] > max_b:
+                        w_arr = w_arr[:, :, :max_b, ...]
+                    prod_grp.create_dataset("walkers", data=w_arr, compression="gzip")
+
+                if getattr(io_flags, "save_production_energies", True):
+                    for e_key in ("local_energy", "kinetic_energy", "potential_energy"):
+                        if e_key in production_data and production_data[e_key] is not None:
+                            prod_grp.create_dataset(
+                                e_key,
+                                data=np.asarray(production_data[e_key]),
+                                compression="gzip",
+                            )
+
+                if getattr(io_flags, "save_production_sampler_stats", True) and "sampler_stats" in production_data:
+                    stats_grp = prod_grp.create_group("sampler_stats")
+                    for s_key, s_val in production_data["sampler_stats"].items():
+                        if s_val is not None:
+                            stats_grp.create_dataset(
+                                s_key, data=np.asarray(s_val), compression="gzip"
+                            )
+
+        need_prod = bool(
+            production_data is not None
+            and getattr(io_flags, "save_production_energies", True)
+            and "local_energy" in production_data
+        )
+        need_walkers = bool(
+            need_prod
+            and getattr(io_flags, "save_production_walkers", True)
+            and "walkers" in production_data
+        )
+        ok, reason = validate_run_bundle_h5(
+            tmp_path,
+            require_production=need_prod,
+            require_walkers=need_walkers,
+        )
+        if not ok:
+            raise RuntimeError(f"Validación post-escritura del bundle HDF5 falló: {reason}")
+
+        with open(tmp_path, "rb") as f_sync:
+            os.fsync(f_sync.fileno())
+        os.replace(tmp_path, path)
+    except Exception:
+        if tmp_path.exists():
+            try:
+                tmp_path.unlink()
+            except OSError:
+                pass
+        raise
 
     return path
 
@@ -410,7 +675,9 @@ def convert_legacy_dir_to_h5(
 
     # Si aún no se encontró ningún archivo de pesos, inicializar ansatz por defecto para permitir evaluar
     if ansatz_best is None:
-        from ..wavefunctions.builder import build_ansatz_1d
+        import jax
+        import jax.numpy as jnp
+        from ..ansatze.ansatz_1d import build_ansatz_1d
         from ..config import Experiment1DConfig
         tmp_cfg = Experiment1DConfig.from_dict(config_dict)
         ansatz_model = build_ansatz_1d(tmp_cfg)
@@ -523,27 +790,22 @@ def export_h5_to_legacy_dir(h5_path: str | Path, out_dir: str | Path) -> Path:
     prefix = "TD3" if "neural" in proposal_type else "MALA"
 
     # Guardar params.json
-    with (dest / "params.json").open("w", encoding="utf-8") as f:
-        json.dump(cfg, f, indent=4)
+    atomic_write_json(dest / "params.json", cfg, indent=4)
 
     # Guardar checkpoints
     ckpts = bundle.get("checkpoints", {})
     if "ansatz_best" in ckpts:
-        with (dest / f"{prefix}_ansatz_weights.pkl").open("wb") as f:
-            pickle.dump(ckpts["ansatz_best"], f)
+        atomic_write_pickle(dest / f"{prefix}_ansatz_weights.pkl", ckpts["ansatz_best"])
     if "actor_final" in ckpts:
-        with (dest / f"{prefix}_actor_weights.pkl").open("wb") as f:
-            pickle.dump(ckpts["actor_final"], f)
+        atomic_write_pickle(dest / f"{prefix}_actor_weights.pkl", ckpts["actor_final"])
     if "critic1_final" in ckpts:
-        with (dest / "TD3_critic1_weights.pkl").open("wb") as f:
-            pickle.dump(ckpts["critic1_final"], f)
+        atomic_write_pickle(dest / "TD3_critic1_weights.pkl", ckpts["critic1_final"])
     if "critic2_final" in ckpts:
-        with (dest / "TD3_critic2_weights.pkl").open("wb") as f:
-            pickle.dump(ckpts["critic2_final"], f)
+        atomic_write_pickle(dest / "TD3_critic2_weights.pkl", ckpts["critic2_final"])
 
     # Guardar CSVs
     if bundle.get("training_df") is not None:
-        bundle["training_df"].to_csv(dest / "training_metrics.csv", index=False)
+        atomic_write_csv(bundle["training_df"], dest / "training_metrics.csv", index=False)
 
     prod = bundle.get("production", {})
     if "local_energy" in prod:
@@ -557,6 +819,6 @@ def export_h5_to_legacy_dir(h5_path: str | Path, out_dir: str | Path) -> Path:
                 "Acceptance": acc,
             }
         )
-        df_m.to_csv(dest / "measurement_data.csv", index=False)
+        atomic_write_csv(df_m, dest / "measurement_data.csv", index=False)
 
     return dest
