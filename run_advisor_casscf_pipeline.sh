@@ -211,7 +211,8 @@ is_h5_completed_with_advisor_b256() {
     local h5_file="$1"
     [ -f "$h5_file" ] || return 1
     python3 - "$h5_file" << 'PYEOF' >/dev/null 2>&1
-import sys, json, h5py, os
+import sys, json, h5py, os, zipfile
+
 p = sys.argv[1]
 if not os.path.exists(p) or os.path.getsize(p) < 10240:
     sys.exit(1)
@@ -220,15 +221,28 @@ with h5py.File(p, "r") as f:
         sys.exit(1)
     if f["production/walkers"].shape[0] < 1:
         sys.exit(1)
-    # Verificar si el summary o el casscf_npz_path corresponden al estado b=256 (c0-a6 / c0-a8)
-    s_raw = f["meta/summary_json"][()]
-    if isinstance(s_raw, bytes):
-        s_raw = s_raw.decode("utf-8", errors="ignore")
-    s = json.loads(str(s_raw))
-    ref_cas = s.get("reference_casscf") or {}
-    label = str(ref_cas.get("label", ""))
-    # En los estados del asesor: b=256 y c0-a6 o c0-a8
-    if "b=256" in label and "c0-" in label:
+    if "config_json" not in f.attrs:
+        sys.exit(2)
+    cfg = json.loads(str(f.attrs["config_json"]))
+    npz_path = (cfg.get("ansatz") or {}).get("casscf_npz_path") or ""
+    if not npz_path or not os.path.exists(npz_path):
+        # Intentar leer summary.json junto al .h5
+        sum_p = os.path.join(os.path.dirname(p), "summary.json")
+        if os.path.exists(sum_p):
+            with open(sum_p, "r", encoding="utf-8") as fs:
+                s = json.load(fs)
+            npz_path = (s.get("casscf_comparison") or {}).get("casscf_npz_path") or ""
+    if not npz_path or not os.path.exists(npz_path):
+        sys.exit(2)
+    with zipfile.ZipFile(npz_path, "r") as z:
+        raw = z.read("metadata_json.npy")
+        hlen = int.from_bytes(raw[8:10], "little")
+        meta = json.loads(raw[10 + hlen:].decode("utf-32-le").rstrip("\x00"))
+    m_cfg = meta.get("config", {})
+    n_basis = int(m_cfg.get("n_basis", 0))
+    n_core = int(m_cfg.get("n_core", -1))
+    conv = bool(meta.get("converged", False))
+    if conv and n_basis >= 256 and n_core == 0:
         sys.exit(0)
     sys.exit(2)
 PYEOF
@@ -238,30 +252,38 @@ PYEOF
 quarantine_old_system_runs_if_needed() {
     local N="$1"
     local G="$2"
-    local SYS_TAG="N${N}_w${OMEGA}_g${G}"
-    local SYS_P2="${P2_DIR}/${SYS_TAG}"
-    [ -d "$SYS_P2" ] || return 0
+    local G_ALT
+    G_ALT=$(python3 -c 'import sys; print(f"{float(sys.argv[1]):g}")' "$G")
+    local tag
+    for tag in "N${N}_w${OMEGA}_g${G}" "N${N}_w${OMEGA}_g${G_ALT}"; do
+        local SYS_P2="${P2_DIR}/${tag}"
+        [ -d "$SYS_P2" ] || continue
 
-    local needs_quarantine=0
-    for h5f in "$SYS_P2"/*/run_bundle.h5; do
-        [ -e "$h5f" ] || continue
-        if [ "$FORCE_RERUN" -eq 1 ] || ! is_h5_completed_with_advisor_b256 "$h5f"; then
+        local needs_quarantine=0
+        for h5f in "$SYS_P2"/*/run_bundle.h5; do
+            [ -e "$h5f" ] || continue
+            if [ "$FORCE_RERUN" -eq 1 ] || ! is_h5_completed_with_advisor_b256 "$h5f"; then
+                needs_quarantine=1
+                break
+            fi
+        done
+        # También poner en cuarentena si no hay ningún .h5 completo o si cambió el nombre del tag
+        if [ "$needs_quarantine" -eq 0 ] && [ "$tag" != "N${N}_w${OMEGA}_g${G}" ]; then
             needs_quarantine=1
-            break
+        fi
+
+        if [ "$needs_quarantine" -eq 1 ]; then
+            local ts
+            ts=$(date "+%Y%m%d_%H%M%S")
+            local q_dest="${QUARANTINE_DIR}/${tag}_${ts}"
+            mkdir -p "$QUARANTINE_DIR"
+            echo "  [Quarantine] Respaldando corrida previa (CASSCF antiguo c1-a4/b48 o --force-rerun) de ${tag} -> ${q_dest}"
+            mv "$SYS_P2" "$q_dest"
+            if [ -d "${FIG_P2_DIR}/${tag}" ]; then
+                mv "${FIG_P2_DIR}/${tag}" "${q_dest}/figures_p2" 2>/dev/null || true
+            fi
         fi
     done
-
-    if [ "$needs_quarantine" -eq 1 ]; then
-        local ts
-        ts=$(date "+%Y%m%d_%H%M%S")
-        local q_dest="${QUARANTINE_DIR}/${SYS_TAG}_${ts}"
-        mkdir -p "$QUARANTINE_DIR"
-        echo "  [Quarantine] Respaldando corrida previa (CASSCF antiguo c1-a4/b48 o --force-rerun) de ${SYS_TAG} -> ${q_dest}"
-        mv "$SYS_P2" "$q_dest"
-        if [ -d "${FIG_P2_DIR}/${SYS_TAG}" ]; then
-            mv "${FIG_P2_DIR}/${SYS_TAG}" "${q_dest}/figures_p2" 2>/dev/null || true
-        fi
-    fi
 }
 
 # Si existen corridas de N=10 con CASSCF truncado c4-a4 que no convergió, moverlas a cuarentena
@@ -309,7 +331,7 @@ for p in candidates:
         cfg = meta.get("config", {})
         n_elec = int(cfg.get("n_up", 0)) + int(cfg.get("n_down", 0))
         g_val = float(cfg.get("g", 0.0))
-        g_str = f"{g_val:g}"
+        g_str = f"{g_val:.1f}" if abs(g_val - round(g_val)) < 1e-9 else f"{g_val:g}"
         if (n_elec, round(g_val, 5)) in seen_ng:
             continue
         seen_ng.add((n_elec, round(g_val, 5)))
@@ -479,14 +501,14 @@ run_advisor_p2_worker() {
                 --measure_steps "$MEASURE_STEPS" \
                 --eloc_chunk_size "$ELOC_CHUNK_SIZE" \
                 --save_walkers_max_batch "$SAVE_WALKERS_MAX_BATCH" \
-                --save_production_energy_mode "downsampled" \
+                --save_production_energy_mode "step_mean" \
                 --save_production_walkers_dtype "float32" \
                 --save_production_stats_dtype "float32" \
                 --output_h5 "$MALA_H5" \
                 --reference_casscf_npz "$CASSCF_NPZ" \
                 --master_csv "$LIVE_CSV_P2_RUNS" \
                 --csv_collect_dir "$CSV_COLLECT_DIR" \
-                --no-export_legacy_folder || return 1
+                --no-export_legacy_files || return 1
         else
             echo "[${SYS_TAG}] MALA ya completado con CASSCF b=256: $MALA_H5"
         fi
@@ -525,14 +547,14 @@ run_advisor_p2_worker() {
                 --measure_steps "$MEASURE_STEPS" \
                 --eloc_chunk_size "$ELOC_CHUNK_SIZE" \
                 --save_walkers_max_batch "$SAVE_WALKERS_MAX_BATCH" \
-                --save_production_energy_mode "downsampled" \
+                --save_production_energy_mode "step_mean" \
                 --save_production_walkers_dtype "float32" \
                 --save_production_stats_dtype "float32" \
                 --output_h5 "$RL_H5" \
                 --reference_casscf_npz "$CASSCF_NPZ" \
                 --master_csv "$LIVE_CSV_P2_RUNS" \
                 --csv_collect_dir "$CSV_COLLECT_DIR" \
-                --no-export_legacy_folder || return 1
+                --no-export_legacy_files || return 1
         else
             echo "[${SYS_TAG}] RL-MALA TD3 ya completado con CASSCF b=256: $RL_H5"
         fi
@@ -591,6 +613,20 @@ while [ "$(get_total_active_jobs)" -gt 0 ]; do
     sleep 3
 done
 
+# Verificar que cada sistema despachado haya generado ambos run_bundle.h5 válidos
+P2_FAILED=0
+for rec in "${SYSTEM_RECORDS[@]}"; do
+    IFS='|' read -r N G NPZ_PATH <<< "$rec"
+    SYS_TAG="N${N}_w${OMEGA}_g${G}"
+    read -r TAU ACTOR_AMP PENALTY SIG_SCALE <<< "$(get_system_p2_params "$N" "$G")"
+    M_H5="${P2_DIR}/${SYS_TAG}/${SYS_TAG}_MALA_tau${TAU}/run_bundle.h5"
+    R_H5="${P2_DIR}/${SYS_TAG}/${SYS_TAG}_RL_MALA_tau${TAU}_amp${ACTOR_AMP}_pen${PENALTY}_sig${SIG_SCALE}/run_bundle.h5"
+    if [ ! -f "$M_H5" ] || [ ! -f "$R_H5" ]; then
+        echo "  [WARN] ${SYS_TAG} no completó ambos run_bundle.h5. Revisa: ${LOG_DIR}/p2_advisor_sampling_${SYS_TAG}.log" >&2
+        P2_FAILED=$((P2_FAILED + 1))
+    fi
+done
+
 # ==============================================================================
 # ETAPA 3: RESUMEN GLOBAL Y GRÁFICAS DE FLIPS VS g (N=2, 4, 6, 8)
 # ==============================================================================
@@ -599,23 +635,25 @@ echo "==========================================================================
 echo " [ETAPA 3] Generando gráficas globales y análisis de flips vs g (N=2, 4, 6, 8)"
 echo "=============================================================================="
 
-python3 - "$LIVE_CSV_P2_COMP" "$LIVE_CSV_ALL_MODELS" "$CSV_COLLECT_DIR" << 'PYEOF' || true
+python3 - "$LIVE_CSV_P2_COMP" "$LIVE_CSV_ALL_MODELS" "$CSV_COLLECT_DIR" "$KEEP_N10" << 'PYEOF' || true
 import os, sys, pandas as pd
 from rl_vmc.core.io_bundle import atomic_write_csv, atomic_copy_file
-p2_csv, out_csv, collect_dir = sys.argv[1], sys.argv[2], sys.argv[3]
+p2_csv, out_csv, collect_dir, keep_n10 = sys.argv[1], sys.argv[2], sys.argv[3], int(sys.argv[4])
 if os.path.exists(p2_csv) and os.path.getsize(p2_csv) > 0:
     df = pd.read_csv(p2_csv)
+    if "label" in df.columns:
+        df = df.drop_duplicates(subset=["label"], keep="last").reset_index(drop=True)
+    if keep_n10 == 0 and "N" in df.columns:
+        df = df[pd.to_numeric(df["N"], errors="coerce") != 10].reset_index(drop=True)
     atomic_write_csv(df, out_csv, index=False)
     if os.path.isdir(collect_dir):
         atomic_copy_file(out_csv, os.path.join(collect_dir, os.path.basename(out_csv)))
 PYEOF
 
-if [ -f "$LIVE_CSV_ALL_MODELS" ]; then
+if [ -f "$LIVE_CSV_ALL_MODELS" ] && [ -s "$LIVE_CSV_ALL_MODELS" ]; then
     env CUDA_VISIBLE_DEVICES="" JAX_PLATFORMS=cpu python3 -u scripts/plot_benchmark_all_models_summary.py \
-        --input_csv "$LIVE_CSV_ALL_MODELS" \
-        --p1_csv "$LIVE_CSV_P1" \
+        --csv "$LIVE_CSV_ALL_MODELS" \
         --out_dir "$FIG_ALL_MODELS_DIR" \
-        --csv_collect_dir "$CSV_COLLECT_DIR" \
         "${PLOT_STYLE_ARGS[@]}" || true
 fi
 
