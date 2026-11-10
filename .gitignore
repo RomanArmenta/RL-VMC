@@ -41,4 +41,6 @@ opt_vmc.log
 
 # Permitir archivos npz de estados CASSCF de referencia si se versionan
 !figures/*.npz
+CASSCF_csv/
+!flips_analysis/flips_vs_g_summary.csv
 

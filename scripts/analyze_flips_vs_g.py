@@ -1550,6 +1550,13 @@ def build_arg_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Si ya existe flips_vs_g_summary.csv en <out_dir>, reutilizarlo directamente para generar las gráficas generales vs g sin re-leer los HDF5.",
     )
+    p.add_argument(
+        "--n_filter",
+        type=int,
+        nargs="+",
+        default=None,
+        help="Filtrar únicamente sistemas con N en esta lista (ej. --n_filter 2 4 6 8).",
+    )
     p.add_argument("--figure_format", choices=["png", "pdf", "both"], default="png", help="Formato de exportación de figuras.")
     p.add_argument("--dpi", type=int, default=300, help="Resolución en PPI/DPI para PNG.")
     p.add_argument("--font_scale", type=float, default=1.0, help="Factor de escala para tamaños de fuente.")
@@ -1588,6 +1595,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         print(f"[+] Modo --only_summary_plots: cargando tabla existente {out_csv}")
         with open(out_csv, "r", encoding="utf-8") as f:
             for r in csv.DictReader(f):
+                if args.n_filter is not None and _safe_int(r.get("N"), 0) not in set(args.n_filter):
+                    continue
                 summary_rows.append(dict(r))
     else:
         h5_paths = discover_h5_bundles(root_dir, include_pipeline3=args.include_pipeline3)
@@ -1634,6 +1643,8 @@ def main(argv: Optional[List[str]] = None) -> int:
                     bundle_info["ESJD"] = stats["empirical_esjd"]
 
                 bundle_info["stats"] = stats
+                if args.n_filter is not None and int(bundle_info["N"]) not in set(args.n_filter):
+                    continue
                 records.append(bundle_info)
 
                 row_csv = {

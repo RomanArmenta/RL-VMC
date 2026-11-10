@@ -47,6 +47,7 @@ from rl_vmc.postprocess.casscf_baseline import (
     compute_exact_casscf_1body_density,
     discover_casscf_baselines,
     find_matching_casscf_baseline,
+    load_casscf_npz_metadata,
 )
 
 
@@ -201,9 +202,68 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--copy_from_advisor_if_available",
         action="store_true",
-        help="Si existe un modelo CASSCF idéntico ya convergido en uhf_1d_ho_v270826_m-determinants/results_*, copiarlo.",
+        help="Si existe un modelo CASSCF idéntico ya convergido en CASSCF_csv/ o uhf_1d_ho_v270826_m-determinants/results_*, copiarlo.",
+    )
+    p.add_argument(
+        "--advisor_npz_path",
+        type=str,
+        default=None,
+        help="Ruta explícita a un archivo .npz convergido por el asesor (ej. en CASSCF_csv/) para instalar directamente.",
     )
     return p
+
+
+def _generate_diagnostic_plots_from_npz(
+    npz_path: Path,
+    ref_density: dict[str, Any],
+    outdir: Path,
+    sys_tag: str,
+) -> None:
+    """Genera figuras diagnósticas (densities.png y ci_weights.png) si se importó un .npz directo sin figuras previas."""
+    try:
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+
+        dens_png = outdir / "densities.png"
+        if not dens_png.exists():
+            fig, ax = plt.subplots(figsize=(7.5, 4.5), dpi=160)
+            x = ref_density["x"]
+            ax.plot(x, ref_density["rho_total"], color="#111827", lw=2.2, label=r"$\rho_{\mathrm{tot}}(x)$")
+            ax.plot(x, ref_density["rho_up"], color="#2563eb", lw=1.6, ls="--", label=r"$\rho_\uparrow(x)$")
+            ax.plot(x, ref_density["rho_down"], color="#dc2626", lw=1.4, ls=":", label=r"$\rho_\downarrow(x)$")
+            ax.set_xlabel("Posición $x$ [Bohr]")
+            ax.set_ylabel("Densidad de 1 cuerpo $\\rho(x)$")
+            ax.set_title(
+                f"CASSCF Exact 1-Body Density — {sys_tag} ({ref_density['label']}, E={ref_density['energy']:.6f} Ha)"
+            )
+            ax.grid(True, alpha=0.25)
+            ax.legend(frameon=True)
+            fig.tight_layout()
+            fig.savefig(dens_png)
+            plt.close(fig)
+
+        ci_png = outdir / "ci_weights.png"
+        if not ci_png.exists():
+            with np.load(npz_path, allow_pickle=False) as data:
+                if "selected_ci_coefficients" in data and len(data["selected_ci_coefficients"]) > 0:
+                    coeffs = np.asarray(data["selected_ci_coefficients"], dtype=np.float64)
+                else:
+                    coeffs = np.asarray(data["ci_coefficients"], dtype=np.float64)
+            weights = np.sort(coeffs**2)[::-1]
+            fig, ax = plt.subplots(figsize=(7.0, 4.2), dpi=160)
+            idx = np.arange(1, len(weights) + 1)
+            ax.bar(idx, weights, color="#1d4ed8", alpha=0.85, edgecolor="#1e3a8a")
+            ax.set_yscale("log")
+            ax.set_xlabel("Índice de determinante ordenado $k$")
+            ax.set_ylabel("Peso configuracional $|c_k|^2$")
+            ax.set_title(f"Pesos CI Dominantes ({len(weights)} dets) — {sys_tag}")
+            ax.grid(True, which="both", alpha=0.25)
+            fig.tight_layout()
+            fig.savefig(ci_png)
+            plt.close(fig)
+    except Exception as exc:
+        print(f"  [Aviso CASSCF Plots] No se pudieron generar figuras desde .npz: {exc}")
 
 
 def main() -> None:
@@ -266,8 +326,39 @@ def main() -> None:
     t0 = time.perf_counter()
     reused = False
 
+    # 0. Si se proporcionó explícitamente --advisor_npz_path, instalar ese archivo .npz convergido directamente
+    if args.advisor_npz_path:
+        adv_path = Path(args.advisor_npz_path).resolve()
+        if not adv_path.exists():
+            raise FileNotFoundError(f"No se encontró --advisor_npz_path: {adv_path}")
+        adv_meta = load_casscf_npz_metadata(adv_path)
+        print(
+            f"[Pipeline 1 - CASSCF] Instalando estado convergido del asesor ({adv_meta['label']}, "
+            f"E={adv_meta['energy']:.8f} Ha) desde: {adv_path}"
+        )
+        if adv_path != npz_target.resolve():
+            atomic_copy_file(adv_path, npz_target)
+        raw_meta = adv_meta.get("metadata", {})
+        adv_cfg = raw_meta.get("config", {})
+        params["n_basis"] = int(adv_meta["n_basis"])
+        params["n_core"] = int(adv_meta["n_core"])
+        params["n_active_orbitals"] = int(adv_meta["n_active"])
+        params["quadrature_order"] = int(adv_cfg.get("quadrature_order", params["quadrature_order"]))
+        params["softening"] = float(adv_meta["softening"])
+        if adv_meta.get("summary_path") and Path(adv_meta["summary_path"]).exists():
+            with Path(adv_meta["summary_path"]).open("r", encoding="utf-8") as fs:
+                s_dict = json.load(fs)
+        else:
+            s_dict = dict(raw_meta)
+        s_dict.setdefault("converged", bool(adv_meta["converged"]))
+        s_dict.setdefault("energy", float(adv_meta["energy"]))
+        s_dict.setdefault("n_determinants", int(adv_meta.get("n_determinants", expected_n_dets)))
+        s_dict["system_tag"] = sys_tag
+        atomic_write_json(summary_target, s_dict, indent=2)
+        reused = True
+
     # 1. Reutilizar si ya existe en outdir, se solicitó --reuse_existing y convergió genuinamente con base suficiente
-    if args.reuse_existing and npz_target.exists() and summary_target.exists():
+    if not reused and args.reuse_existing and npz_target.exists() and summary_target.exists():
         try:
             with summary_target.open("r", encoding="utf-8") as f_chk:
                 prev_sum = json.load(f_chk)
@@ -275,14 +366,23 @@ def main() -> None:
             prev_it = int(prev_sum.get("iterations", 0))
             prev_msg = str(prev_sum.get("optimizer_message", ""))
             prev_cfg = prev_sum.get("config", {})
-            prev_max_it = int(prev_cfg.get("casscf_max_iter", prev_it))
+            prev_max_it = int(prev_cfg.get("casscf_max_iter", max(prev_it, 1000)))
             prev_nbasis = int(prev_cfg.get("n_basis", 0))
             prev_ncore = int(prev_cfg.get("n_core", -1))
             prev_nact = int(prev_cfg.get("n_active_orbitals", -1))
             hit_old_cap = (prev_it >= 120 and prev_max_it <= 120) or ("Maximum number of iterations" in prev_msg and prev_max_it < params["casscf_max_iter"])
-            basis_ok = (prev_nbasis >= int(params["n_basis"])) and (prev_ncore == int(params["n_core"])) and (prev_nact == int(params["n_active_orbitals"]))
+            # Aceptar si coincide exactamente o si es un estado del asesor con base mayor y espacio activo más completo (ej. c0-a6 b256)
+            exact_space = (prev_ncore == int(params["n_core"])) and (prev_nact == int(params["n_active_orbitals"]))
+            superior_space = (0 <= prev_ncore <= int(params["n_core"])) and (prev_nact >= int(params["n_active_orbitals"]))
+            basis_ok = (prev_nbasis >= int(params["n_basis"])) and (exact_space or superior_space)
             if prev_conv and not hit_old_cap and basis_ok:
-                print(f"[Pipeline 1 - CASSCF] Reutilizando estado convergido (b={prev_nbasis}, {prev_it} iters) en: {npz_target}")
+                print(
+                    f"[Pipeline 1 - CASSCF] Reutilizando estado convergido (b={prev_nbasis}, "
+                    f"c{prev_ncore}-a{prev_nact}) en: {npz_target}"
+                )
+                params["n_basis"] = prev_nbasis
+                params["n_core"] = prev_ncore
+                params["n_active_orbitals"] = prev_nact
                 reused = True
             else:
                 print(
@@ -292,7 +392,7 @@ def main() -> None:
         except Exception:
             pass
 
-    # 2. Copiar de uhf_1d_ho_v270826_m-determinants/results_* si se solicitó, coincide exactamente, tiene base >= n_basis y convergió
+    # 2. Copiar de CASSCF_csv/ o uhf_1d_ho_v270826_m-determinants/results_* si se solicitó, tiene base >= n_basis y convergió
     if not reused and args.copy_from_advisor_if_available:
         baselines = discover_casscf_baselines(search_root=ROOT_DIR)
         match = find_matching_casscf_baseline(
@@ -304,29 +404,50 @@ def main() -> None:
             softening=params["softening"],
         )
         if match is not None and os.path.abspath(match["npz_path"]) != os.path.abspath(npz_target):
-            src_dir = Path(match["npz_path"]).parent
-            src_sum_file = src_dir / "summary.json"
-            ok_to_copy = int(match.get("n_basis", 0)) >= int(params["n_basis"])
+            m_nbasis = int(match.get("n_basis", 0))
+            m_ncore = int(match.get("n_core", -1))
+            m_nact = int(match.get("n_active", -1))
+            m_conv = bool(match.get("converged", True))
+            space_ok = (
+                (m_ncore == int(params["n_core"]) and m_nact == int(params["n_active_orbitals"]))
+                or (0 <= m_ncore <= int(params["n_core"]) and m_nact >= int(params["n_active_orbitals"]))
+            )
+            ok_to_copy = m_conv and (m_nbasis >= int(params["n_basis"])) and space_ok
+            src_npz = Path(match["npz_path"])
+            src_dir = src_npz.parent
+            src_sum_file = Path(match["summary_path"]) if match.get("summary_path") else (src_dir / "summary.json")
             if ok_to_copy and src_sum_file.exists():
                 try:
                     with src_sum_file.open("r", encoding="utf-8") as fs:
                         s_meta = json.load(fs)
                     s_it = int(s_meta.get("iterations", 0))
                     s_cfg = s_meta.get("config", {})
-                    s_max = int(s_cfg.get("casscf_max_iter", 500))
-                    s_nbasis = int(s_cfg.get("n_basis", match.get("n_basis", 0)))
-                    s_ncore = int(s_cfg.get("n_core", match.get("n_core", -1)))
-                    s_nact = int(s_cfg.get("n_active_orbitals", match.get("n_active", -1)))
-                    s_conv = bool(s_meta.get("converged", True))
-                    if (not s_conv) or (s_it >= 120 and s_max <= 120) or (s_nbasis < int(params["n_basis"])) or (s_ncore != int(params["n_core"])) or (s_nact != int(params["n_active_orbitals"])):
+                    s_max = int(s_cfg.get("casscf_max_iter", 2000))
+                    if s_it >= 120 and s_max <= 120:
                         ok_to_copy = False
                 except Exception:
-                    ok_to_copy = False
+                    pass
             if ok_to_copy:
-                print(f"[Pipeline 1 - CASSCF] Copiando referencia ya convergida (b={match.get('n_basis')}) desde: {src_dir}")
-                for item in src_dir.iterdir():
-                    if item.is_file():
-                        atomic_copy_file(item, outdir / item.name)
+                print(
+                    f"[Pipeline 1 - CASSCF] Copiando referencia ya convergida ({match.get('label')}, "
+                    f"E={match.get('energy'):.8f} Ha) desde: {src_npz}"
+                )
+                atomic_copy_file(src_npz, npz_target)
+                if src_sum_file.exists():
+                    atomic_copy_file(src_sum_file, summary_target)
+                else:
+                    raw_meta = match.get("metadata", {})
+                    raw_meta["system_tag"] = sys_tag
+                    atomic_write_json(summary_target, raw_meta, indent=2)
+                if src_npz.name == "casscf_state.npz":
+                    for item in src_dir.iterdir():
+                        if item.is_file() and item.name not in ("casscf_state.npz", "summary.json"):
+                            atomic_copy_file(item, outdir / item.name)
+                params["n_basis"] = m_nbasis
+                params["n_core"] = m_ncore
+                params["n_active_orbitals"] = m_nact
+                raw_cfg = match.get("metadata", {}).get("config", {})
+                params["quadrature_order"] = int(raw_cfg.get("quadrature_order", params["quadrature_order"]))
                 reused = True
 
     # 3. Ejecutar cálculo variacional CASSCF desde cero usando la paquetería del asesor
@@ -383,14 +504,6 @@ def main() -> None:
 
     wall_time = time.perf_counter() - t0
 
-    # Copiar archivo .npz y figuras con nombre referenciado al sistema
-    if npz_target.exists():
-        atomic_copy_file(npz_target, npz_tagged)
-    for fig_stem in ("densities", "ci_weights", "natural_occupations", "orbital_4panel", "energy_history"):
-        src_fig = outdir / f"{fig_stem}.png"
-        if src_fig.exists():
-            atomic_copy_file(src_fig, outdir / f"{fig_stem}_{sys_tag}.png")
-
     # Evaluar densidad exacta de 1 cuerpo en malla uniforme y exportar CSV con referencia al sistema
     ref_density = compute_exact_casscf_1body_density(
         npz_target,
@@ -398,6 +511,17 @@ def main() -> None:
         x_max=params["plot_xmax"],
         n_grid=params["plot_points"],
     )
+
+    # Generar figuras diagnósticas (densities.png, ci_weights.png) si se importó desde CASSCF_csv
+    _generate_diagnostic_plots_from_npz(npz_target, ref_density, outdir, sys_tag)
+
+    # Copiar archivo .npz y figuras con nombre referenciado al sistema
+    if npz_target.exists():
+        atomic_copy_file(npz_target, npz_tagged)
+    for fig_stem in ("densities", "ci_weights", "natural_occupations", "orbital_4panel", "energy_history"):
+        src_fig = outdir / f"{fig_stem}.png"
+        if src_fig.exists():
+            atomic_copy_file(src_fig, outdir / f"{fig_stem}_{sys_tag}.png")
     density_csv_path = outdir / "casscf_exact_density.csv"
     density_csv_tagged = outdir / f"casscf_exact_density_{sys_tag}.csv"
     df_dens = pd.DataFrame(

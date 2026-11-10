@@ -53,6 +53,12 @@ def load_casscf_npz_metadata(npz_path: str | Path) -> dict[str, Any]:
     p = Path(npz_path).resolve()
     with np.load(p, allow_pickle=False) as data:
         meta = json.loads(str(data["metadata_json"]))
+        if "selected_ci_coefficients" in data and len(data["selected_ci_coefficients"]) > 0:
+            n_dets = int(len(data["selected_ci_coefficients"]))
+        elif "ci_coefficients" in data:
+            n_dets = int(len(data["ci_coefficients"]))
+        else:
+            n_dets = int(meta.get("selected_ci_dimension", meta.get("full_ci_dimension", 0)))
     cfg = meta.get("config", {})
     n_up = int(cfg.get("n_up", 0))
     n_dn = int(cfg.get("n_down", cfg.get("n_dn", 0)))
@@ -65,8 +71,19 @@ def load_casscf_npz_metadata(npz_path: str | Path) -> dict[str, Any]:
     n_active = int(cfg.get("n_active_orbitals", cfg.get("n_active", 0)))
     energy = float(meta.get("energy", float("nan")))
     converged = bool(meta.get("converged", True))
+
+    # Localizar archivo summary*.json asociado si existe
+    summary_path: str | None = None
+    if (p.parent / "summary.json").exists():
+        summary_path = str((p.parent / "summary.json").resolve())
+    elif p.name.startswith("casscf_state_"):
+        cand_sum = p.parent / ("summary_" + p.name[len("casscf_state_") : -4] + ".json")
+        if cand_sum.exists():
+            summary_path = str(cand_sum.resolve())
+
     return {
         "npz_path": str(p),
+        "summary_path": summary_path,
         "folder_name": p.parent.name,
         "n_elec": n_elec,
         "n_up": n_up,
@@ -77,8 +94,10 @@ def load_casscf_npz_metadata(npz_path: str | Path) -> dict[str, Any]:
         "n_basis": n_basis,
         "n_core": n_core,
         "n_active": n_active,
+        "n_determinants": n_dets,
         "energy": energy,
         "converged": converged,
+        "metadata": meta,
         "label": f"CASSCF (b={n_basis}, c{n_core}-a{n_active})",
     }
 
@@ -89,12 +108,21 @@ def discover_casscf_baselines(
 ) -> list[dict[str, Any]]:
     """
     Escanea todas las carpetas en `search_root` que coincidan con `uhf_pattern`
-    (por ejemplo, `uhf_1d_ho_v270826_m-determinants`) buscando archivos `casscf_state.npz`.
+    (por ejemplo, `uhf_1d_ho_v270826_m-determinants`) así como la carpeta
+    `CASSCF_csv` del asesor buscando archivos `casscf_state*.npz`.
     """
     root = Path(search_root).resolve()
     candidates: list[Path] = []
     if (root / "casscf_state.npz").exists():
         candidates.append(root / "casscf_state.npz")
+    # Priorizar carpeta CASSCF_csv del asesor con estados convergidos b=256
+    casscf_csv_dir = root / "CASSCF_csv"
+    if casscf_csv_dir.is_dir():
+        candidates.extend(sorted(casscf_csv_dir.glob("*.npz")))
+    for fig_dir_name in ("figures", "figures_allmodels_benchmarks"):
+        fdir = root / fig_dir_name
+        if fdir.is_dir():
+            candidates.extend(sorted(fdir.glob("*casscf*.npz")))
     for uhf_dir in sorted(root.glob(uhf_pattern)):
         if uhf_dir.is_dir():
             candidates.extend(sorted(uhf_dir.rglob("casscf_state.npz")))
