@@ -58,7 +58,8 @@ class MHSampler1D:
             base_pos = float(getattr(self.cfg.sampler, "init_offset_base", 5.0))
             step_pos = float(getattr(self.cfg.sampler, "init_offset_step", 1.0))
             offset = jnp.arange(self.n_elec, dtype=target_dtype).reshape(1, self.n_elec, 1) * step_pos
-            walkers = jnp.ones((bs, self.n_elec, 1), dtype=target_dtype) * base_pos + offset
+            jitter = jax.random.normal(key, (bs, self.n_elec, 1), dtype=target_dtype) * (0.12 * step_pos)
+            walkers = jnp.ones((bs, self.n_elec, 1), dtype=target_dtype) * base_pos + offset + jitter
         elif mode == "alternating_spin":
             n_up = int(self.cfg.system.n_up)
             n_dn = int(self.cfg.system.n_dn)

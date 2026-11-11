@@ -1,0 +1,52 @@
+\contentsline {section}{\numberline {1}Marco Teórico: Congelamiento Topológico y Cruce de Barreras Nodales en 1D}{2}{section.1}%
+\contentsline {subsection}{\numberline {1.1}Hamiltoniano Físico y Simetría Exacta de Espín}{2}{subsection.1.1}%
+\contentsline {subsection}{\numberline {1.2}Estructura Nodal y Seudo-Barreras de Wigner}{2}{subsection.1.2}%
+\contentsline {section}{\numberline {2}Arquitectura RL-MALA con Actor DeepSet/SchNet y Recompensa CDLB}{3}{section.2}%
+\contentsline {subsection}{\numberline {2.1}Propuesta Neuronal Equivariante (Residual MALA + Escala Adaptativa)}{3}{subsection.2.1}%
+\contentsline {subsection}{\numberline {2.2}Recompensa CDLB (\textit {Clipped Detailed-Balance Log-Barrier}) con Exploración Entrópica}{4}{subsection.2.2}%
+\contentsline {section}{\numberline {3}Protocolo Experimental e Implementación Computacional}{4}{section.3}%
+\contentsline {section}{\numberline {4}Resultados del Benchmark 1: \texttt {Wigner\_N4\_g4.0} ($N=4, \omega =0.1, g=4.0$)}{5}{section.4}%
+\contentsline {subsection}{\numberline {4.1}Sistema de Referencia}{5}{subsection.4.1}%
+\contentsline {subsection}{\numberline {4.2}Benchmark Inicial en Baker (Grilla Compacta, 16 Modelos)}{5}{subsection.4.2}%
+\contentsline {subsection}{\numberline {4.3}Hallazgos de la Exploración Inicial en Baker}{5}{subsection.4.3}%
+\contentsline {subsection}{\numberline {4.4}Nueva Exploración Sistemática en Ayler (Grilla Completa de 41 Modelos)}{5}{subsection.4.4}%
+\contentsline {subsubsection}{\numberline {4.4.1}Análisis Detallado de los Resultados en \texttt {Wigner\_N4\_g4.0} (Ayler Grid):}{6}{subsubsection.4.4.1}%
+\contentsline {subsubsection}{\numberline {4.4.2}Figuras Clave del Benchmark 1 (\texttt {Wigner\_N4\_g4.0}):}{7}{subsubsection.4.4.2}%
+\contentsline {paragraph}{Reconstrucción de Densidades Espaciales y Simetría de Espín Exacta}{7}{figure.caption.5}%
+\contentsline {paragraph}{Dinámica Individual de Cruce Nodal (Trazas de 1 Caminante)}{8}{figure.caption.7}%
+\contentsline {paragraph}{Exploración Sistemática del Espacio de Hiperparámetros (Grilla Ayler, 41 Modelos)}{10}{figure.caption.11}%
+\contentsline {section}{\numberline {5}Resultados del Benchmark 2: \texttt {MultiDet\_N6\_g1.0} ($N=6, \omega =0.1, g=1.0$, Base 256)}{11}{section.5}%
+\contentsline {subsection}{\numberline {5.1}Sistema de Referencia}{11}{subsection.5.1}%
+\contentsline {subsection}{\numberline {5.2}Benchmark Inicial en Baker (Grilla Compacta, 16 Modelos)}{11}{subsection.5.2}%
+\contentsline {subsection}{\numberline {5.3}Hallazgos de la Exploración Inicial en Baker}{11}{subsection.5.3}%
+\contentsline {subsection}{\numberline {5.4}Exploración Sistemática Completa en Ayler (Grilla Completa de 41 Modelos)}{11}{subsection.5.4}%
+\contentsline {subsubsection}{\numberline {5.4.1}Análisis Cuantitativo de los Resultados en \texttt {MultiDet\_N6\_g1.0} (Ayler Grid Completa):}{12}{subsubsection.5.4.1}%
+\contentsline {subsubsection}{\numberline {5.4.2}Figuras Clave del Benchmark 2 (\texttt {MultiDet\_N6\_g1.0}):}{13}{subsubsection.5.4.2}%
+\contentsline {paragraph}{Reconstrucción de Densidades Espaciales y Simetría de Espín Exacta}{13}{figure.caption.15}%
+\contentsline {paragraph}{Dinámica Individual de Cruce Nodal (Trazas de 1 Caminante)}{14}{figure.caption.17}%
+\contentsline {paragraph}{Exploración Sistemática del Espacio de Hiperparámetros (Grilla Ayler, 41 Modelos)}{16}{figure.caption.21}%
+\contentsline {subsection}{\numberline {5.5}Diagnóstico Exhaustivo de la Falla en el Modelo 16 y Corrección Algorítmica}{16}{subsection.5.5}%
+\contentsline {subsubsection}{\numberline {5.5.1}1. ¿Qué sucedió en Ayler?}{16}{subsubsection.5.5.1}%
+\contentsline {subsubsection}{\numberline {5.5.2}2. Correcciones Implementadas en \texttt {run\_parameter\_search\_baker.sh} y \texttt {run\_parameter\_search\_ayler.sh}:}{17}{subsubsection.5.5.2}%
+\contentsline {section}{\numberline {6}Análisis Comparativo Global y Mapas de Calor (\texttt {all\_models\_global})}{17}{section.6}%
+\contentsline {paragraph}{Frontera de Pareto: Compensación entre Movilidad y Tasa de Aceptación}{18}{figure.caption.23}%
+\contentsline {paragraph}{Comparación Global de Cruce Nodal: Mejor MALA vs Mejor RL-MALA}{18}{figure.caption.25}%
+\contentsline {paragraph}{Visión General Consolidada de Ambos Sistemas}{19}{figure.caption.27}%
+\contentsline {paragraph}{Mapas de Calor Globales del Actor ($A_\mu $ vs $\lambda _{\mathrm {pen}}$)}{19}{figure.caption.29}%
+\contentsline {section}{\numberline {7}Protocolo de Ejecución, Resiliencia y Recuperación en Clusters (Baker / Ayler)}{20}{section.7}%
+\contentsline {section}{\numberline {8}Conclusión sobre Hiperparámetros y Prescripción para Producción (Pipelines 1 y 2)}{20}{section.8}%
+\contentsline {subsection}{\numberline {8.1}¿Se requiere buscar más hiperparámetros?}{20}{subsection.8.1}%
+\contentsline {section}{\numberline {9}Caracterización Sistemática de Intercambios Topológicos (\texttt {Flips}) respecto a $N$ y $g$ (\texttt {flips\_analysis\_advisor})}{21}{section.9}%
+\contentsline {subsection}{\numberline {9.1}Metodología: Cruces con Histéresis ($\delta = \eta \,d_{\mathrm {adj}}$) y Mapa de Calor del Stream-Flow Normalizado}{21}{subsection.9.1}%
+\contentsline {subsection}{\numberline {9.2}Resultados Consolidados en $N=2, 4, 6$ con Espacio Activo Completo (\texttt {flips\_analysis\_advisor})}{21}{subsection.9.2}%
+\contentsline {subsubsection}{\numberline {9.2.1}Hallazgos Físicos Fundamentales sobre los Nuevos Resultados (\texttt {flips\_analysis\_advisor}):}{21}{subsubsection.9.2.1}%
+\contentsline {subsection}{\numberline {9.3}Figuras Principales del Análisis con Estados Convergidos (\texttt {flips\_analysis\_advisor})}{22}{subsection.9.3}%
+\contentsline {paragraph}{Síntesis Global Maestra de Flips vs $g$ ($N=2, 4, 6, 8$)}{22}{figure.caption.32}%
+\contentsline {paragraph}{Evolución de Flips respecto a $g$ para $N=6$ Electrones (\texttt {c0-a6, b=256})}{23}{figure.caption.34}%
+\contentsline {paragraph}{Evolución de Flips respecto a $g$ para $N=4$ Electrones (\texttt {c0-a4, b=32})}{24}{figure.caption.36}%
+\contentsline {paragraph}{Anatomía de 4 Paneles en $N=6, \omega =0.1, g=0.5$ y $g=1.0$ (\texttt {c0-a6, b=256})}{26}{figure.caption.39}%
+\contentsline {subsection}{\numberline {9.4}Diagnóstico Técnico de las Trazas Anómalas en $N=6$ ($g \ge 2$) y $N=8$: El Piso Numérico \texttt {1e-15} en \texttt {CASSCF1DAnsatz} y la Inicialización \texttt {spin\_ordered\_offset}}{26}{subsection.9.4}%
+\contentsline {subsubsection}{\numberline {9.4.1}Correcciones Definitivas Implementadas y Lista Exacta de Modelos a Re-correr:}{27}{subsubsection.9.4.1}%
+\contentsline {section}{\numberline {10}Siguiente Frontera Científica: Transfer Learning y Aceleración de VMC ($g=1.0 \to g=2.0$)}{27}{section.10}%
+\contentsline {subsection}{\numberline {10.1}Fundamento Teórico del Aprendizaje por Transferencia en MCMC Cuántico}{27}{subsection.10.1}%
+\contentsline {subsection}{\numberline {10.2}Protocolo Experimental Propuesto: Benchmark de Transferencia $g=1.0 \to g=2.0$}{28}{subsection.10.2}%

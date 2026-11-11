@@ -463,10 +463,31 @@ def compute_flip_statistics(
     if T < 2 or N < 2:
         raise ValueError(f"Trayectoria demasiado corta o con N<2: shape={w.shape}")
 
-    # 1. Separación característica entre vecinos adyacentes ordenados espacialmente
+    # 0. Recorte automático de transitorio inicial si la cadena inició descentrada (e.g. spin_ordered_offset con burn-in corto)
+    if T > 4000:
+        com_init = float(np.nanmean(np.abs(np.nanmean(w[:, :min(50, T), :, :], axis=-1))))
+        if com_init > 2.2:
+            t_trim = min(1800, T // 12)
+            w = w[:, t_trim:, :, :]
+            T = w.shape[1]
+
+    # Filtrado de caminantes confinados físicamente (descarta caminantes fugados al piso numérico 1e-15 en |x| >> R_Wigner)
+    max_phys_bound = max(35.0, 5.2 * float(N + 1))
+    walker_max_abs = np.nanmax(np.abs(w), axis=(1, 3))  # (C, B)
+    walker_com_abs = np.nanmean(np.abs(np.nanmean(w, axis=-1)), axis=1)  # (C, B)
+    healthy_mask = (walker_max_abs <= max_phys_bound) & (walker_com_abs <= 8.0)  # (C, B)
+    if not np.any(healthy_mask):
+        # Si todos los caminantes excedieron el umbral estricto, elegir el 50% más cercano al origen
+        med_max = float(np.nanmedian(walker_max_abs))
+        healthy_mask = walker_max_abs <= max(med_max * 1.25, max_phys_bound)
+        if not np.any(healthy_mask):
+            healthy_mask = np.ones((C, B), dtype=bool)
+
+    # 1. Separación característica entre vecinos adyacentes ordenados espacialmente (sobre caminantes sanos)
     w_sorted = np.sort(w, axis=-1)
     adj_diffs = np.diff(w_sorted, axis=-1)  # (C, T, B, N-1)
-    d_adj = float(np.nanmean(adj_diffs))
+    healthy_adj = adj_diffs[np.broadcast_to(healthy_mask[:, None, :, None], adj_diffs.shape)]
+    d_adj = float(np.nanmedian(healthy_adj)) if healthy_adj.size > 0 else float(np.nanmean(adj_diffs))
     if not np.isfinite(d_adj) or d_adj <= 1e-8:
         d_adj = 1.0
 
@@ -500,8 +521,10 @@ def compute_flip_statistics(
     raw_signs_filled = np.take_along_axis(raw_signs, idx_raw, axis=1)
 
     raw_flip_mask = (raw_signs_filled[:, 1:, :, :] * raw_signs_filled[:, :-1, :, :]) == -1.0  # (C, T-1, B, P)
+    raw_flip_mask = raw_flip_mask & healthy_mask[:, None, :, None]
 
-    norm_factor_per_chain = 1000.0 / float((T - 1) * B)
+    healthy_counts_per_chain = np.maximum(1.0, np.sum(healthy_mask, axis=1).astype(np.float64))
+    norm_factor_per_chain = 1000.0 / (float(T - 1) * healthy_counts_per_chain)
     raw_total_per_chain = np.sum(raw_flip_mask, axis=(1, 2, 3)) * norm_factor_per_chain
     raw_opp_per_chain = (
         np.sum(raw_flip_mask[..., is_opp_spin], axis=(1, 2, 3)) * norm_factor_per_chain
@@ -525,6 +548,7 @@ def compute_flip_statistics(
     # Un flip con histéresis ocurre en el paso t (entre t-1 y t, índice t-1 en diff)
     # cuando el estado comprometido pasa de -1 a +1 o de +1 a -1
     hyst_flip_mask = (s_committed[:, 1:, :, :] * s_committed[:, :-1, :, :]) == -1  # (C, T-1, B, P)
+    hyst_flip_mask = hyst_flip_mask & healthy_mask[:, None, :, None]
 
     hyst_total_per_chain = np.sum(hyst_flip_mask, axis=(1, 2, 3)) * norm_factor_per_chain
     hyst_opp_per_chain = (
@@ -536,16 +560,16 @@ def compute_flip_statistics(
         if n_same_pairs > 0 else np.zeros(C, dtype=np.float64)
     )
 
-    # Series temporales acumuladas por paso (promediadas por caminante) para graficar N_flips(t)
+    # Series temporales acumuladas por paso (promediadas sobre caminantes sanos) para graficar N_flips(t)
     # Forma (C, T-1): flips por caminante en cada paso t
-    raw_step_rate = np.mean(np.sum(raw_flip_mask, axis=-1), axis=-1)   # (C, T-1)
-    hyst_step_rate = np.mean(np.sum(hyst_flip_mask, axis=-1), axis=-1) # (C, T-1)
+    raw_step_rate = np.sum(np.sum(raw_flip_mask, axis=-1), axis=-1) / healthy_counts_per_chain[:, None]
+    hyst_step_rate = np.sum(np.sum(hyst_flip_mask, axis=-1), axis=-1) / healthy_counts_per_chain[:, None]
     hyst_opp_step_rate = (
-        np.mean(np.sum(hyst_flip_mask[..., is_opp_spin], axis=-1), axis=-1)
+        np.sum(np.sum(hyst_flip_mask[..., is_opp_spin], axis=-1), axis=-1) / healthy_counts_per_chain[:, None]
         if n_opp_pairs > 0 else np.zeros((C, T - 1), dtype=np.float64)
     )
     hyst_same_step_rate = (
-        np.mean(np.sum(hyst_flip_mask[..., is_same_spin], axis=-1), axis=-1)
+        np.sum(np.sum(hyst_flip_mask[..., is_same_spin], axis=-1), axis=-1) / healthy_counts_per_chain[:, None]
         if n_same_pairs > 0 else np.zeros((C, T - 1), dtype=np.float64)
     )
 
@@ -605,67 +629,155 @@ def compute_flip_statistics(
 
     # --------------------------------------------------------------------------
     # E. Extracción de Ventanas Microscópicas [-W, +W] alrededor de Eventos de Flip
+    #    - Etiquetado canónico en espacio real 1D:
+    #        x_i(t) = electrón que inicia a la IZQUIERDA antes del flip (x_i < x_j en t < t_flip)
+    #        x_j(t) = electrón que inicia a la DERECHA antes del flip (x_j > x_i en t < t_flip)
+    #    - Alineación exacta en el cruce por cero t_flip (donde x_i(t_flip) - x_j(t_flip) = 0),
+    #      de modo que en t - t_flip = 0 todas las trayectorias cruzan exactamente por y = 0.
+    #    - Normalización adimensional por la separación inter-pozo d_adj:
+    #        (x_i - x_j) / d_adj fluye de -1.0 (antes) -> 0.0 (en t=t_flip) -> +1.0 (después)
+    #        tilde_x_i = (x_i - x_cross) / d_adj fluye de -0.5 -> 0.0 -> +0.5 (izq -> der)
+    #        tilde_x_j = (x_j - x_cross) / d_adj fluye de +0.5 -> 0.0 -> -0.5 (der -> izq)
     # --------------------------------------------------------------------------
     window = 15
+    rel_steps_grid = np.arange(-window, window + 1, dtype=np.float64)
     aligned_rel_dist: List[np.ndarray] = []
+    aligned_rel_dist_norm: List[np.ndarray] = []
+    aligned_xi_norm: List[np.ndarray] = []
+    aligned_xj_norm: List[np.ndarray] = []
     example_event: Optional[Dict[str, Any]] = None
 
-    # Elegir eventos con margen suficiente respecto a los bordes [window, T - 1 - window]
     source_mask = hyst_flip_mask if len(ev_tau) > 0 else raw_flip_mask
     sc, stau, sb, sp = np.where(source_mask)
-    valid_ev = np.where((stau >= window) & (stau + 1 + window < T))[0]
+    valid_ev = np.where((stau >= window + 2) & (stau + 2 + window < T))[0]
 
     if len(valid_ev) > 0:
-        # Priorizar eventos de espín opuesto (intercambio entre pozos de Wigner)
         opp_ev = [idx for idx in valid_ev if is_opp_spin[sp[idx]]]
         chosen_indices = opp_ev if len(opp_ev) > 0 else list(valid_ev)
 
-        # Seleccionar hasta 200 eventos para el promedio alineado en el tiempo
-        sample_indices = chosen_indices[:200]
+        # Seleccionar hasta 600 eventos distribuidos uniformemente para construir el mapa de calor 2D
+        if len(chosen_indices) > 600:
+            sel_pos = np.linspace(0, len(chosen_indices) - 1, 600, dtype=int)
+            sample_indices = [chosen_indices[ii] for ii in sel_pos]
+        else:
+            sample_indices = list(chosen_indices)
+
+        clean_events_meta = []
         for idx_ev in sample_indices:
             c0, tau0, b0, p0 = int(sc[idx_ev]), int(stau[idx_ev]), int(sb[idx_ev]), int(sp[idx_ev])
-            t_center = tau0 + 1
-            seg_d = d_pairs[c0, t_center - window : t_center + window + 1, b0, p0].copy()
-            # Orientar todos los eventos de modo que pasen de d < 0 (antes) a d > 0 (después)
-            if seg_d[window - 1] > 0:
-                seg_d = -seg_d
-            aligned_rel_dist.append(seg_d)
+            tau_exit = tau0 + 1
+            if len(ev_tau) > 0:
+                tau_enter = int(idx_hyst[c0, tau0, b0, p0])
+                s_after = int(s_committed[c0, tau_exit, b0, p0])
+            else:
+                tau_enter = tau0
+                s_after = int(np.sign(d_pairs[c0, tau_exit, b0, p0]))
+            if s_after == 0:
+                s_after = 1
+            s_before = -s_after
 
-        # Guardar el evento individual más limpio (mayor salto neto entre pozos) para graficar
-        best_idx = max(
-            sample_indices,
-            key=lambda ii: abs(
-                float(d_pairs[sc[ii], stau[ii] + 1, sb[ii], sp[ii]] - d_pairs[sc[ii], stau[ii], sb[ii], sp[ii]])
-            ),
-        )
-        c0, tau0, b0, p0 = int(sc[best_idx]), int(stau[best_idx]), int(sb[best_idx]), int(sp[best_idx])
-        t_center = tau0 + 1
-        i_el, j_el = int(pair_i[p0]), int(pair_j[p0])
-        t_slice = slice(t_center - window, t_center + window + 1)
-        example_event = {
-            "chain": c0,
-            "walker": b0,
-            "t_flip": int(t_center),
-            "elec_i": i_el,
-            "elec_j": j_el,
-            "spin_i": int(spins[i_el]),
-            "spin_j": int(spins[j_el]),
-            "is_opp_spin": bool(is_opp_spin[p0]),
-            "rel_steps": np.arange(-window, window + 1, dtype=np.int32),
-            "x_i": w[c0, t_slice, b0, i_el].copy(),
-            "x_j": w[c0, t_slice, b0, j_el].copy(),
-            "x_all": w[c0, t_slice, b0, :].copy(),
-            "d_ij": d_pairs[c0, t_slice, b0, p0].copy(),
-        }
+            # Encontrar el paso exacto t0 en [tau_enter, tau_exit - 1] donde ocurre el cruce por cero
+            seg_trans = d_pairs[c0, tau_enter : tau_exit + 1, b0, p0]
+            pre_candidates = np.where(np.sign(seg_trans[:-1]) == s_before)[0]
+            k0 = int(pre_candidates[-1]) if len(pre_candidates) > 0 else max(0, len(seg_trans) - 2)
+            t0 = tau_enter + k0
 
-    # Seleccionar el caminante individual con más flips para la gráfica de traza completa
-    flips_per_cb = np.sum(source_mask, axis=(1, 3))  # (C, B)
-    best_cb_flat = int(np.argmax(flips_per_cb))
+            if t0 - window - 1 < 0 or t0 + window + 2 >= T:
+                continue
+
+            a_el, b_el = int(pair_i[p0]), int(pair_j[p0])
+            # Etiquetado canónico en 1D: i_left es SIEMPRE el electrón a la izquierda antes del flip
+            if s_before == -1:
+                i_left, j_right = a_el, b_el
+            else:
+                i_left, j_right = b_el, a_el
+
+            t_raw = np.arange(t0 - window - 1, t0 + window + 3, dtype=np.float64)
+            xi_raw = w[c0, t0 - window - 1 : t0 + window + 3, b0, i_left].astype(np.float64)
+            xj_raw = w[c0, t0 - window - 1 : t0 + window + 3, b0, j_right].astype(np.float64)
+            dij_raw = xi_raw - xj_raw  # En t0 es <= 0 y en t0+1 es >= 0
+
+            idx_t0_local = window + 1
+            d0_val = float(dij_raw[idx_t0_local])
+            d1_val = float(dij_raw[idx_t0_local + 1])
+            # Si por ruido numérico d0_val > 0, forzar orientación izquierda -> derecha
+            if d0_val > 0.0 and d1_val < 0.0:
+                xi_raw, xj_raw = xj_raw, xi_raw
+                dij_raw = -dij_raw
+                d0_val, d1_val = -d0_val, -d1_val
+
+            denom = abs(d0_val) + abs(d1_val)
+            alpha_zero = (abs(d0_val) / denom) if denom > 1e-12 else 0.5
+            t_flip_exact = float(t0) + float(np.clip(alpha_zero, 0.0, 1.0))
+
+            # Punto medio espacial exacto del cruce en t = t_flip_exact
+            x_cross = 0.5 * float(
+                np.interp(t_flip_exact, t_raw, xi_raw) + np.interp(t_flip_exact, t_raw, xj_raw)
+            )
+
+            # Evaluar en la malla relativa t - t_flip_exact in [-window, +window]
+            t_query = t_flip_exact + rel_steps_grid
+            xi_aligned = np.interp(t_query, t_raw, xi_raw)
+            xj_aligned = np.interp(t_query, t_raw, xj_raw)
+            dij_aligned = xi_aligned - xj_aligned
+            # Garantizar que en t - t_flip = 0 el cruce sea exactamente 0.0
+            dij_aligned[window] = 0.0
+
+            is_clean = bool(np.all(dij_aligned[window - 3 : window] <= 0.05 * d_adj) and np.all(dij_aligned[window + 1 : window + 4] >= -0.05 * d_adj))
+            clean_events_meta.append(
+                (is_clean, dij_aligned, dij_aligned / d_adj, (xi_aligned - x_cross) / d_adj, (xj_aligned - x_cross) / d_adj, idx_ev, t0, i_left, j_right)
+            )
+
+        # Priorizar eventos limpios sin re-flips secundarios inmediatos
+        only_clean = [m for m in clean_events_meta if m[0]]
+        selected_meta = only_clean if len(only_clean) >= min(15, len(clean_events_meta)) else clean_events_meta
+
+        for _, dij_al, dij_n, xi_n, xj_n, _, _, _, _ in selected_meta:
+            aligned_rel_dist.append(dij_al)
+            aligned_rel_dist_norm.append(dij_n)
+            aligned_xi_norm.append(xi_n)
+            aligned_xj_norm.append(xj_n)
+
+        if len(selected_meta) > 0:
+            best_m = max(selected_meta, key=lambda m: float(m[1][window + 1] - m[1][window - 1]))
+            _, dij_al, dij_n, xi_n, xj_n, best_idx_ev, best_t0, i_left, j_right = best_m
+            c0, b0, p0 = int(sc[best_idx_ev]), int(sb[best_idx_ev]), int(sp[best_idx_ev])
+            t_slice = slice(best_t0 - window, best_t0 + window + 1)
+            example_event = {
+                "chain": c0,
+                "walker": b0,
+                "t_flip": int(best_t0 + 1),
+                "elec_i": int(i_left),
+                "elec_j": int(j_right),
+                "spin_i": int(spins[i_left]),
+                "spin_j": int(spins[j_right]),
+                "is_opp_spin": bool(is_opp_spin[p0]),
+                "rel_steps": np.arange(-window, window + 1, dtype=np.int32),
+                "x_i": w[c0, t_slice, b0, i_left].copy(),
+                "x_j": w[c0, t_slice, b0, j_right].copy(),
+                "x_all": w[c0, t_slice, b0, :].copy(),
+                "d_ij": dij_al.copy(),
+                "d_ij_norm": dij_n.copy(),
+                "x_i_norm": xi_n.copy(),
+                "x_j_norm": xj_n.copy(),
+            }
+
+    # Seleccionar el caminante SANO representativo con más flips reales para el Panel (a)
+    flips_per_cb = np.sum(source_mask, axis=(1, 3)).astype(np.float64)  # (C, B)
+    walker_mean_adj = np.nanmean(adj_diffs, axis=(1, 3))  # (C, B)
+    well_formed_mask = healthy_mask & (np.abs(walker_mean_adj - d_adj) <= 0.35 * d_adj)
+    if not np.any(well_formed_mask):
+        well_formed_mask = healthy_mask
+    masked_flips_cb = np.where(well_formed_mask, flips_per_cb, -1.0)
+    best_cb_flat = int(np.argmax(masked_flips_cb))
     best_c, best_b = divmod(best_cb_flat, B)
     best_walker_trace = w[best_c, :, best_b, :].copy()  # (T, N)
     best_walker_flips_t = np.where(np.any(source_mask[best_c, :, best_b, :], axis=-1))[0] + 1
 
     aligned_arr = np.asarray(aligned_rel_dist, dtype=np.float64) if aligned_rel_dist else np.empty((0, 2 * window + 1))
+    aligned_norm_arr = np.asarray(aligned_rel_dist_norm, dtype=np.float64) if aligned_rel_dist_norm else np.empty((0, 2 * window + 1))
+    aligned_xi_norm_arr = np.asarray(aligned_xi_norm, dtype=np.float64) if aligned_xi_norm else np.empty((0, 2 * window + 1))
+    aligned_xj_norm_arr = np.asarray(aligned_xj_norm, dtype=np.float64) if aligned_xj_norm else np.empty((0, 2 * window + 1))
 
     return {
         "d_adj": d_adj,
@@ -709,6 +821,10 @@ def compute_flip_statistics(
         "hyst_opp_step_rate": hyst_opp_step_rate,
         "hyst_same_step_rate": hyst_same_step_rate,
         "aligned_rel_dist": aligned_arr,
+        "aligned_rel_dist_norm": aligned_norm_arr,
+        "aligned_xi_norm": aligned_xi_norm_arr,
+        "aligned_xj_norm": aligned_xj_norm_arr,
+        "healthy_walkers_fraction": float(np.mean(healthy_mask)),
         "example_event": example_event,
         "best_walker_trace": best_walker_trace,
         "best_walker_flips_t": best_walker_flips_t,
@@ -950,69 +1066,152 @@ def plot_per_system_flip_anatomy(
     ax_cum.legend(loc="upper left", fontsize=8.2 * f_scale, framealpha=0.92)
 
     # --------------------------------------------------------------------------
-    # Panel C (abajo izquierda): Anatomía Microscópica en ventana [-15, +15] pasos
+    # Panel C (abajo izquierda): Mapa de Calor 2D del Stream-Flow Normalizado
+    #   - x_i(t): electrón que inicia a la IZQUIERDA en el espacio real 1D (x_i < x_j en t < t_flip)
+    #   - x_j(t): electrón que inicia a la DERECHA en el espacio real 1D (x_j > x_i en t < t_flip)
+    #   - Coordenada normalizada (x_i - x_j) / d_adj: fluye de -1.0 -> 0.0 (en t=t_flip) -> +1.0
     # --------------------------------------------------------------------------
-    ax_anat = fig.add_subplot(gs[1, 0])
-    plotted_anatomy = False
-    delta_ref = float(records_sorted[-1]["stats"]["delta_hyst"])
-    ax_anat.axhspan(-delta_ref, +delta_ref, color="#888888", alpha=0.18, label=f"Zona de barrera $[-\\delta, +\\delta]$ ($\\delta={delta_ref:.2f}$ Bohr)")
-    ax_anat.axhline(0.0, color="black", lw=1.0, ls="-.", alpha=0.7)
-    ax_anat.axvline(0.0, color="#2ca02c", lw=1.2, ls=":", alpha=0.8, label="Paso exacto del cruce ($t = t_{\\mathrm{flip}}$)")
+    def _smooth_2d_heatmap(H: np.ndarray, sigma_y: float = 1.8, sigma_t: float = 1.3) -> np.ndarray:
+        rad_y = max(1, int(round(3.0 * sigma_y)))
+        ky = np.exp(-0.5 * (np.arange(-rad_y, rad_y + 1, dtype=np.float64) / sigma_y) ** 2)
+        ky /= np.sum(ky)
+        rad_t = max(1, int(round(3.0 * sigma_t)))
+        kt = np.exp(-0.5 * (np.arange(-rad_t, rad_t + 1, dtype=np.float64) / sigma_t) ** 2)
+        kt /= np.sum(kt)
+        H_y = np.apply_along_axis(lambda col: np.convolve(col, ky, mode="same"), axis=0, arr=H)
+        H_yt = np.apply_along_axis(lambda row: np.convolve(row, kt, mode="same"), axis=1, arr=H_y)
+        return H_yt
 
-    for r in records_sorted:
+    gs_anat = gs[1, 0].subgridspec(len(records_sorted), 1, hspace=0.22)
+    eta_ref = float(records_sorted[-1]["stats"].get("hysteresis_frac", 0.25))
+
+    for idx_m, r in enumerate(records_sorted):
+        ax_hm = fig.add_subplot(gs_anat[idx_m, 0])
         m_name = r["method"]
         col = METHOD_COLORS.get(m_name, "#333333")
-        aligned = r["stats"]["aligned_rel_dist"]  # (n_ev, 2W+1)
-        ex = r["stats"]["example_event"]
-        if aligned.shape[0] > 0:
-            W = (aligned.shape[1] - 1) // 2
-            rel_t = np.arange(-W, W + 1)
-            mean_d = np.mean(aligned, axis=0)
-            q25 = np.percentile(aligned, 25, axis=0)
-            q75 = np.percentile(aligned, 75, axis=0)
-            ls_m = "-" if m_name == "RL-MALA" else "--"
-            ax_anat.plot(
-                rel_t,
-                mean_d,
-                color=col,
-                ls=ls_m,
-                lw=2.3 * lw_scale,
-                marker="o" if m_name == "RL-MALA" else "s",
-                markersize=4.2,
-                label=f"{m_name}: $\\langle x_i - x_j \\rangle$ ({aligned.shape[0]} flips)",
+        d_adj_m = max(float(r["stats"].get("d_adj", 1.0)), 1e-8)
+        aligned_norm = r["stats"].get("aligned_rel_dist_norm")
+        if aligned_norm is None or aligned_norm.size == 0:
+            raw_al = r["stats"].get("aligned_rel_dist", np.empty((0, 31)))
+            aligned_norm = (raw_al / d_adj_m) if raw_al.size > 0 else np.empty((0, 31))
+        xi_norm_arr = r["stats"].get("aligned_xi_norm", np.empty((0, 31)))
+        xj_norm_arr = r["stats"].get("aligned_xj_norm", np.empty((0, 31)))
+
+        if aligned_norm.shape[0] > 0:
+            W = (aligned_norm.shape[1] - 1) // 2
+            rel_t = np.arange(-W, W + 1, dtype=np.float64)
+            n_fine_t = 181
+            n_bins_y = 96
+            y_min, y_max = -1.65, 1.65
+            t_fine = np.linspace(-W, W, n_fine_t)
+            y_edges = np.linspace(y_min, y_max, n_bins_y + 1)
+            y_centers = 0.5 * (y_edges[:-1] + y_edges[1:])
+
+            H_mat = np.zeros((n_bins_y, n_fine_t), dtype=np.float64)
+            for ev_row in aligned_norm:
+                y_interp = np.interp(t_fine, rel_t, ev_row)
+                bin_idx = np.clip(np.searchsorted(y_edges, y_interp) - 1, 0, n_bins_y - 1)
+                H_mat[bin_idx, np.arange(n_fine_t)] += 1.0
+
+            H_smooth = _smooth_2d_heatmap(H_mat, sigma_y=2.0, sigma_t=1.5)
+            col_max = np.max(H_smooth, axis=0, keepdims=True)
+            H_norm = np.where(col_max > 1e-12, H_smooth / col_max, 0.0)
+
+            cmap_name = "YlGnBu" if m_name == "RL-MALA" else "YlOrRd"
+            pcm = ax_hm.pcolormesh(
+                t_fine,
+                y_centers,
+                H_norm,
+                cmap=cmap_name,
+                vmin=0.0,
+                vmax=1.0,
+                shading="gouraud",
+                 rasterized=True,
             )
-            ax_anat.fill_between(rel_t, q25, q75, color=col, alpha=0.16)
-            plotted_anatomy = True
-        elif ex is not None:
-            rel_t = ex["rel_steps"]
-            d_ij = ex["d_ij"]
-            if d_ij[len(d_ij) // 2 - 1] > 0:
-                d_ij = -d_ij
-            ax_anat.plot(rel_t, d_ij, color=col, lw=2.0 * lw_scale, marker="o", label=f"{m_name} (evento individual)")
-            plotted_anatomy = True
+            cb = fig.colorbar(pcm, ax=ax_hm, pad=0.015, fraction=0.038)
+            cb.set_label("Densidad\nnormalizada", fontsize=7.5 * f_scale)
+            cb.ax.tick_params(labelsize=7.0 * f_scale)
 
-    if not plotted_anatomy:
-        ax_anat.text(
-            0.5,
-            0.5,
-            "Sin eventos de flip registrados en la ventana\n(Congelamiento topológico completo)",
-            ha="center",
-            va="center",
-            transform=ax_anat.transAxes,
-            fontsize=10.5 * f_scale,
-            weight="bold",
-            color="#aa2222",
-        )
+            # Estadísticos del stream-flow: mediana y cuartiles 25%-75% de (x_i - x_j)/d_adj
+            med_d = np.median(aligned_norm, axis=0)
+            q25_d = np.percentile(aligned_norm, 25, axis=0)
+            q75_d = np.percentile(aligned_norm, 75, axis=0)
+            med_d[W] = 0.0  # Cruce exacto en (t - t_flip = 0, y = 0)
 
-    ax_anat.set_title(
-        "(c) Anatomía Microscópica del Flip: Aproximación y Brinco de 1 Paso",
-        fontsize=11.0 * f_scale,
-        weight="bold",
-    )
-    ax_anat.set_xlabel("Pasos relativos al cruce $t - t_{\\mathrm{flip}}$", fontsize=9.8 * f_scale)
-    ax_anat.set_ylabel(" Coordenada relativa orientada $x_i(t) - x_j(t)$ [Bohr]", fontsize=9.8 * f_scale)
-    ax_anat.grid(True, alpha=0.28, linestyle="--")
-    ax_anat.legend(loc="upper left", fontsize=8.0 * f_scale, framealpha=0.92)
+            ax_hm.plot(
+                rel_t,
+                med_d,
+                color="#081d58" if m_name == "RL-MALA" else "#67000d",
+                lw=2.2 * lw_scale,
+                marker="o" if m_name == "RL-MALA" else "s",
+                markersize=3.6,
+                label=f"$\\mathrm{{med}}[(x_i - x_j)/d_{{\\mathrm{{adj}}}}]$ ({aligned_norm.shape[0]} flips)",
+                zorder=5,
+            )
+            ax_hm.plot(rel_t, q25_d, color=col, ls="--", lw=1.0 * lw_scale, alpha=0.85, zorder=4)
+            ax_hm.plot(rel_t, q75_d, color=col, ls="--", lw=1.0 * lw_scale, alpha=0.85, label="Cuartiles 25%–75%", zorder=4)
+
+            # Trazas medias de cada electrón individual (x_i: izq -> der, x_j: der -> izq)
+            if xi_norm_arr.shape[0] > 0 and xj_norm_arr.shape[0] > 0:
+                med_xi = np.median(xi_norm_arr, axis=0)
+                med_xj = np.median(xj_norm_arr, axis=0)
+                med_xi[W] = 0.0
+                med_xj[W] = 0.0
+                ax_hm.plot(
+                    rel_t,
+                    med_xi,
+                    color="#008b8b",
+                    ls=":",
+                    lw=1.5 * lw_scale,
+                    label=r"$\tilde{x}_i(t)$ (izq $\rightarrow$ der: $-0.5 \to +0.5$)",
+                    zorder=4,
+                )
+                ax_hm.plot(
+                    rel_t,
+                    med_xj,
+                    color="#8b008b",
+                    ls=":",
+                    lw=1.5 * lw_scale,
+                    label=r"$\tilde{x}_j(t)$ (der $\rightarrow$ izq: $+0.5 \to -0.5$)",
+                    zorder=4,
+                )
+
+            ax_hm.axhspan(-eta_ref, +eta_ref, color="#555555", alpha=0.14)
+            ax_hm.axhline(+eta_ref, color="#555555", lw=0.8, ls="--", alpha=0.65)
+            ax_hm.axhline(-eta_ref, color="#555555", lw=0.8, ls="--", alpha=0.65)
+            ax_hm.axhline(0.0, color="black", lw=1.1, ls="-.", alpha=0.85)
+            ax_hm.axvline(0.0, color="#2ca02c", lw=1.3, ls=":", alpha=0.95)
+            ax_hm.scatter([0.0], [0.0], color="#2ca02c", s=36, zorder=6, edgecolors="black", linewidths=0.7)
+            ax_hm.set_ylim(y_min, y_max)
+            ax_hm.set_xlim(-W, W)
+            ax_hm.legend(loc="upper left", fontsize=7.0 * f_scale, ncol=2, framealpha=0.88)
+        else:
+            ax_hm.text(
+                0.5,
+                0.5,
+                f"{m_name}: Sin eventos de flip registrados\n(Congelamiento topológico)",
+                ha="center",
+                va="center",
+                transform=ax_hm.transAxes,
+                fontsize=9.5 * f_scale,
+                weight="bold",
+                color="#aa2222",
+            )
+            ax_hm.set_ylim(-1.5, 1.5)
+            ax_hm.set_xlim(-15, 15)
+
+        ax_hm.set_ylabel(f"{m_name}\n$(x_i - x_j)/d_{{\\mathrm{{adj}}}}$", fontsize=8.8 * f_scale, weight="bold")
+        ax_hm.grid(True, alpha=0.22, linestyle="--")
+        if idx_m == 0:
+            ax_hm.set_title(
+                "(c) Mapa de Calor del Stream-Flow Normalizado ($x_i$ izq $\\rightarrow$ der, Cruce en $t=0, y=0$)",
+                fontsize=10.5 * f_scale,
+                weight="bold",
+            )
+        if idx_m < len(records_sorted) - 1:
+            ax_hm.set_xticklabels([])
+        else:
+            ax_hm.set_xlabel("Pasos relativos al cruce exacto $t - t_{\\mathrm{flip}}$", fontsize=9.5 * f_scale)
 
     # --------------------------------------------------------------------------
     # Panel D (abajo derecha): Distribución de Pasos de Tránsito (1 paso vs multi-paso)

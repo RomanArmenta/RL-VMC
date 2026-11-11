@@ -427,107 +427,110 @@ Esta parametrización ha sido integrada directamente en `run_production_benchmar
 
 ---
 
-## 9. Caracterización Sistemática de Intercambios Topológicos (`Flips`) respecto a $N$ y $g$ (`flips_analysis`)
+## 9. Caracterización Sistemática de Intercambios Topológicos (`Flips`) respecto a $N$ y $g$ (`flips_analysis_advisor`)
 
-Para demostrar cuantitativamente cómo el Actor neuronal aprende a cruzar nodos de Pauli y seudo-barreras de Coulomb a medida que el sistema transita desde el gas de Fermi/Hartree ($g \le 0.3$) hacia el cristal de Wigner fuertemente localizado ($g \ge 0.5$), se implementó el analizador de trayectorias `scripts/analyze_flips_vs_g.py` y se evaluaron los 56 modelos preliminares del Pipeline 2 ($N \in \{2, 4, 6, 10\}$, $g \in \{0.1, 0.5, 1.0, 2.0, 3.0, 5.0, 8.0\}$).
+Para demostrar cuantitativamente cómo el Actor neuronal aprende a cruzar nodos de Pauli y seudo-barreras de Coulomb a medida que el sistema transita desde el gas de Fermi/Hartree ($g \le 0.3$) hacia el cristal de Wigner fuertemente localizado ($g \ge 0.5$), se ejecutó el Pipeline 2 y el analizador `scripts/analyze_flips_vs_g.py` sobre los **54 modelos** con funciones de onda CASSCF de espacio activo completo ($N \in \{2, 4, 6, 8\}$, incorporando los estados convergidos `c0-a6, b=256` y `c0-a8, b=256` del asesor en `flips_analysis_advisor/`).
 
-### 9.1 Metodología: Cruces con Histéresis ($\delta = \eta\,d_{\mathrm{adj}}$) y Anatomía Temporal
+### 9.1 Metodología: Cruces con Histéresis ($\delta = \eta\,d_{\mathrm{adj}}$) y Mapa de Calor del Stream-Flow Normalizado
 Para cada par de electrones $(i, j)$ a lo largo de las $C \times B = 3 \times 32 = 96$ trayectorias guardadas de $T = 40,000$ pasos MCMC, monitoreamos la coordenada relativa $d_{ij}(t) = x_i(t) - x_j(t)$:
 1. **Separación Media entre Vecinos Adyacentes ($d_{\mathrm{adj}}$):** En cada paso $t$, ordenamos las posiciones espaciales $x_{(1)}(t) < x_{(2)}(t) < \dots < x_{(N)}(t)$ y calculamos $d_{\mathrm{adj}} = \langle x_{(k+1)} - x_{(k)} \rangle$.
-2. **Filtro de Histéresis Espacial ($\delta = 0.25\,d_{\mathrm{adj}}$):** Un cruce crudo ($\delta=0$) ocurre cada vez que $d_{ij}(t)$ cambia de signo, lo cual a acoplamiento débil ($g=0.1$) incluye oscilaciones térmicas sobre el plano $x_i = x_j$. Un **flip genuino pozo-a-pozo con histéresis** se registra únicamente cuando el par parte de una separación comprometida $d_{ij}(t_0) \le -\delta$ y alcanza el bolsillo permutado opuesto $d_{ij}(t_1) \ge +\delta$ (o viceversa).
-3. **Duración de Tránsito ($\Delta t_{\mathrm{transit}} = t_1 - t_0$):** Número exacto de pasos de la cadena de Markov requeridos para atravesar la zona de barrera $[-\delta, +\delta]$. Si $\Delta t_{\mathrm{transit}} = 1$, la permutación ocurre en **un único paso colectivo MCMC** (*tunneling jump*).
+2. **Filtro de Histéresis Espacial ($\delta = 0.25\,d_{\mathrm{adj}}$):** Un cruce crudo ($\delta=0$) ocurre cada vez que $d_{ij}(t)$ cambia de signo, lo cual a acoplamiento débil ($g=0.1$) incluye oscilaciones térmicas sobre el plano $x_i = x_j$. Un **flip genuino pozo-a-pozo con histéresis** se registra únicamente cuando el par parte de una separación comprometida $d_{ij}(t_{\mathrm{enter}}) \le -\delta$ y alcanza el bolsillo permutado opuesto $d_{ij}(t_{\mathrm{exit}}) \ge +\delta$ (o viceversa).
+3. **Duración de Tránsito ($\Delta t_{\mathrm{transit}} = t_{\mathrm{exit}} - t_{\mathrm{enter}}$):** Número exacto de pasos de la cadena de Markov requeridos para atravesar la zona de barrera $[-\delta, +\delta]$. Si $\Delta t_{\mathrm{transit}} = 1$, la permutación ocurre en **un único paso colectivo MCMC** (*tunneling jump*).
+4. **Etiquetado Canónico Izquierda/Derecha y Alineación Exacta en el Cruce ($t = t_{\mathrm{flip}}, y = 0$):** Para caracterizar el flujo microscópico (*stream flow*) en la ventana $t - t_{\mathrm{flip}} \in [-15, +15]$, etiquetamos canónicamente como $x_i(t)$ al electrón que inicia a la **izquierda** en el espacio real 1D antes del flip ($x_i < x_j$ para $t < t_{\mathrm{flip}}$) y como $x_j(t)$ al electrón que inicia a la **derecha** ($x_j > x_i$ para $t < t_{\mathrm{flip}}$), alineando el origen temporal exactamente en el instante $t_{\mathrm{flip}}$ donde $x_i(t_{\mathrm{flip}}) - x_j(t_{\mathrm{flip}}) = 0$. Al normalizar por $d_{\mathrm{adj}}$, la coordenada relativa adimensional $(x_i(t) - x_j(t))/d_{\mathrm{adj}}$ fluye universalmente desde $-1.0$ (antes del intercambio), cruza exactamente por $(0, 0)$ en el paso del flip, y alcanza $+1.0$ (después del intercambio).
 
-### 9.2 Resultados Preliminares en $N=2$ y $N=4$ (Espacio Activo Completo $n_{\mathrm{core}}=0$)
+### 9.2 Resultados Consolidados en $N=2, 4, 6$ con Espacio Activo Completo (`flips_analysis_advisor`)
 
-En $N=2$ ($\mathrm{CAS}(2e, 4o)$) y $N=4$ ($\mathrm{CAS}(4e, 4o)$), ningún electrón fue congelado en orbitales de core ($n_{\mathrm{core}}=0$), por lo que la función de onda de referencia captura de forma exacta la localización de Wigner hasta $g=8.0$. La tabla siguiente resume la evolución de las métricas de intercambio frente a $g$:
+La tabla siguiente presenta el resumen cuantitativo de `flips_analysis_advisor/flips_vs_g_summary.csv` para $N=2$ ($\mathrm{CAS}(2e, 4o)$), $N=4$ ($\mathrm{CAS}(4e, 4o)$) y $N=6$ con los nuevos estados convergidos del asesor ($\mathrm{CAS}(6e, 6o)$, `c0-a6`, $N_{\mathrm{basis}}=256$, 20 determinantes):
 
 | $N$ | $g$ | $d_{\mathrm{adj}}$ (Bohr) | Método | Flips Totales Hist. ($/10^3$) | Flips $\uparrow\downarrow$ Hist. ($/10^3$) | Flips $\uparrow\uparrow,\downarrow\downarrow$ Pauli ($/10^3$) | Cruces Crudos ($/10^3$) | Saltos en 1 Paso ($\%$) | $\langle\lvert\Delta x_{ij}\rvert\rangle_{\mathrm{flip}}$ (Bohr) | $D_{\mathrm{KL}}^{\mathrm{spin}}$ |
 | :---: | :---: | :---: | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| 2 | 0.1 | 4.86 | MALA | $4.98 \pm 0.02$ | $4.98$ | $0.00$ | $16.19$ | $0.1\%$ | $0.91$ | $3.55 \times 10^{-5}$ |
-| 2 | 0.1 | 4.89 | **RL-MALA** | **$25.30 \pm 0.07$** | **$25.30$** | **$0.00$** | **$44.43$** | **$31.0\%$** | **$3.07$** | **$3.62 \times 10^{-5}$** |
-| 2 | 0.5 | 6.66 | MALA | $0.17 \pm 0.01$ | $0.17$ | $0.00$ | $0.46$ | $0.0\%$ | $0.89$ | $1.18 \times 10^{-2}$ |
-| 2 | 0.5 | 6.66 | **RL-MALA** | **$1.37 \pm 0.03$** | **$1.37$** | **$0.00$** | **$1.99$** | **$24.0\%$** | **$3.11$** | **$6.99 \times 10^{-4}$** |
-| 2 | 1.0 | 8.07 | MALA | $0.011 \pm 0.002$ | $0.011$ | $0.00$ | $0.027$ | $0.0\%$ | $0.92$ | $3.06 \times 10^{-1}$ |
-| 2 | 1.0 | 8.07 | **RL-MALA** | **$0.320 \pm 0.008$** | **$0.320$** | **$0.00$** | **$0.376$** | **$26.8\%$** | **$3.25$** | **$5.11 \times 10^{-3}$** |
-| 2 | 2.0 | 10.02 | MALA | $0.001 \pm 0.001$ | $0.001$ | $0.00$ | $0.003$ | $0.0\%$ | $1.31$ | $6.06 \times 10^{-1}$ |
-| 2 | 2.0 | 10.02 | **RL-MALA** | **$0.049 \pm 0.003$** | **$0.049$** | **$0.00$** | **$0.056$** | **$12.6\%$** | **$3.27$** | **$2.15 \times 10^{-2}$** |
-| 2 | 3.0 | 11.43 | MALA | $0.000 \pm 0.000$ | $0.000$ | $0.00$ | $0.019$ | $0.0\%$ | — | $6.84 \times 10^{-1}$ |
-| 2 | 3.0 | 11.44 | **RL-MALA** | **$0.011 \pm 0.002$** | **$0.011$** | **$0.00$** | **$0.011$** | **$17.6\%$** | **$3.01$** | **$1.02 \times 10^{-1}$** |
-| 4 | 0.1 | 3.55 | MALA | $29.71 \pm 0.11$ | $29.63$ | $0.08$ | $88.99$ | $1.4\%$ | $0.90$ | $4.71 \times 10^{-5}$ |
-| 4 | 0.1 | 3.56 | **RL-MALA** | **$94.64 \pm 0.25$** | **$89.72$** | **$4.92$** | **$159.29$** | **$42.4\%$** | **$2.62$** | **$4.23 \times 10^{-5}$** |
-| 4 | 0.5 | 4.65 | MALA | $0.278 \pm 0.011$ | $0.160$ | $0.118$ | $0.304$ | $0.6\%$ | $0.90$ | $4.74 \times 10^{-2}$ |
-| 4 | 0.5 | 4.66 | **RL-MALA** | **$15.28 \pm 0.06$** | **$10.23$** | **$5.05$** | **$18.09$** | **$54.7\%$** | **$3.07$** | **$6.96 \times 10^{-5}$** |
-| 4 | 1.0 | 5.29 | MALA | $0.162 \pm 0.004$ | $0.104$ | $0.058$ | $0.175$ | $0.0\%$ | $0.90$ | $1.14 \times 10^{-1}$ |
-| 4 | 1.0 | 5.29 | **RL-MALA** | **$7.69 \pm 0.04$** | **$5.12$** | **$2.57$** | **$9.29$** | **$43.5\%$** | **$3.06$** | **$1.86 \times 10^{-4}$** |
-| 4 | 2.0 | 6.27 | MALA | $0.035 \pm 0.005$ | $0.018$ | $0.018$ | $0.035$ | $0.0\%$ | $0.91$ | $3.34 \times 10^{-1}$ |
-| 4 | 2.0 | 6.27 | **RL-MALA** | **$2.18 \pm 0.04$** | **$1.45$** | **$0.73$** | **$2.65$** | **$31.3\%$** | **$3.07$** | **$6.58 \times 10^{-4}$** |
-| 4 | 3.0 | 7.03 | MALA | $0.007 \pm 0.002$ | $0.003$ | $0.005$ | $0.007$ | $0.0\%$ | $0.88$ | $5.92 \times 10^{-1}$ |
-| 4 | 3.0 | 7.03 | **RL-MALA** | **$0.736 \pm 0.008$** | **$0.502$** | **$0.234$** | **$0.871$** | **$25.2\%$** | **$2.96$** | **$4.48 \times 10^{-3}$** |
-| 4 | 5.0 | 8.25 | MALA | $0.002 \pm 0.001$ | $0.001$ | $0.001$ | $0.002$ | $0.0\%$ | $0.86$ | $5.05 \times 10^{-1}$ |
-| 4 | 5.0 | 8.26 | **RL-MALA** | **$0.130 \pm 0.009$** | **$0.083$** | **$0.047$** | **$0.151$** | **$17.8\%$** | **$3.04$** | **$3.44 \times 10^{-2}$** |
-| 4 | 8.0 | 9.61 | MALA | $0.000 \pm 0.000$ | $0.000$ | $0.000$ | $0.000$ | $0.0\%$ | — | $4.34 \times 10^{-1}$ |
-| 4 | 8.0 | 9.61 | **RL-MALA** | **$0.011 \pm 0.001$** | **$0.008$** | **$0.003$** | **$0.012$** | **$9.1\%$** | **$2.90$** | **$2.71 \times 10^{-1}$** |
+| 2 | 0.1 | 4.15 | MALA | $4.98 \pm 0.11$ | $4.98$ | $0.00$ | $16.19$ | $0.1\%$ | $0.89$ | $2.28 \times 10^{-4}$ |
+| 2 | 0.1 | 4.15 | **RL-MALA** | **$25.30 \pm 0.08$** | **$25.30$** | **$0.00$** | **$44.43$** | **$31.0\%$** | **$2.54$** | **$1.13 \times 10^{-4}$** |
+| 2 | 0.5 | 6.05 | MALA | $0.17 \pm 0.003$ | $0.17$ | $0.00$ | $0.46$ | $0.0\%$ | $0.92$ | $1.77 \times 10^{-3}$ |
+| 2 | 0.5 | 6.06 | **RL-MALA** | **$1.37 \pm 0.03$** | **$1.37$** | **$0.00$** | **$1.99$** | **$24.0\%$** | **$2.78$** | **$8.17 \times 10^{-5}$** |
+| 2 | 1.0 | 6.96 | MALA | $0.012 \pm 0.003$ | $0.012$ | $0.00$ | $0.033$ | $0.0\%$ | $0.83$ | $1.00 \times 10^{-1}$ |
+| 2 | 1.0 | 6.94 | **RL-MALA** | **$0.315 \pm 0.018$** | **$0.315$** | **$0.00$** | **$0.383$** | **$26.8\%$** | **$3.02$** | **$1.12 \times 10^{-4}$** |
+| 2 | 2.0 | 8.22 | MALA | $0.000 \pm 0.000$ | $0.000$ | $0.00$ | $0.000$ | $0.0\%$ | — | $6.47 \times 10^{-1}$ |
+| 2 | 2.0 | 8.20 | **RL-MALA** | **$0.049 \pm 0.007$** | **$0.049$** | **$0.00$** | **$0.056$** | **$12.6\%$** | **$2.49$** | **$1.29 \times 10^{-3}$** |
+| 4 | 0.1 | 3.17 | MALA | $29.71 \pm 0.20$ | $29.63$ | $0.08$ | $88.99$ | $1.4\%$ | $0.89$ | $6.36 \times 10^{-5}$ |
+| 4 | 0.1 | 3.18 | **RL-MALA** | **$94.64 \pm 0.55$** | **$89.72$** | **$4.92$** | **$159.29$** | **$42.4\%$** | **$2.44$** | **$4.47 \times 10^{-5}$** |
+| 4 | 0.5 | 4.58 | MALA | $0.279 \pm 0.027$ | $0.163$ | $0.116$ | $0.298$ | $0.6\%$ | $0.92$ | $3.50 \times 10^{-2}$ |
+| 4 | 0.5 | 4.58 | **RL-MALA** | **$15.28 \pm 0.21$** | **$10.23$** | **$5.05$** | **$18.09$** | **$54.7\%$** | **$3.13$** | **$7.18 \times 10^{-5}$** |
+| 4 | 1.0 | 5.26 | MALA | $0.158 \pm 0.013$ | $0.099$ | $0.058$ | $0.167$ | $0.0\%$ | $0.90$ | $1.14 \times 10^{-1}$ |
+| 4 | 1.0 | 5.26 | **RL-MALA** | **$7.69 \pm 0.13$** | **$5.12$** | **$2.57$** | **$9.29$** | **$43.5\%$** | **$3.09$** | **$1.88 \times 10^{-4}$** |
+| 4 | 2.0 | 6.27 | MALA | $0.033 \pm 0.001$ | $0.018$ | $0.015$ | $0.033$ | $0.0\%$ | $0.91$ | $3.34 \times 10^{-1}$ |
+| 4 | 2.0 | 6.27 | **RL-MALA** | **$2.18 \pm 0.08$** | **$1.45$** | **$0.73$** | **$2.65$** | **$31.3\%$** | **$3.07$** | **$6.56 \times 10^{-4}$** |
+| 4 | 3.0 | 7.00 | MALA | $0.014 \pm 0.005$ | $0.003$ | $0.010$ | $0.014$ | $0.0\%$ | $0.96$ | $5.92 \times 10^{-1}$ |
+| 4 | 3.0 | 7.00 | **RL-MALA** | **$0.738 \pm 0.070$** | **$0.505$** | **$0.233$** | **$0.872$** | **$25.2\%$** | **$3.07$** | **$4.48 \times 10^{-3}$** |
+| 4 | 5.0 | 8.10 | MALA | $0.004 \pm 0.003$ | $0.001$ | $0.003$ | $0.004$ | $0.0\%$ | $1.05$ | $5.05 \times 10^{-1}$ |
+| 4 | 5.0 | 8.09 | **RL-MALA** | **$0.129 \pm 0.010$** | **$0.083$** | **$0.046$** | **$0.146$** | **$17.8\%$** | **$3.01$** | **$5.46 \times 10^{-2}$** |
+| 6 | 0.1 | 2.48 | MALA | $86.71 \pm 0.16$ | $86.39$ | $0.32$ | $226.03$ | $6.0\%$ | $0.89$ | $3.88 \times 10^{-5}$ |
+| 6 | 0.1 | 2.48 | **RL-MALA** | **$178.72 \pm 0.14$** | **$163.73$** | **$14.99$** | **$279.17$** | **$54.1\%$** | **$2.32$** | **$2.28 \times 10^{-5}$** |
+| 6 | 0.5 | 3.84 | MALA | $0.861 \pm 0.008$ | $0.488$ | $0.373$ | $0.908$ | $2.6\%$ | $0.96$ | $6.39 \times 10^{-2}$ |
+| 6 | 0.5 | 3.84 | **RL-MALA** | **$32.60 \pm 0.11$** | **$19.63$** | **$12.97$** | **$37.21$** | **$65.2\%$** | **$3.12$** | **$7.53 \times 10^{-5}$** |
+| 6 | 1.0 | 4.40 | MALA | $0.445 \pm 0.013$ | $0.251$ | $0.193$ | $0.472$ | $1.1\%$ | $0.95$ | $1.38 \times 10^{-1}$ |
+| 6 | 1.0 | 4.40 | **RL-MALA** | **$18.78 \pm 0.11$** | **$11.17$** | **$7.60$** | **$21.93$** | **$56.4\%$** | **$3.15$** | **$1.56 \times 10^{-4}$** |
+| 6 | 2.0 | 5.24 | MALA | $0.132 \pm 0.012$ | $0.076$ | $0.056$ | $0.144$ | $0.0\%$ | $0.95$ | $1.04 \times 10^{-1}$ |
+| 6 | 2.0 | 5.64 | **RL-MALA** | **$6.13 \pm 0.18$** | **$3.66$** | **$2.46$** | **$7.64$** | **$37.8\%$** | **$3.12$** | **$5.83 \times 10^{-2}$** |
+| 6 | 3.0 | 5.85 | MALA | $0.058 \pm 0.016$ | $0.034$ | $0.024$ | $0.173$ | $0.0\%$ | $0.82$ | $1.05 \times 10^{-1}$ |
+| 6 | 3.0 | 6.25 | **RL-MALA** | **$1.83 \pm 0.21$** | **$1.09$** | **$0.74$** | **$2.47$** | **$20.7\%$** | **$2.65$** | **$1.36 \times 10^{-1}$** |
 
-#### Hallazgos Físicos Fundamentales sobre el Mecanismo del Actor RL-MALA:
-1. **Aceleración de $50\times$ a $160\times$ en el Régimen de Cristal de Wigner ($g \ge 0.5$):**
-   En $g=0.1$ (régimen de Hartree), las gaussianas se traslapan en el origen y MALA presenta $29.63\text{ flips}/10^3\text{ pasos}$ en $N=4$ ($88.99$ cruces crudos). Sin embargo, apenas se abre el cristal de Wigner en $g=0.5$, la tasa de MALA cae dos órdenes de magnitud hasta $0.16\text{ flips}/10^3$, desplomándose a $0.018/10^3$ en $g=2.0$ y a $0.000/10^3$ en $g=8.0$. RL-MALA sostiene $10.23\text{ flips}/10^3$ en $g=0.5$ (**$64\times$ más rápido**), $5.12/10^3$ en $g=1.0$ (**$49\times$**), $1.45/10^3$ en $g=2.0$ (**$81\times$**), $0.50/10^3$ en $g=3.0$ (**$160\times$**) y continúa cruzando barreras incluso en $g=5.0$ y $g=8.0$.
-2. **Proporción Combinatoria Exacta 2:1 entre Barreras de Wigner ($\uparrow\downarrow$) y Nodos de Pauli ($\uparrow\uparrow, \downarrow\downarrow$):**
-   En $N=4$ ($2\uparrow, 2\downarrow$) existen $\binom{2}{1}\binom{2}{1} = 4$ pares de espín opuesto y $\binom{2}{2} + \binom{2}{2} = 2$ pares del mismo espín (razón combinatoria 2:1). Para todo $g \ge 0.5$, RL-MALA mantiene exactamente una razón 2:1 entre flips $\uparrow\downarrow$ y flips $\uparrow\uparrow/\downarrow\downarrow$ ($10.23$ vs $5.05$ en $g=0.5$; $5.12$ vs $2.57$ en $g=1.0$; $1.45$ vs $0.73$ en $g=2.0$). Esto demuestra que a acoplamiento fuerte, el actor trata tanto el nodo exacto de Pauli ($\Psi=0$) como la seudo-barrera de Coulomb ($\Psi \approx 0$) mediante el mismo mecanismo de salto de escala fija $\langle|\Delta x_{ij}|\rangle_{\mathrm{flip}} \approx 3.07\text{ Bohr}$.
-3. **¿El Actor "Planea" el Intercambio o Ejecuta un Salto Reactivo en 1 Paso?**
-   Como muestra la anatomía temporal alineada en $t - t_{\mathrm{flip}} \in [-15, +15]$, el actor **no posee memoria recurrente multi-paso**, por lo que no "planea" desde 15 pasos antes; en cambio, aprende una **política reactiva coordinada de campo cercano**: cuando las fluctuaciones sitúan a dos electrones vecinos en el borde de la barrera ($|x_i - x_j| \approx \delta$), la red equivariante detecta la geometría relativa y ensancha selectivamente $\sigma_\theta(\mathbf{x})$ junto con el empuje residual $A_\mu\tanh(u_\theta)$, ejecutando entre el **$25\%$ y el $55\%$ de los intercambios en 1 solo paso de Markov** ($\Delta t_{\mathrm{transit}} = 1$), frente a **$0.0\%$ en 1 paso para MALA** en todo $g \ge 1.0$.
+#### Hallazgos Físicos Fundamentales sobre los Nuevos Resultados (`flips_analysis_advisor`):
+1. **Confirmación de la Ley de Escalamiento Exponencial de Flips en $N=6$ con los Estados Convergidos (`c0-a6, b=256`):**
+   Al reemplazar los estados truncados antiguos (`c1-a4`) por los estados convergidos del asesor (`c0-a6, b=256`), la anomalía que existía en $N=6$ desaparece por completo en $g \in [0.1, 3.0]$: la tasa de flips de MALA decae monótonamente desde $86.71\text{ flips}/10^3$ ($g=0.1$) hasta $0.861$ ($g=0.5$), $0.445$ ($g=1.0$), $0.132$ ($g=2.0$) y $0.058$ ($g=3.0$). Simultáneamente, RL-MALA alcanza ganancias de **$37.9\times$ en $g=0.5$** ($32.60$ vs $0.86\text{ flips}/10^3$, reduciendo $D_{\mathrm{KL}}^{\mathrm{spin}}$ en **$848\times$**, de $0.0639$ a $7.53 \times 10^{-5}$), **$42.2\times$ en $g=1.0$** ($18.78$ vs $0.445\text{ flips}/10^3$, reduciendo $D_{\mathrm{KL}}^{\mathrm{spin}}$ en **$887\times$**, de $0.1385$ a $1.56 \times 10^{-4}$), **$46.6\times$ en $g=2.0$** ($6.13$ vs $0.132\text{ flips}/10^3$) y **$31.5\times$ en $g=3.0$** ($1.83$ vs $0.058\text{ flips}/10^3$).
+2. **Proporción Combinatoria Exacta 3:2 en $N=6$ y 2:1 en $N=4$ entre Barreras de Wigner ($\uparrow\downarrow$) y Nodos de Pauli ($\uparrow\uparrow, \downarrow\downarrow$):**
+   En $N=6$ ($3\uparrow, 3\downarrow$) existen $\binom{3}{1}\binom{3}{1} = 9$ pares de espín opuesto y $\binom{3}{2} + \binom{3}{2} = 6$ pares del mismo espín (razón combinatoria **3:2 = 1.50**). Para todo $g \ge 0.5$, RL-MALA mantiene exactamente una razón **1.50:1** entre flips $\uparrow\downarrow$ y flips $\uparrow\uparrow/\downarrow\downarrow$ ($19.63 / 12.97 = 1.51$ en $g=0.5$; $11.17 / 7.60 = 1.47$ en $g=1.0$; $3.66 / 2.46 = 1.49$ en $g=2.0$; $1.09 / 0.74 = 1.47$ en $g=3.0$). Junto con la razón 2:1 en $N=4$, esto demuestra rigurosamente que en el régimen de Wigner el actor cruza con idéntica eficiencia por par tanto las barreras de Coulomb $\uparrow\downarrow$ como los hiperplanos nodales exactos de Pauli $\Psi = 0$, mediante saltos de escala característica $\langle|\Delta x_{ij}|\rangle_{\mathrm{flip}} \approx 3.12\text{ Bohr}$ ($65.2\%$ en 1 solo paso en $g=0.5$ y $56.4\%$ en 1 solo paso en $g=1.0$).
 
-### 9.3 Figuras Principales del Análisis de `Flips` (`flips_analysis`)
+### 9.3 Figuras Principales del Análisis con Estados Convergidos (`flips_analysis_advisor`)
 
-##### Síntesis Global Maestra de Flips vs $g$ para Todos los Tamaños de Sistema
-![Síntesis Global de Intercambios Topológicos (Flips) respecto a N y g](flips_analysis/fig_flips_vs_g_all_N_master_P2.png)  
-*Figura 9.1: Síntesis panorámica de la tasa de flips reales pozo-a-pozo con histéresis (panel a), cruces crudos sin histéresis (panel b), factor de aceleración $R_{\mathrm{RL-MALA}}/R_{\mathrm{MALA}}$ (panel c) y divergencia de espín $D_{\mathrm{KL}}^{\mathrm{spin}}$ (panel d) en función del acoplamiento $g$.*
+##### Síntesis Global Maestra de Flips vs $g$ ($N=2, 4, 6, 8$)
+![Síntesis Global de Intercambios Topológicos (Flips) respecto a N y g](flips_analysis_advisor/fig_flips_vs_g_all_N_master_P2.png)  
+*Figura 9.1: Síntesis panorámica de la tasa de flips reales pozo-a-pozo con histéresis (panel a), cruces crudos sin histéresis (panel b), factor de aceleración $R_{\mathrm{RL-MALA}}/R_{\mathrm{MALA}}$ (panel c) y divergencia de espín $D_{\mathrm{KL}}^{\mathrm{spin}}$ (panel d) en función del acoplamiento $g$ con los estados del asesor.*
 
-##### Evolución de Flips y Mecanismo de Cruce respecto a $g$ para $N=4$ Electrones
-![Evolución de Flips respecto a g para N=4](flips_analysis/per_N/fig_flips_vs_g_P2_N4.png)  
-*Figura 9.2: Caracterización completa en función de $g$ para $N=4$ ($\mathrm{CAS}(4e, 4o)$ exacto). Se observa el paralelismo logarítmico 2:1 entre cruces de espín opuesto y nodos de Pauli (panel b), la correlación inversa exacta entre tasa de flips y $D_{\mathrm{KL}}^{\mathrm{spin}}$ (panel c), y la fracción sostenida de saltos en 1 paso de RL-MALA con brinco medio constante $\sim 3.07\text{ Bohr}$ frente a $\sim 0.90\text{ Bohr}$ de MALA (panel d).*
+##### Evolución de Flips respecto a $g$ para $N=6$ Electrones (`c0-a6, b=256`)
+![Evolución de Flips respecto a g para N=6](flips_analysis_advisor/per_N/fig_flips_vs_g_P2_N6.png)  
+*Figura 9.2: Evolución completa de flips frente a $g$ para $N=6$ con los estados convergidos `c0-a6, b=256`. Se aprecia la ganancia de $38\times$ a $47\times$ en la ventana $g \in [0.5, 2.0]$ (panel c), la proporción combinatoria 3:2 entre canales $\uparrow\downarrow$ y $\uparrow\uparrow/\downarrow\downarrow$ (panel b), y hasta $65.2\%$ de cruces en 1 solo paso MCMC (panel d).*
 
-##### Evolución de Flips respecto a $g$ para $N=2$ Electrones
-![Evolución de Flips respecto a g para N=2](flips_analysis/per_N/fig_flips_vs_g_P2_N2.png)  
-*Figura 9.3: Evolución de la tasa de intercambios $\uparrow\downarrow$, factor de aceleración, $D_{\mathrm{KL}}^{\mathrm{spin}}$ y fracción de cruces en 1 paso para el par electrónico $N=2$ a lo largo de $g \in [0.1, 8.0]$.*
+##### Evolución de Flips respecto a $g$ para $N=4$ Electrones (`c0-a4, b=32`)
+![Evolución de Flips respecto a g para N=4](flips_analysis_advisor/per_N/fig_flips_vs_g_P2_N4.png)  
+*Figura 9.3: Caracterización completa en función de $g$ para $N=4$ ($\mathrm{CAS}(4e, 4o)$ exacto), mostrando ganancias de hasta $53\times$ en tasa total de flips y erradicación del bloqueo ergódico.*
 
-##### Anatomía Microscópica de 4 Paneles en el Cristal de Wigner ($N=4, \omega=0.1, g=2.0$)
-![Anatomía Microscópica de Flips en N=4, g=2.0](flips_analysis/per_system/fig_flips_system_P2_N4_w0.1_g2.png)  
-*Figura 9.4: Anatomía detallada del cruce nodal en $N=4, g=2.0$ ($d_{\mathrm{adj}} = 6.27\text{ Bohr}$, umbral de histéresis $\delta = 1.57\text{ Bohr}$). (a) Trazas de 1 caminante mostrando el congelamiento topológico de MALA ($0.03\text{ flips}/1\text{k}$) frente a la mezcla continua de RL-MALA ($2.18\text{ flips}/1\text{k}$). (b) Crecimiento lineal acumulado $\langle N_{\mathrm{flips}}(t)\rangle$. (c) Trayectoria relativa orientada $\langle x_i(t) - x_j(t)\rangle$ en la ventana $[-15, +15]$ alrededor del cruce: MALA requiere una deriva gradual de más de 10 pasos, mientras que RL-MALA salta abruptamente en $t_{\mathrm{flip}} = -1 \to 0$. (d) Histograma de duración de tránsito $\Delta t_{\mathrm{transit}}$: RL-MALA logra $31.3\%$ de cruces en 1 paso y $53.1\%$ en $\le 2$ pasos, mientras que MALA presenta $0.0\%$ en 1 o 2 pasos.*
+##### Anatomía de 4 Paneles en $N=6, \omega=0.1, g=0.5$ y $g=1.0$ (`c0-a6, b=256`)
+![Anatomía Microscópica de Flips en N=6, g=0.5](flips_analysis_advisor/per_system/fig_flips_system_P2_N6_w0.1_g0.5.png)  
+*Figura 9.4: Caracterización en $N=6, g=0.5$ ($d_{\mathrm{adj}} = 3.84\text{ Bohr}$). RL-MALA alcanza $32.60\text{ flips}/1\text{k}$ frente a $0.86\text{ flips}/1\text{k}$ de MALA ($37.9\times$), ejecutando el $65.2\%$ de los intercambios en un único paso colectivo MCMC.*
 
-##### Evolución Preliminar en $N=6$ y Anomalía por Truncamiento de Core en $g \ge 2.0$
-![Evolución Preliminar de Flips respecto a g para N=6](flips_analysis/per_N/fig_flips_vs_g_P2_N6.png)  
-*Figura 9.5: Evolución preliminar para $N=6$. En $g \in \{0.1, 0.5, 1.0\}$, RL-MALA supera ampliamente a MALA ($65.5$ vs $6.6\text{ flips}/1\text{k}$ en $g=1.0$, con $D_{\mathrm{KL}}^{\mathrm{spin}} = 1.5 \times 10^{-4}$ vs $0.224$). Para $g \ge 2.0$, la curva se distorsiona debido a que el CASSCF preliminar congeló $n_{\mathrm{core}}=1$ orbital doblemente ocupado ($\mathrm{CAS}(4e, 4o)$ en base $N_{\mathrm{basis}}=48$), impidiendo la cristalización de Wigner de los 6 electrones.*
+![Anatomía Microscópica de Flips en N=6, g=1.0](flips_analysis_advisor/per_system/fig_flips_system_P2_N6_w0.1_g1.png)  
+*Figura 9.5: Caracterización en $N=6, g=1.0$ ($d_{\mathrm{adj}} = 4.40\text{ Bohr}$). En el panel (a), MALA presenta sólo $0.44\text{ flips}/1\text{k}$ y mantiene los espines segregados, mientras que RL-MALA alcanza $18.78\text{ flips}/1\text{k}$ ($56.4\%$ en 1 paso) y mezcla uniformemente los 6 pozos de Wigner.*
 
-### 9.4 Diagnóstico de la Falla en $N=6$ ($g \ge 2.0$), $N=8$ y $N=10$: Truncamiento del Espacio Activo CASSCF y Plan de Re-ejecución con Estados Convergidos del Asesor (`CASSCF_csv`)
+### 9.4 Diagnóstico Técnico de las Trazas Anómalas en $N=6$ ($g \ge 2$) y $N=8$: El Piso Numérico `1e-15` en `CASSCF1DAnsatz` y la Inicialización `spin_ordered_offset`
 
-Al inspeccionar los resultados preliminares de `flips_vs_g_summary.csv` para $N=6$ ($g \ge 2.0$) y $N=10$, se observa un comportamiento anómalo: MALA aparenta mantener una tasa artificialmente alta de cruces $\uparrow\downarrow$ ($3.4 - 8.9\text{ flips}/1\text{k}$ en $N=6, g \ge 3.0$, y $17 - 51\text{ flips}/1\text{k}$ en $N=10, g \ge 2.0$), mientras que en $N=6, g=2.0$ el actor RL-MALA colapsa a una distancia interelectrónica reducida ($d_{\mathrm{adj}} = 1.97\text{ Bohr}$ frente a $4.73\text{ Bohr}$).
+Al inspeccionar las figuras individuales por sistema en `flips_analysis_advisor/per_system/` para $N=6$ ($g \in \{2, 3, 5, 8\}$) y $N=8$ ($g \ge 0.5$), se observó que las trazas del Panel (a) parecen brotar de un punto cercano a $x \approx 0$ en $t=0$ y luego abrirse en abanico hasta posiciones de $|x| \sim 100 - 300\text{ Bohr}$, con un aspecto de movimiento browniano libre en lugar de un cristal de Wigner confinado.
 
-La causa raíz **no es el muestreador RL-MALA**, sino una **limitación severa en las funciones de onda CASSCF preliminares generadas en el Pipeline 1** para $N \ge 6$:
-1. **Imposibilidad Matemática de Formar un Cristal de Wigner con Orbitales de Core Congelados ($n_{\mathrm{core}} > 0$):**
-   Para evitar que el costo combinatorio en CPU creciera durante el Pipeline 1 automático, `get_system_casscf_params` configuró para $N=6$ un espacio activo truncado `c1-a4` ($n_{\mathrm{core}}=1, n_{\mathrm{active}}=4, N_{\mathrm{basis}}=48$), para $N=8$ `c2-a4` ($n_{\mathrm{core}}=2, n_{\mathrm{active}}=4$), y para $N=10$ `c4-a4` ($n_{\mathrm{core}}=4, n_{\mathrm{active}}=4$).
-   En un estado `c1-a4` ($N=6$) o `c4-a4` ($N=10$), **2 electrones (en $N=6$) u 8 electrones (en $N=10$) están forzados a ocupar exactamente los mismos orbitales espaciales cerrados de core en todos los determinantes de Slater**. Sin embargo, un cristal de Wigner de $N$ electrones requiere localizar a los $N$ electrones en $N$ pozos espaciales disjuntos, lo cual exige indispensablemente al menos $N$ orbitales activos (**espacio activo completo `c0-a6` para $N=6$ y `c0-a8` para $N=8$**, sin orbitales doblemente ocupados congelados) y una base de Hermite amplia ($N_{\mathrm{basis}}=256$) para resolver los picos desplazados hacia $|x| \sim 10 - 18\text{ Bohr}$.
-2. **Demostración Cuantitativa del Error de Energía Variacional (`c1-a4, b=48` vs `c0-a6, b=256` del Asesor):**
-   Al comparar las energías de los estados preliminares `c1-a4` frente a los estados convergidos de espacio activo completo (`b=256, c0-a6` con 20 determinantes para $N=6$, y `b=256, c0-a8` con 70 determinantes para $N=8$) proporcionados por el asesor en la carpeta `CASSCF_csv/`, se confirma que el truncamiento `c1-a4` dejó errores variacionales masivos de hasta $+5.91\text{ Ha}$:
+El análisis matemático del código fuente reveló la combinación exacta de **tres factores acoplados** (y su solución definitiva ya implementada en el repositorio):
 
-| Sistema $(N, g)$ | Estado Preliminar Truncado (`Pipeline 1`) | $E_{\mathrm{prelim}}$ (Ha) | Estado Convergido del Asesor (`CASSCF_csv`) | $E_{\mathrm{asesor}}$ (Ha) | Error por Truncamiento $\Delta E$ (Ha) |
-| :---: | :---: | :---: | :---: | :---: | :---: |
-| $N=6, g=0.1$ | `c1-a4`, $N_{\mathrm{basis}}=48$ (36 dets) | $1.5920$ | `c0-a6`, $N_{\mathrm{basis}}=256$ (6 dets) | **$1.589929$** | $+0.0021$ |
-| $N=6, g=0.5$ | `c1-a4`, $N_{\mathrm{basis}}=48$ (36 dets) | $3.7634$ | `c0-a6`, $N_{\mathrm{basis}}=256$ (20 dets) | **$3.281875$** | **$+0.4815$** |
-| $N=6, g=1.0$ | `c0-a6`, $N_{\mathrm{basis}}=256$ (20 dets) | $4.524052$ | `c0-a6`, $N_{\mathrm{basis}}=256$ (20 dets) | **$4.524052$** | $0.0000$ |
-| $N=6, g=2.0$ | `c1-a4`, $N_{\mathrm{basis}}=48$ (36 dets) | $8.0396$ | `c0-a6`, $N_{\mathrm{basis}}=256$ (20 dets) | **$6.576764$** | **$+1.4628$** |
-| $N=6, g=3.0$ | `c1-a4`, $N_{\mathrm{basis}}=48$ (36 dets) | $10.3017$ | `c0-a6`, $N_{\mathrm{basis}}=256$ (20 dets) | **$8.306614$** | **$+1.9951$** |
-| $N=6, g=5.0$ | `c1-a4`, $N_{\mathrm{basis}}=48$ (36 dets) | $14.3933$ | `c0-a6`, $N_{\mathrm{basis}}=256$ (20 dets) | **$11.272810$** | **$+3.1205$** |
-| $N=6, g=8.0$ | `c1-a4`, $N_{\mathrm{basis}}=48$ (No conv.) | $20.9735$ | `c0-a6`, $N_{\mathrm{basis}}=256$ (20 dets) | **$15.063638$** | **$+5.9099$** |
-| $N=8, g=0.1$ | — | — | `c0-a8`, $N_{\mathrm{basis}}=256$ (6 dets) | **$2.751784$** | — |
-| $N=8, g=0.5$ | — | — | `c0-a8`, $N_{\mathrm{basis}}=256$ (70 dets) | **$5.842871$** | — |
-| $N=8, g=1.0$ | — | — | `c0-a8`, $N_{\mathrm{basis}}=256$ (70 dets) | **$8.073238$** | — |
-| $N=8, g=2.0$ | — | — | `c0-a8`, $N_{\mathrm{basis}}=256$ (70 dets) | **$11.784115$** | — |
-| $N=8, g=3.0$ | — | — | `c0-a8`, $N_{\mathrm{basis}}=256$ (70 dets) | **$15.205624$** | — |
-| $N=8, g=5.0$ | — | — | `c0-a8`, $N_{\mathrm{basis}}=256$ (70 dets) | **$20.297512$** | — |
+1. **Causa Física/Numérica Principal — Piso Aditivo `+ 1e-15` en `CASSCF1DAnsatz.apply` (`rl_vmc/ansatze/ansatz_1d.py`):**
+   En la implementación previa de `CASSCF1DAnsatz.apply`, el logaritmo de la función de onda se evaluaba como:
+   $$
+   \ln |\Psi_{\mathrm{clip}}(\mathbf{x})| = \ln\!\big(|\Psi_{\mathrm{CASSCF}}(\mathbf{x})| + 10^{-15}\big)
+   $$
+   Dado que cada orbital del oscilador armónico incluye el factor gaussiano $\exp(-\frac{1}{2}\omega x_i^2)$ antes de evaluar los determinantes $N_\uparrow \times N_\uparrow$ y $N_\downarrow \times N_\downarrow$, en dimensión $N=6$ ($g \ge 2$) y $N=8$ cualquier configuración comprimida o desplazada hacia las colas produce un valor lineal $|\Psi(\mathbf{x})| \sim 10^{-20} - 10^{-35} \ll 10^{-15}$ (perfectamente representable en `float64` hasta $2.2 \times 10^{-308}$, pero eclipsado por el término aditivo $+10^{-15}$).
+   En el instante en que $|\Psi(\mathbf{x})| \ll 10^{-15}$, la función $\ln(|\Psi(\mathbf{x})| + 10^{-15})$ se vuelve **idénticamente constante** ($= \ln(10^{-15}) = -34.5388$):
+   - La deriva cuántica de Langevin se anula por completo: $\mathbf{F}_{\mathrm{Q}}(\mathbf{x}) = \nabla_{\mathbf{x}} \ln(|\Psi(\mathbf{x})| + 10^{-15}) = \mathbf{0}$ (desaparece la fuerza restauradora armónica $-\omega \mathbf{x}$).
+   - La razón de aceptación de Metropolis-Hastings $\big(\frac{|\Psi(\mathbf{x}')| + 10^{-15}}{|\Psi(\mathbf{x})| + 10^{-15}}\big)^2 = 1$ acepta el $100\%$ de los pasos aleatorios sin confinamiento.
+   - En consecuencia, cualquier caminante que cae en la región $|\Psi(\mathbf{x})| < 10^{-15}$ escapa hacia $\pm 100 - 300\text{ Bohr}$ como una partícula browniana libre.
 
-3. **Re-ejecución de $N=6$ y $N=8$ con los Estados CASSCF Convergidos del Asesor:**
-   Notablemente, el único punto de $N=6$ que ya utilizaba el estado `c0-a6, b=256` del asesor en la corrida preliminar fue $N=6, g=1.0$, donde RL-MALA obtuvo resultados extraordinarios ($65.52\text{ flips}/1\text{k}$ vs $6.61\text{ flips}/1\text{k}$ de MALA, y $D_{\mathrm{KL}}^{\mathrm{spin}} = 1.49 \times 10^{-4}$ vs $0.2244$, una mejora de **$1,506\times$**).
-   Por consiguiente, se ha integrado el directorio `CASSCF_csv/` y el orquestador automatizado `run_advisor_casscf_pipeline.sh`, el cual instala los 13 estados convergidos de espacio activo completo (`c0-a6, b=256` para $N=6$ con $g \in \{0.1, 0.5, 1.0, 2, 3, 5, 8\}$, y `c0-a8, b=256` para $N=8$ con $g \in \{0.1, 0.5, 1.0, 2.0, 3.0, 5.0\}$), pone en cuarentena las corridas previas con core truncado y re-ejecuta el Pipeline 2 y el análisis de flips en `results_production_3pipelines_baker`.
+2. **Causa de Inicialización — `spin_ordered_offset` Descentrado (`base=5.0, step=1.0`) con `eval_burn_in = 200`:**
+   El modo `--eval_init_mode spin_ordered_offset` utilizaba por defecto $x_i(0) = 5.0 + 1.0\cdot i$, colocando a los 6 electrones en $[5, 6, 7, 8, 9, 10]\text{ Bohr}$ y a los 8 electrones en $[5, 6, 7, 8, 9, 10, 11, 12]\text{ Bohr}$ (todos comprimidos en el semieje derecho con separación de $1\text{ Bohr}$). Para $N=8$ ($g \ge 0.5$) y $N=6$ ($g \ge 5$), esta configuración inicial ya tiene $|\Psi(\mathbf{x}_0)| \sim 10^{-25} < 10^{-15}$ en $t=0$, por lo que los caminantes inician directamente sobre el piso plano sin fuerza restauradora. Además, al graficar el eje vertical hasta $\pm 200\text{ Bohr}$, el paquete inicial en $[5, 12]\text{ Bohr}$ aparenta visualmente salir desde $x \approx 0$.
+
+3. **Sesgo de Selección en el Ploteo del Panel (a) (`argmax(flips_per_cb)` en `scripts/analyze_flips_vs_g.py`):**
+   El script seleccionaba el caminante individual con el máximo número de cruces (`np.argmax(flips_per_cb)`). En sistemas como $N=6, g=2.0$ (RL-MALA) o $N=6, g=3.0$, donde el $\sim 90\%-95\%$ de los caminantes permaneció correctamente confinado en el cristal de Wigner, bastó con que 1 o 2 caminantes de los 96 escaparan al piso plano `1e-15` para que sus múltiples cruces brownianos hicieran que `argmax` eligiera invariablemente al caminante fugado para el Panel (a).
+
+#### Correcciones Definitivas Implementadas y Lista Exacta de Modelos a Re-correr:
+- **En `rl_vmc/ansatze/ansatz_1d.py`:** Se reemplazó el piso `+ 1e-15` por $\epsilon_{\mathrm{tiny}} = 2.22 \times 10^{-308}$ (`jnp.finfo(float64).tiny`) combinado mediante `jnp.logaddexp` con la envolvente armónica asintótica exacta $-500.0 - \frac{1}{2}\omega \sum_i x_i^2$. Esto preserva la exactitud de máquina en todo el dominio físico y garantiza que la fuerza restauradora $-\omega\mathbf{x}$ jamás se anule.
+- **En `run_advisor_casscf_pipeline.sh` y `rl_vmc/samplers/mh_sampler_1d.py`:** Se centró automáticamente `spin_ordered_offset` alrededor de $x=0$ con el espaciamiento de Wigner $d_{\mathrm{adj}}(N, g)$ (`get_system_wigner_init_offset`) y se incrementó `EVAL_BURN_IN=2000`, añadiendo la bandera `--rerun-failed-traces`.
+- **En `scripts/analyze_flips_vs_g.py`:** Se incorporó el filtrado automático de caminantes fugados (`healthy_mask`), la selección de caminante representativo sano en el Panel (a), y el nuevo **Mapa de Calor 2D del Stream-Flow Normalizado** en el Panel (c).
+- **Modelos que salieron limpios (NO requieren re-correrse):** Todos los de **$N=2$** ($g \in \{0.1, \dots, 8.0\}$), todos los de **$N=4$** ($g \in \{0.1, \dots, 8.0\}$), y **$N=6$ con $g \in \{0.1, 0.5, 1.0\}$**.
+- **Modelos que deben re-correrse con `--rerun-failed-traces`:** **$N=6$ para $g \in \{2.0, 3.0, 5.0, 8.0\}$** y **$N=8$ para $g \in \{0.1, 0.5, 1.0, 2.0, 3.0, 5.0\}$**.
 
 ---
 

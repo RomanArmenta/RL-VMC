@@ -609,9 +609,11 @@ class CASSCF1DAnsatz(BaseAnsatz1D):
 
             psi_terms = jax.vmap(eval_det)(occ_up_idx, occ_dn_idx, ci_coeffs)
             psi_val = jnp.sum(psi_terms)
-            return jnp.clip(
-                jnp.log(jnp.abs(psi_val) + 1e-15), -1000.0, 1000.0
-            )
+            tiny_eps = jnp.finfo(psi_val.dtype).tiny
+            log_psi_raw = jnp.log(jnp.abs(psi_val) + tiny_eps)
+            harm_floor_log = -500.0 - 0.5 * omega * jnp.sum(x_single ** 2)
+            log_psi_safe = jnp.logaddexp(log_psi_raw, harm_floor_log)
+            return jnp.clip(log_psi_safe, -2000.0, 1000.0)
 
         return jax.vmap(evaluate_single)(x_1d)
 
@@ -740,8 +742,11 @@ class MultiSlaterJastrow1DAnsatz(BaseAnsatz1D):
 
             psi_terms = jax.vmap(eval_det)(occ_up_idx, occ_dn_idx, ci_coeffs)
             psi_val = jnp.sum(psi_terms)
+            tiny_eps = jnp.finfo(psi_val.dtype).tiny
+            log_psi_raw = jnp.log(jnp.abs(psi_val) + tiny_eps)
+            harm_floor_log = -500.0 - 0.5 * omega * jnp.sum(x_bf ** 2)
             log_det = jnp.clip(
-                jnp.log(jnp.abs(psi_val) + 1e-15), -1000.0, 1000.0
+                jnp.logaddexp(log_psi_raw, harm_floor_log), -2000.0, 1000.0
             )
 
             # 2. Factor de correlación continuo de Jastrow

@@ -52,6 +52,7 @@ BASE_OUT_DIR="results_production_3pipelines_baker"
 ADVISOR_DIR="${SCRIPT_DIR}/CASSCF_csv"
 POSTPROCESS_ONLY=0
 FORCE_RERUN=0
+RERUN_FAILED_TRACES=0
 KEEP_N10=0
 USER_GPUS=""
 JOBS_PER_GPU=1
@@ -66,6 +67,9 @@ while [ $# -gt 0 ]; do
             ;;
         --force-rerun|--Overwrite)
             FORCE_RERUN=1
+            ;;
+        --rerun-failed-traces|--fix-traces)
+            RERUN_FAILED_TRACES=1
             ;;
         --keep-n10)
             KEEP_N10=1
@@ -142,7 +146,7 @@ N_WALKERS=128
 N_BURN_IN=2000
 RL_ONLY_STEPS=6000
 N_EVAL_CHAINS=3
-EVAL_BURN_IN=200
+EVAL_BURN_IN=2000
 MEASURE_STEPS=40000
 ELOC_CHUNK_SIZE=64
 SAVE_WALKERS_MAX_BATCH=32
@@ -189,22 +193,52 @@ get_system_p2_params() {
     if [ "$N" -le 6 ]; then
         if [ "$is_strong_g" -eq 1 ]; then
             tau="0.08"
-            actor_amp="0.12"
+            actor_amp="0.10"
         else
             tau="0.10"
-            actor_amp="0.15"
+            actor_amp="0.14"
         fi
     else
         # N=8: movimiento colectivo de 8 electrones en base b=256 (70 dets)
         if [ "$is_strong_g" -eq 1 ]; then
             tau="0.06"
-            actor_amp="0.10"
+            actor_amp="0.08"
         else
             tau="0.08"
-            actor_amp="0.12"
+            actor_amp="0.10"
         fi
     fi
     echo "$tau $actor_amp $penalty $sig_scale"
+}
+
+get_system_wigner_init_offset() {
+    local N=$1
+    local G=$2
+    python3 -c '
+import sys, math
+N = int(sys.argv[1])
+g = float(sys.argv[2])
+# Separación aproximada entre pozos adyacentes del cristal de Wigner (omega=0.1)
+step_pos = round(2.4 * ((1.0 + 1.8 * g) ** 0.28) * ((6.0 / max(N, 2)) ** 0.12), 3)
+base_pos = round(-0.5 * (N - 1) * step_pos, 3)
+print(f"{base_pos} {step_pos}")
+' "$N" "$G"
+}
+
+is_failed_trace_system() {
+    local N="$1"
+    local G="$2"
+    python3 -c '
+import sys
+N = int(sys.argv[1])
+g = float(sys.argv[2])
+# Sistemas que presentaron escape al piso 1e-15 en la corrida previa:
+# N=6 para g >= 2.0 y todos los N=8
+if (N == 6 and g >= 1.99) or (N >= 8):
+    sys.exit(0)
+sys.exit(1)
+' "$N" "$G"
+    return $?
 }
 
 is_h5_completed_with_advisor_b256() {
@@ -260,6 +294,9 @@ quarantine_old_system_runs_if_needed() {
         [ -d "$SYS_P2" ] || continue
 
         local needs_quarantine=0
+        if [ "$RERUN_FAILED_TRACES" -eq 1 ] && is_failed_trace_system "$N" "$G"; then
+            needs_quarantine=1
+        fi
         for h5f in "$SYS_P2"/*/run_bundle.h5; do
             [ -e "$h5f" ] || continue
             if [ "$FORCE_RERUN" -eq 1 ] || ! is_h5_completed_with_advisor_b256 "$h5f"; then
@@ -465,6 +502,7 @@ run_advisor_p2_worker() {
     local N_UP=$((N / 2))
     local N_DN=$((N - N_UP))
     read -r TAU ACTOR_AMP PENALTY SIG_SCALE <<< "$(get_system_p2_params "$N" "$G")"
+    read -r INIT_OFFSET_BASE INIT_OFFSET_STEP <<< "$(get_system_wigner_init_offset "$N" "$G")"
 
     local SYS_TAG="N${N}_w${OMEGA}_g${G}"
     local CASSCF_NPZ="${P1_DIR}/${SYS_TAG}/casscf_state.npz"
@@ -496,6 +534,8 @@ run_advisor_p2_worker() {
                 --init_mode "$INIT_MODE" \
                 --init_std "$INIT_STD" \
                 --eval_init_mode "$EVAL_INIT_MODE" \
+                --init_offset_base "$INIT_OFFSET_BASE" \
+                --init_offset_step "$INIT_OFFSET_STEP" \
                 --n_eval_chains "$N_EVAL_CHAINS" \
                 --eval_burn_in "$EVAL_BURN_IN" \
                 --measure_steps "$MEASURE_STEPS" \
@@ -542,6 +582,8 @@ run_advisor_p2_worker() {
                 --init_mode "$INIT_MODE" \
                 --init_std "$INIT_STD" \
                 --eval_init_mode "$EVAL_INIT_MODE" \
+                --init_offset_base "$INIT_OFFSET_BASE" \
+                --init_offset_step "$INIT_OFFSET_STEP" \
                 --n_eval_chains "$N_EVAL_CHAINS" \
                 --eval_burn_in "$EVAL_BURN_IN" \
                 --measure_steps "$MEASURE_STEPS" \
