@@ -472,14 +472,22 @@ def compute_flip_statistics(
             T = w.shape[1]
 
     # Filtrado de caminantes confinados físicamente (descarta caminantes fugados al piso numérico 1e-15 en |x| >> R_Wigner)
-    max_phys_bound = max(35.0, 5.2 * float(N + 1))
+    # Para N=8 y g alto, el radio de confinamiento físico armónico es R ~ 28 Bohr (|x| max ~ 28).
+    # Fijamos una cota física robusta que escala con sqrt((N-1)*d_adj):
+    max_phys_bound = max(28.0, 4.0 * float(N + 1))
     walker_max_abs = np.nanmax(np.abs(w), axis=(1, 3))  # (C, B)
     walker_com_abs = np.nanmean(np.abs(np.nanmean(w, axis=-1)), axis=1)  # (C, B)
-    healthy_mask = (walker_max_abs <= max_phys_bound) & (walker_com_abs <= 8.0)  # (C, B)
+    walker_t_std = np.nanstd(w, axis=1)  # (C, B, N)
+    walker_mean_disp = np.nanmean(walker_t_std, axis=-1)  # (C, B)
+
+    # Un caminante sano debe estar confinado (|x| <= max_phys_bound), con centro de masa cercano a 0 (|com| <= 6.0),
+    # y sin dispersión infinita por difusión libre desatada (disp <= 25.0).
+    healthy_mask = (walker_max_abs <= max_phys_bound) & (walker_com_abs <= 6.0) & (walker_mean_disp <= 25.0)  # (C, B)
     if not np.any(healthy_mask):
-        # Si todos los caminantes excedieron el umbral estricto, elegir el 50% más cercano al origen
-        med_max = float(np.nanmedian(walker_max_abs))
-        healthy_mask = walker_max_abs <= max(med_max * 1.25, max_phys_bound)
+        # Si ningún caminante cumple la cota estricta (e.g. en corridas viejas donde todos escaparon),
+        # elegir el 35% de caminantes con menor valor máximo absoluto para evitar seleccionar los más alejados
+        q35 = float(np.nanpercentile(walker_max_abs, 35))
+        healthy_mask = (walker_max_abs <= max(q35, 15.0))
         if not np.any(healthy_mask):
             healthy_mask = np.ones((C, B), dtype=bool)
 
@@ -765,9 +773,13 @@ def compute_flip_statistics(
     # Seleccionar el caminante SANO representativo con más flips reales para el Panel (a)
     flips_per_cb = np.sum(source_mask, axis=(1, 3)).astype(np.float64)  # (C, B)
     walker_mean_adj = np.nanmean(adj_diffs, axis=(1, 3))  # (C, B)
-    well_formed_mask = healthy_mask & (np.abs(walker_mean_adj - d_adj) <= 0.35 * d_adj)
+    # Exigir adicionalmente que el caminante a graficar en Panel (a) tenga max_abs acotado a la escala física esperada
+    expected_wigner_extent = 0.5 * float(N + 1) * d_adj + 6.0
+    well_formed_mask = healthy_mask & (np.abs(walker_mean_adj - d_adj) <= 0.35 * d_adj) & (walker_max_abs <= expected_wigner_extent)
     if not np.any(well_formed_mask):
-        well_formed_mask = healthy_mask
+        well_formed_mask = healthy_mask & (np.abs(walker_mean_adj - d_adj) <= 0.50 * d_adj)
+        if not np.any(well_formed_mask):
+            well_formed_mask = healthy_mask
     masked_flips_cb = np.where(well_formed_mask, flips_per_cb, -1.0)
     best_cb_flat = int(np.argmax(masked_flips_cb))
     best_c, best_b = divmod(best_cb_flat, B)
