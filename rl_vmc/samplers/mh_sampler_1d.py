@@ -573,6 +573,7 @@ class MHSampler1D:
         thin: int = 1,
         jit_chunk_size: int = 1000,
         use_actor: bool = True,
+        eloc_chunk_size: int | None = None,
     ) -> dict[str, np.ndarray | float]:
         """
         Ejecuta una cadena de producción de longitud `measure_steps` compilada por bloques `jit_chunk_size`.
@@ -595,7 +596,10 @@ class MHSampler1D:
                     exploration_std=0.0,
                 )
                 e_loc, t_loc, v_loc = hamiltonian.local_energy_and_components(
-                    self.ansatz.apply, params_psi, st_next.walkers
+                    self.ansatz.apply,
+                    params_psi,
+                    st_next.walkers,
+                    chunk_size=eloc_chunk_size,
                 )
                 step_out = {
                     "walkers": st_next.walkers,
@@ -658,7 +662,10 @@ class MHSampler1D:
                 )
                 if (global_step % thin) == 0:
                     e_loc, t_loc, v_loc = hamiltonian.local_energy_and_components(
-                        self.ansatz.apply, params_psi, curr_state.walkers
+                        self.ansatz.apply,
+                        params_psi,
+                        curr_state.walkers,
+                        chunk_size=eloc_chunk_size,
                     )
                     walkers_list.append(np.asarray(curr_state.walkers)[None, ...])
                     e_loc_list.append(np.asarray(e_loc)[None, ...])

@@ -1316,4 +1316,22 @@ La auditoría de \texttt{CASSCF\_csv/} confirmó \textbf{24 estados convergidos}
 
 Finalmente, se corrigió la cuarentena ciega sobre $N=10$ para conservar los nuevos estados $b=256$, y se añadieron banderas de ejecución y posprocesado selectivo (\texttt{--systems "N2:all N8:2.0,3.0,5.0 N10:all"}, \texttt{--n-filter}, \texttt{--g-filter}, \texttt{--skip-global-plots}, \texttt{--merge\_summary\_csv}) en \texttt{run\_advisor\_casscf\_pipeline.sh}, \texttt{run\_production\_benchmark\_3pipelines.sh} y \texttt{scripts/analyze\_flips\_vs\_g.py}.
 
+\subsection{Solución al Error \texttt{RESOURCE\_EXHAUSTED} (OOM GPU) en $N=10$ (63,504 Determinantes)}
+
+Al lanzar \texttt{N10\_w0.1\_g1.0} en Baker (\texttt{casscf\_state.npz} con $b=256, \texttt{c0-a10}$, $63{,}504 = 252 \times 252$ determinantes), el evaluador falló en \texttt{sampler.init\_state} con \texttt{RESOURCE\_EXHAUSTED: Out of memory while trying to allocate 2275984712 bytes} ($\approx 2.12\ \mathrm{GiB}$). La causa era la materialización simultánea en \texttt{float64} de los $63{,}504$ pares de determinantes $(\alpha, \beta)$ y sus $127{,}008$ proyecciones $(5, 256) \times (256, 5)$ por caminante en todo el lote (\texttt{batch=128}) dentro de \texttt{jax.vmap(jax.value\_and\_grad(...))}.
+
+Se implementaron cuatro optimizaciones estructurales sin pérdida de exactitud numérica:
+\begin{itemize}
+\item \textbf{Factorización exacta en determinantes únicos por espín (\texttt{rl\_vmc/ansatze/ansatz\_1d.py}):} Mediante \texttt{\_load\_casscf\_npz\_spec} y \texttt{\_unique\_determinants\_with\_map} (compartidos entre \texttt{CASSCF1DAnsatz} y \texttt{MultiSlaterJastrow1DAnsatz}), los $63{,}504$ pares de $N=10$ se factorizan con \texttt{np.unique} en únicamente \textbf{$252$ determinantes $\alpha$ y $252$ determinantes $\beta$ únicos} ($504$ evaluaciones $5\times 5$ totales frente a $127{,}008$: reducción de \textbf{$252\times$}).
+\item \textbf{Proyección única de orbitales moleculares activos (\texttt{\_eval\_spin\_determinants}):} La matriz de base HO $(n_{\mathrm{spin}} \times 256)$ se multiplica una sola vez por espín y caminante contra \texttt{orbitals[:, :n\_mo\_used]} ($5 \times 10$ en $N=10$), reutilizando sus columnas al formar los determinantes únicos. Los tensores de determinantes para \texttt{batch=128} en \texttt{float64} pasan de $\sim 1.63\ \mathrm{GB}$ a \textbf{$6.45\ \mathrm{MB}$} por bloque de espín.
+\item \textbf{Contracción bilineal $\det_\alpha \cdot C \cdot \det_\beta$ (\texttt{\_eval\_factored\_casscf\_logabs}):} Los coeficientes CI se ensamblan en la matriz bilineal $C$ ($252\times 252 \approx 508\ \mathrm{KB}$) cuando $U_\uparrow U_\downarrow \le \max(4K, 131072)$ (con respaldo indexado directo para expansiones más dispersas). Verificaciones en NumPy sobre \texttt{CASSCF\_csv/} confirmaron equivalencia con error máximo $|\Delta \Psi| \le 2.46\times 10^{-27}$ en $N=10$, $7.14\times 10^{-29}$ en $N=8$, $6.48\times 10^{-24}$ en $N=6$ y $2.30\times 10^{-19}$ en $N=4$.
+\item \textbf{Activación efectiva de \texttt{--eloc\_chunk\_size} (\texttt{harmonic\_1d.py}, \texttt{mh\_sampler\_1d.py}, \texttt{runner\_1d.py}):} \texttt{Harmonic1DHamiltonian.local\_energy\_and\_components} incorpora evaluación por bloques con \texttt{jax.lax.scan} cuando \texttt{chunk\_size < batch}, conectada a \texttt{run\_production\_chain} y \texttt{runner\_1d.py} (\texttt{eloc\_chunk\_size=64} en \texttt{run\_advisor\_casscf\_pipeline.sh}) para acotar el pico de VRAM del cálculo de \texttt{jax.hessian} en $N=10$.
+\end{itemize}
+
+Comando recomendado en Baker en segundo plano con \texttt{nohup} tras \texttt{git pull}:
+\begin{verbatim}
+nohup ./run_advisor_casscf_pipeline.sh results_production_3pipelines_baker_new_2 \
+  --systems "N10:all" --keep-n10 --skip-global-plots > out_n10_baker.out 2>&1 &
+\end{verbatim}
+
 \end{document}

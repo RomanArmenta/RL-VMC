@@ -240,7 +240,7 @@ def run_experiment_1d(cfg: Experiment1DConfig) -> str:
     @jax.jit
     def vmc_update_step(p_psi, opt_st, walkers):
         e_loc, t_loc, v_loc = hamiltonian.local_energy_and_components(
-            ansatz.apply, p_psi, walkers
+            ansatz.apply, p_psi, walkers, chunk_size=cfg.eval.eloc_chunk_size
         )
         e_safe = jnp.clip(
             jnp.nan_to_num(e_loc, nan=0.0),
@@ -537,6 +537,7 @@ def run_experiment_1d(cfg: Experiment1DConfig) -> str:
                 thin=cfg.eval.thin,
                 jit_chunk_size=cfg.eval.jit_chunk_size,
                 use_actor=use_actor_eval,
+                eloc_chunk_size=cfg.eval.eloc_chunk_size,
             )
             total_wall_time += res["wall_time_sec"]
             chains_walkers.append(res["walkers"])

@@ -525,6 +525,136 @@ class SlaterJastrow1DAnsatz(BaseAnsatz1D):
         return jax.vmap(single_apply)(x_1d)
 
 
+def _unique_determinants_with_map(occ_arr: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Factoriza filas de orbitales ocupados en determinantes únicos e índice inverso."""
+    if occ_arr.shape[1] == 0:
+        return np.zeros((1, 0), dtype=np.int32), np.zeros((occ_arr.shape[0],), dtype=np.int32)
+    uniq_np, inv_map_np = np.unique(occ_arr, axis=0, return_inverse=True)
+    return np.asarray(uniq_np, dtype=np.int32), np.asarray(inv_map_np, dtype=np.int32)
+
+
+def _load_casscf_npz_spec(
+    npz_path: str,
+    cfg: Experiment1DConfig,
+    default_n_basis: int,
+) -> dict:
+    """
+    Carga y factoriza un estado CASSCF `.npz` por determinantes únicos de espín alpha/beta.
+    En sistemas con espacio activo completo (e.g. N=10, 63,504 determinantes = 252 x 252),
+    reduce la evaluación a U_up + U_dn determinantes únicos (504 en lugar de 127,008).
+    """
+    data = np.load(npz_path, allow_pickle=True)
+    meta = json.loads(str(data["metadata_json"]))
+    m_cfg = meta["config"]
+
+    omega = float(m_cfg.get("omega", cfg.system.omega))
+    n_up = int(m_cfg.get("n_up", cfg.system.n_up))
+    n_dn = int(m_cfg.get("n_down", cfg.system.n_dn))
+    n_basis = int(m_cfg.get("n_basis", default_n_basis))
+
+    match = re.search(r"c(\d+)-a(\d+)", npz_path)
+    fallback_core = int(match.group(1)) if match else 0
+    fallback_active = int(match.group(2)) if match else 2
+    n_core = int(m_cfg.get("n_core", m_cfg.get("n_core_orbitals", fallback_core)))
+    n_active = int(m_cfg.get("n_active_orbitals", m_cfg.get("n_active", fallback_active)))
+
+    orbitals_init = jnp.array(data["orbital_coefficients"])
+    ci_coeffs_init = jnp.array(data["selected_ci_coefficients"])
+    dets = data["selected_ci_determinants"]
+
+    occ_up_list, occ_dn_list = [], []
+    core_idx = list(range(n_core))
+    for d_str in dets:
+        val = int(d_str)
+        act_up = [n_core + i for i in range(n_active) if val & (1 << i)]
+        act_dn = [n_core + i for i in range(n_active) if val & (1 << (n_active + i))]
+        occ_up_list.append(core_idx + act_up)
+        occ_dn_list.append(core_idx + act_dn)
+
+    occ_up_arr = np.asarray(occ_up_list, dtype=np.int32)
+    occ_dn_arr = np.asarray(occ_dn_list, dtype=np.int32)
+    uniq_up_np, up_map_np = _unique_determinants_with_map(occ_up_arr)
+    uniq_dn_np, dn_map_np = _unique_determinants_with_map(occ_dn_arr)
+
+    max_up = int(uniq_up_np.max()) if uniq_up_np.size > 0 else -1
+    max_dn = int(uniq_dn_np.max()) if uniq_dn_np.size > 0 else -1
+    n_mo_used = max(max_up, max_dn) + 1
+    n_uniq_up = int(len(uniq_up_np))
+    n_uniq_dn = int(len(uniq_dn_np))
+    # La forma bilineal det_u @ C @ det_d evita materializar vectores largos de tamaño K por caminante.
+    use_bilinear_ci = (n_uniq_up * n_uniq_dn) <= max(4 * len(occ_up_arr), 131072)
+
+    return {
+        "m_cfg": m_cfg,
+        "omega": omega,
+        "n_up": n_up,
+        "n_dn": n_dn,
+        "n_basis": n_basis,
+        "n_core": n_core,
+        "n_active": n_active,
+        "n_mo_used": n_mo_used,
+        "orbitals_init": orbitals_init,
+        "ci_coeffs_init": ci_coeffs_init,
+        "occ_up_idx": jnp.asarray(occ_up_arr),
+        "occ_dn_idx": jnp.asarray(occ_dn_arr),
+        "uniq_up_idx": jnp.asarray(uniq_up_np),
+        "uniq_dn_idx": jnp.asarray(uniq_dn_np),
+        "up_map": jnp.asarray(up_map_np),
+        "dn_map": jnp.asarray(dn_map_np),
+        "n_uniq_up": n_uniq_up,
+        "n_uniq_dn": n_uniq_dn,
+        "use_bilinear_ci": use_bilinear_ci,
+    }
+
+
+def _eval_spin_determinants(
+    x_spin: jax.Array,
+    orbitals_used: jax.Array,
+    n_spin: int,
+    n_basis: int,
+    omega: float,
+    uniq_idx: jax.Array,
+) -> jax.Array:
+    """Evalúa todos los determinantes únicos de un bloque de espín con una sola proyección MO."""
+    if n_spin == 0:
+        return jnp.ones((uniq_idx.shape[0],), dtype=orbitals_used.dtype)
+    basis = _build_ho_basis_jax(x_spin, n_basis, omega)  # (n_spin, n_basis)
+    mo_vals = basis @ orbitals_used  # (n_spin, n_mo_used)
+    mats = jnp.transpose(mo_vals[:, uniq_idx], (1, 0, 2))  # (U_spin, n_spin, n_spin)
+    return jnp.linalg.det(mats) if n_spin > 1 else mats[:, 0, 0]
+
+
+def _eval_factored_casscf_logabs(
+    x_coord: jax.Array,
+    orbitals_used: jax.Array,
+    n_up: int,
+    n_dn: int,
+    n_basis: int,
+    omega: float,
+    uniq_up_idx: jax.Array,
+    uniq_dn_idx: jax.Array,
+    up_map: jax.Array,
+    dn_map: jax.Array,
+    ci_coeffs: jax.Array,
+    ci_matrix: jax.Array | None,
+) -> jax.Array:
+    """Evalúa log|Psi_CASSCF(x_coord)| factorizado en determinantes únicos alpha y beta."""
+    det_u = _eval_spin_determinants(
+        x_coord[:n_up], orbitals_used, n_up, n_basis, omega, uniq_up_idx
+    )
+    det_d = _eval_spin_determinants(
+        x_coord[n_up:], orbitals_used, n_dn, n_basis, omega, uniq_dn_idx
+    )
+    if ci_matrix is not None:
+        psi_val = jnp.dot(det_u, ci_matrix @ det_d)
+    else:
+        psi_val = jnp.sum(ci_coeffs * det_u[up_map] * det_d[dn_map])
+    tiny_eps = jnp.finfo(psi_val.dtype).tiny
+    log_psi_raw = jnp.log(jnp.abs(psi_val) + tiny_eps)
+    harm_floor_log = -500.0 - 0.5 * omega * jnp.sum(x_coord ** 2)
+    return jnp.clip(jnp.logaddexp(log_psi_raw, harm_floor_log), -2000.0, 1000.0)
+
+
 class CASSCF1DAnsatz(BaseAnsatz1D):
     """
     Función de onda multideterminantal CASSCF 1D cargada desde un archivo `.npz`.
@@ -538,42 +668,25 @@ class CASSCF1DAnsatz(BaseAnsatz1D):
         if not npz_path:
             raise ValueError("CASSCF1DAnsatz requiere especificar `--casscf_npz_path`.")
 
-        data = np.load(npz_path)
-        meta = json.loads(str(data["metadata_json"]))
-        m_cfg = meta["config"]
-        self.omega = float(m_cfg.get("omega", cfg.system.omega))
-        self.n_up = int(m_cfg.get("n_up", cfg.system.n_up))
-        self.n_dn = int(m_cfg.get("n_down", cfg.system.n_dn))
-        self.n_basis = int(m_cfg.get("n_basis", 8))
-
-        match = re.search(r"c(\d+)-a(\d+)", npz_path)
-        fallback_core = int(match.group(1)) if match else 0
-        fallback_active = int(match.group(2)) if match else 2
-        self.n_core = int(m_cfg.get("n_core", m_cfg.get("n_core_orbitals", fallback_core)))
-        self.n_active = int(
-            m_cfg.get("n_active_orbitals", m_cfg.get("n_active", fallback_active))
-        )
-
-        self.orbitals_init = jnp.array(data["orbital_coefficients"])
-        self.ci_coeffs_init = jnp.array(data["selected_ci_coefficients"])
-        dets = data["selected_ci_determinants"]
-
-        occ_up_list, occ_dn_list = [], []
-        for d_str in dets:
-            val = int(d_str)
-            act_up = [i for i in range(self.n_active) if val & (1 << i)]
-            act_dn = [
-                i for i in range(self.n_active) if val & (1 << (self.n_active + i))
-            ]
-            occ_up_list.append(
-                list(range(self.n_core)) + [self.n_core + i for i in act_up]
-            )
-            occ_dn_list.append(
-                list(range(self.n_core)) + [self.n_core + i for i in act_dn]
-            )
-
-        self.occ_up_idx = jnp.array(occ_up_list)
-        self.occ_dn_idx = jnp.array(occ_dn_list)
+        spec = _load_casscf_npz_spec(npz_path, cfg, default_n_basis=8)
+        self.omega = spec["omega"]
+        self.n_up = spec["n_up"]
+        self.n_dn = spec["n_dn"]
+        self.n_basis = spec["n_basis"]
+        self.n_core = spec["n_core"]
+        self.n_active = spec["n_active"]
+        self.n_mo_used = spec["n_mo_used"]
+        self.orbitals_init = spec["orbitals_init"]
+        self.ci_coeffs_init = spec["ci_coeffs_init"]
+        self.occ_up_idx = spec["occ_up_idx"]
+        self.occ_dn_idx = spec["occ_dn_idx"]
+        self.uniq_up_idx = spec["uniq_up_idx"]
+        self.uniq_dn_idx = spec["uniq_dn_idx"]
+        self.up_map = spec["up_map"]
+        self.dn_map = spec["dn_map"]
+        self.n_uniq_up = spec["n_uniq_up"]
+        self.n_uniq_dn = spec["n_uniq_dn"]
+        self.use_bilinear_ci = spec["use_bilinear_ci"]
 
     def init(self, key: jax.Array, walkers: jax.Array) -> dict:
         return {
@@ -588,32 +701,30 @@ class CASSCF1DAnsatz(BaseAnsatz1D):
         if x_1d.ndim == 1:
             x_1d = x_1d[None, :]
 
-        n_up = self.n_up
-        n_dn = self.n_dn
-        n_basis = self.n_basis
-        omega = self.omega
-        occ_up_idx = self.occ_up_idx
-        occ_dn_idx = self.occ_dn_idx
+        orbitals_used = orbitals[:, : self.n_mo_used]
+        ci_matrix = (
+            jnp.zeros((self.n_uniq_up, self.n_uniq_dn), dtype=ci_coeffs.dtype)
+            .at[self.up_map, self.dn_map]
+            .add(ci_coeffs)
+            if self.use_bilinear_ci
+            else None
+        )
 
         def evaluate_single(x_single: jax.Array) -> jax.Array:
-            x_up, x_dn = x_single[:n_up], x_single[n_up:]
-            basis_up = _build_ho_basis_jax(x_up, n_basis, omega)
-            basis_dn = _build_ho_basis_jax(x_dn, n_basis, omega)
-
-            def eval_det(idx_up, idx_dn, c_i):
-                mat_up = basis_up @ orbitals[:, idx_up]
-                mat_dn = basis_dn @ orbitals[:, idx_dn]
-                det_u = jnp.linalg.det(mat_up) if n_up > 1 else jnp.squeeze(mat_up)
-                det_d = jnp.linalg.det(mat_dn) if n_dn > 1 else jnp.squeeze(mat_dn)
-                return c_i * det_u * det_d
-
-            psi_terms = jax.vmap(eval_det)(occ_up_idx, occ_dn_idx, ci_coeffs)
-            psi_val = jnp.sum(psi_terms)
-            tiny_eps = jnp.finfo(psi_val.dtype).tiny
-            log_psi_raw = jnp.log(jnp.abs(psi_val) + tiny_eps)
-            harm_floor_log = -500.0 - 0.5 * omega * jnp.sum(x_single ** 2)
-            log_psi_safe = jnp.logaddexp(log_psi_raw, harm_floor_log)
-            return jnp.clip(log_psi_safe, -2000.0, 1000.0)
+            return _eval_factored_casscf_logabs(
+                x_single,
+                orbitals_used,
+                self.n_up,
+                self.n_dn,
+                self.n_basis,
+                self.omega,
+                self.uniq_up_idx,
+                self.uniq_dn_idx,
+                self.up_map,
+                self.dn_map,
+                ci_coeffs,
+                ci_matrix,
+            )
 
         return jax.vmap(evaluate_single)(x_1d)
 
@@ -633,43 +744,27 @@ class MultiSlaterJastrow1DAnsatz(BaseAnsatz1D):
         if not npz_path:
             raise ValueError("MultiSlaterJastrow1DAnsatz requiere especificar `--casscf_npz_path`.")
 
-        data = np.load(npz_path, allow_pickle=True)
-        meta = json.loads(str(data["metadata_json"]))
-        m_cfg = meta["config"]
+        spec = _load_casscf_npz_spec(npz_path, cfg, default_n_basis=256)
+        m_cfg = spec["m_cfg"]
+        self.omega = spec["omega"]
+        self.n_up = spec["n_up"]
+        self.n_dn = spec["n_dn"]
+        self.n_basis = spec["n_basis"]
+        self.n_core = spec["n_core"]
+        self.n_active = spec["n_active"]
+        self.n_mo_used = spec["n_mo_used"]
+        self.orbitals_init = spec["orbitals_init"]
+        self.ci_coeffs_init = spec["ci_coeffs_init"]
+        self.occ_up_idx = spec["occ_up_idx"]
+        self.occ_dn_idx = spec["occ_dn_idx"]
+        self.uniq_up_idx = spec["uniq_up_idx"]
+        self.uniq_dn_idx = spec["uniq_dn_idx"]
+        self.up_map = spec["up_map"]
+        self.dn_map = spec["dn_map"]
+        self.n_uniq_up = spec["n_uniq_up"]
+        self.n_uniq_dn = spec["n_uniq_dn"]
+        self.use_bilinear_ci = spec["use_bilinear_ci"]
 
-        self.omega = float(m_cfg.get("omega", cfg.system.omega))
-        self.n_up = int(m_cfg.get("n_up", cfg.system.n_up))
-        self.n_dn = int(m_cfg.get("n_down", cfg.system.n_dn))
-        self.n_basis = int(m_cfg.get("n_basis", 256))
-
-        match = re.search(r"c(\d+)-a(\d+)", npz_path)
-        fallback_core = int(match.group(1)) if match else 0
-        fallback_active = int(match.group(2)) if match else 2
-        self.n_core = int(m_cfg.get("n_core", m_cfg.get("n_core_orbitals", fallback_core)))
-        self.n_active = int(
-            m_cfg.get("n_active_orbitals", m_cfg.get("n_active", fallback_active))
-        )
-
-        self.orbitals_init = jnp.array(data["orbital_coefficients"])
-        self.ci_coeffs_init = jnp.array(data["selected_ci_coefficients"])
-        dets = data["selected_ci_determinants"]
-
-        occ_up_list, occ_dn_list = [], []
-        for d_str in dets:
-            val = int(d_str)
-            act_up = [i for i in range(self.n_active) if val & (1 << i)]
-            act_dn = [
-                i for i in range(self.n_active) if val & (1 << (self.n_active + i))
-            ]
-            occ_up_list.append(
-                list(range(self.n_core)) + [self.n_core + i for i in act_up]
-            )
-            occ_dn_list.append(
-                list(range(self.n_core)) + [self.n_core + i for i in act_dn]
-            )
-
-        self.occ_up_idx = jnp.array(occ_up_list)
-        self.occ_dn_idx = jnp.array(occ_dn_list)
         self.sys_cfg = _System1DSpec(
             n_electrons=self.n_up + self.n_dn,
             n_up=self.n_up,
@@ -713,12 +808,14 @@ class MultiSlaterJastrow1DAnsatz(BaseAnsatz1D):
         if x_1d.ndim == 1:
             x_1d = x_1d[None, :]
 
-        n_up = self.n_up
-        n_dn = self.n_dn
-        n_basis = self.n_basis
-        omega = self.omega
-        occ_up_idx = self.occ_up_idx
-        occ_dn_idx = self.occ_dn_idx
+        orbitals_used = orbitals[:, : self.n_mo_used]
+        ci_matrix = (
+            jnp.zeros((self.n_uniq_up, self.n_uniq_dn), dtype=ci_coeffs.dtype)
+            .at[self.up_map, self.dn_map]
+            .add(ci_coeffs)
+            if self.use_bilinear_ci
+            else None
+        )
 
         def evaluate_single(x_single: jax.Array) -> jax.Array:
             # 1. Deformación de coordenadas por Backflow
@@ -729,24 +826,19 @@ class MultiSlaterJastrow1DAnsatz(BaseAnsatz1D):
             else:
                 x_bf = x_single
 
-            x_up, x_dn = x_bf[:n_up], x_bf[n_up:]
-            basis_up = _build_ho_basis_jax(x_up, n_basis, omega)
-            basis_dn = _build_ho_basis_jax(x_dn, n_basis, omega)
-
-            def eval_det(idx_up, idx_dn, c_i):
-                mat_up = basis_up @ orbitals[:, idx_up]
-                mat_dn = basis_dn @ orbitals[:, idx_dn]
-                det_u = jnp.linalg.det(mat_up) if n_up > 1 else jnp.squeeze(mat_up)
-                det_d = jnp.linalg.det(mat_dn) if n_dn > 1 else jnp.squeeze(mat_dn)
-                return c_i * det_u * det_d
-
-            psi_terms = jax.vmap(eval_det)(occ_up_idx, occ_dn_idx, ci_coeffs)
-            psi_val = jnp.sum(psi_terms)
-            tiny_eps = jnp.finfo(psi_val.dtype).tiny
-            log_psi_raw = jnp.log(jnp.abs(psi_val) + tiny_eps)
-            harm_floor_log = -500.0 - 0.5 * omega * jnp.sum(x_bf ** 2)
-            log_det = jnp.clip(
-                jnp.logaddexp(log_psi_raw, harm_floor_log), -2000.0, 1000.0
+            log_det = _eval_factored_casscf_logabs(
+                x_bf,
+                orbitals_used,
+                self.n_up,
+                self.n_dn,
+                self.n_basis,
+                self.omega,
+                self.uniq_up_idx,
+                self.uniq_dn_idx,
+                self.up_map,
+                self.dn_map,
+                ci_coeffs,
+                ci_matrix,
             )
 
             # 2. Factor de correlación continuo de Jastrow

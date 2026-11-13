@@ -48,10 +48,13 @@ class Harmonic1DHamiltonian:
         ansatz_apply,
         params_psi,
         walkers: jax.Array,
+        chunk_size: int | None = None,
     ) -> tuple[jax.Array, jax.Array, jax.Array]:
         """
         Calcula la energía local E_L(X), energía cinética T_L(X) y potencial V_L(X).
         walkers: shape (batch, n_elec, 1)
+        Si `chunk_size` es menor que `batch`, evalúa la cinética por bloques mediante `jax.lax.scan`
+        para acotar la memoria pico durante el cálculo del Hessiano en sistemas con N grande.
         Retorna: (e_loc, t_loc, v_loc), cada uno de shape (batch,)
         """
         v_loc = self.potential_energy(walkers)
@@ -69,7 +72,25 @@ class Harmonic1DHamiltonian:
             lapl_log = jnp.trace(hess_log)
             return -0.5 * (lapl_log + jnp.sum(grad_log ** 2))
 
-        t_loc = jax.vmap(single_kinetic)(walkers)
+        batch = walkers.shape[0]
+        if chunk_size is not None and 0 < chunk_size < batch:
+            n_full = batch // chunk_size
+            rem = batch % chunk_size
+            blocks = walkers[: n_full * chunk_size].reshape(
+                (n_full, chunk_size) + walkers.shape[1:]
+            )
+            _, t_blocks = jax.lax.scan(
+                lambda _, w_blk: (None, jax.vmap(single_kinetic)(w_blk)),
+                None,
+                blocks,
+            )
+            t_loc = t_blocks.reshape(-1)
+            if rem > 0:
+                t_rem = jax.vmap(single_kinetic)(walkers[n_full * chunk_size :])
+                t_loc = jnp.concatenate([t_loc, t_rem], axis=0)
+        else:
+            t_loc = jax.vmap(single_kinetic)(walkers)
+
         e_loc = t_loc + v_loc
         return e_loc, t_loc, v_loc
 
@@ -78,6 +99,9 @@ class Harmonic1DHamiltonian:
         ansatz_apply,
         params_psi,
         walkers: jax.Array,
+        chunk_size: int | None = None,
     ) -> jax.Array:
-        e_loc, _, _ = self.local_energy_and_components(ansatz_apply, params_psi, walkers)
+        e_loc, _, _ = self.local_energy_and_components(
+            ansatz_apply, params_psi, walkers, chunk_size=chunk_size
+        )
         return e_loc

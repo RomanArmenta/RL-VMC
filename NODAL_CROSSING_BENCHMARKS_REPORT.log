@@ -1,4 +1,4 @@
-This is XeTeX, Version 3.141592653-2.6-0.999996 (TeX Live 2024) (preloaded format=xelatex 2024.6.5)  13 NOV 2026 13:21
+This is XeTeX, Version 3.141592653-2.6-0.999996 (TeX Live 2024) (preloaded format=xelatex 2024.6.5)  13 NOV 2026 15:18
 entering extended mode
  restricted \write18 enabled.
  %&-line parsing enabled.
@@ -1387,22 +1387,52 @@ Package hyperref Warning: Token not allowed in a PDF string (Unicode):
 Package hyperref Warning: Token not allowed in a PDF string (Unicode):
 (hyperref)                removing `math shift' on input line 1306.
 
-[30] (./NODAL_CROSSING_BENCHMARKS_REPORT.aux)
+
+Package hyperref Warning: Token not allowed in a PDF string (Unicode):
+(hyperref)                removing `math shift' on input line 1319.
+
+
+Package hyperref Warning: Token not allowed in a PDF string (Unicode):
+(hyperref)                removing `math shift' on input line 1319.
+
+[30]
+Overfull \hbox (236.818pt too wide) in paragraph at lines 1328--1329
+[]\TU/lmr/bx/n/10 Activación efectiva de \TU/lmtt/b/n/10 --eloc_chunk_size \TU/
+lmr/bx/n/10 (\TU/lmtt/b/n/10 harmonic_1d.py\TU/lmr/bx/n/10 , \TU/lmtt/b/n/10 mh
+_sampler_1d.py\TU/lmr/bx/n/10 , \TU/lmtt/b/n/10 runner_1d.py\TU/lmr/bx/n/10 ): 
+\TU/lmtt/m/n/10 Harmonic1DHamiltonian.local_energy_and_components
+ []
+
+
+Overfull \hbox (46.41422pt too wide) in paragraph at lines 1328--1329
+\TU/lmr/m/n/10 incorpora evaluación por bloques con \TU/lmtt/m/n/10 jax.lax.sca
+n \TU/lmr/m/n/10 cuando \TU/lmtt/m/n/10 chunk_size < batch\TU/lmr/m/n/10 , cone
+ctada a \TU/lmtt/m/n/10 run_production_chain
+ []
+
+
+Overfull \hbox (3.18222pt too wide) in paragraph at lines 1328--1329
+\TU/lmr/m/n/10 y \TU/lmtt/m/n/10 runner_1d.py \TU/lmr/m/n/10 (\TU/lmtt/m/n/10 e
+loc_chunk_size=64 \TU/lmr/m/n/10 en \TU/lmtt/m/n/10 run_advisor_casscf_pipeline
+.sh\TU/lmr/m/n/10 ) para acotar el pico de VRAM
+ []
+
+[31] (./NODAL_CROSSING_BENCHMARKS_REPORT.aux)
  ***********
 LaTeX2e <2023-11-01> patch level 1
 L3 programming layer <2024-02-20>
  ***********
 Package rerunfilecheck Info: File `NODAL_CROSSING_BENCHMARKS_REPORT.out' has no
 t changed.
-(rerunfilecheck)             Checksum: 268B427FE50634CC5793A721E1D20B40;18466.
+(rerunfilecheck)             Checksum: 416F5101BE607271D103A4849D44AB7F;18956.
  ) 
 Here is how much of TeX's memory you used:
- 28563 strings out of 474773
- 561816 string characters out of 5757725
+ 28572 strings out of 474773
+ 562000 string characters out of 5757725
  2026839 words of memory out of 5000000
- 50159 multiletter control sequences out of 15000+600000
- 575422 words of font info for 123 fonts, out of 8000000 for 9000
+ 50165 multiletter control sequences out of 15000+600000
+ 575438 words of font info for 125 fonts, out of 8000000 for 9000
  1348 hyphenation exceptions out of 8191
  84i,14n,117p,1751b,1746s stack positions out of 10000i,1000n,20000p,200000b,200000s
 
-Output written on NODAL_CROSSING_BENCHMARKS_REPORT.pdf (30 pages).
+Output written on NODAL_CROSSING_BENCHMARKS_REPORT.pdf (31 pages).
