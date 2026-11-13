@@ -59,6 +59,13 @@ JOBS_PER_GPU=1
 MAX_TOTAL_JOBS=4
 FIGURE_FORMAT="png"
 FIGURE_DPI=300
+SYSTEMS_FILTER=""
+N_FILTER_STR=""
+G_FILTER_STR=""
+SKIP_GLOBAL_PLOTS=0
+COMPUTE_MISSING_CASSCF=0
+USER_INIT_MODE="randomized_wigner"
+USER_SIGMA_SCALE=""
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -73,6 +80,32 @@ while [ $# -gt 0 ]; do
             ;;
         --keep-n10)
             KEEP_N10=1
+            ;;
+        --systems|--system-filter)
+            shift
+            SYSTEMS_FILTER="${1:-}"
+            ;;
+        --n-filter|--n_filter|--n-list)
+            shift
+            N_FILTER_STR="${1:-}"
+            ;;
+        --g-filter|--g_filter|--g-list)
+            shift
+            G_FILTER_STR="${1:-}"
+            ;;
+        --skip-global-plots|--no-global-plots)
+            SKIP_GLOBAL_PLOTS=1
+            ;;
+        --include-n2|--compute-missing-casscf)
+            COMPUTE_MISSING_CASSCF=1
+            ;;
+        --init-mode)
+            shift
+            USER_INIT_MODE="${1:-randomized_wigner}"
+            ;;
+        --sigma-scale|--sigma-action-scale)
+            shift
+            USER_SIGMA_SCALE="${1:-}"
             ;;
         --advisor-dir)
             shift
@@ -99,7 +132,24 @@ while [ $# -gt 0 ]; do
             FIGURE_DPI="${1:-300}"
             ;;
         -h|--help)
-            echo "Uso: $0 [carpeta_salida] [--gpus 0,1,2,3] [--jobs-per-gpu 1] [--max-jobs 4] [--postprocess-only] [--force-rerun]"
+            cat << 'HELP'
+Uso: ./run_advisor_casscf_pipeline.sh [carpeta_salida] [opciones]
+
+Opciones de ejecución y filtrado selectivo:
+  --systems "N2:all N8:2.0,3.0,5.0 N10:all"  Selección exacta (N, g) por sistema
+  --n-filter "2 8 10"                        Filtrar por lista de N (ej. "8 10")
+  --g-filter "3.0 5.0"                       Filtrar por lista de g
+  --include-n2 / --compute-missing-casscf    Calcular estados CASSCF b=256 faltantes (ej. N=2)
+  --skip-global-plots                        Omitir figuras maestras/globales y actualizar sólo por sistema
+  --keep-n10                                 Conservar N=10 en tablas globales y análisis de flips
+  --postprocess-only                         Regenerar sólo figuras/CSVs sin re-entrenar ni muestrear
+  --force-rerun                              Forzar recálculo completo de los sistemas seleccionados
+  --rerun-failed-traces                      Re-correr sistemas con fallos previos (N=6 g>=2, N>=8)
+  --init-mode <modo>                         Init de entrenamiento (default: randomized_wigner)
+  --sigma-scale <valor>                      Override manual de sigma_action_scale
+  --gpus 0,1,2,3 --jobs-per-gpu 1 --max-jobs 4
+  --figure-format png|pdf|both --dpi 300
+HELP
             exit 0
             ;;
         -*)
@@ -156,7 +206,7 @@ SIGMA_ACTION_SCALE="1.1"
 MAX_PHYS_JUMP_FACTOR="2.0"
 LR_ACTOR="1e-4"
 LR_CRITIC="3e-4"
-INIT_MODE="symmetric_gaussian"
+INIT_MODE="$USER_INIT_MODE"
 INIT_STD="3.0"
 EVAL_INIT_MODE="spin_ordered_offset"
 PLOT_STYLE_ARGS=(--figure_format "$FIGURE_FORMAT" --dpi "$FIGURE_DPI")
@@ -198,8 +248,9 @@ get_system_p2_params() {
             tau="0.10"
             actor_amp="0.14"
         fi
-    else
-        # N=8: movimiento colectivo de 8 electrones en base b=256 (70 dets)
+        sig_scale="1.1"
+    elif [ "$N" -le 8 ]; then
+        # N=7, 8: escala calibrada sig=0.90 para mantener aceptación ~30-45% y máximo ESJD en 8D
         if [ "$is_strong_g" -eq 1 ]; then
             tau="0.06"
             actor_amp="0.08"
@@ -207,6 +258,20 @@ get_system_p2_params() {
             tau="0.08"
             actor_amp="0.10"
         fi
+        sig_scale="0.90"
+    else
+        # N>=9 (N=10): en 10D sig=1.1 colapsa alpha < 15% y degrada ESJD; sig=0.80 mantiene ESJD óptimo
+        if [ "$is_strong_g" -eq 1 ]; then
+            tau="0.06"
+            actor_amp="0.08"
+        else
+            tau="0.07"
+            actor_amp="0.08"
+        fi
+        sig_scale="0.80"
+    fi
+    if [ -n "$USER_SIGMA_SCALE" ]; then
+        sig_scale="$USER_SIGMA_SCALE"
     fi
     echo "$tau $actor_amp $penalty $sig_scale"
 }
@@ -286,6 +351,7 @@ PYEOF
 quarantine_old_system_runs_if_needed() {
     local N="$1"
     local G="$2"
+    read -r TAU ACTOR_AMP PENALTY SIG_SCALE <<< "$(get_system_p2_params "$N" "$G")"
     local G_ALT
     G_ALT=$(python3 -c 'import sys; print(f"{float(sys.argv[1]):g}")' "$G")
     local tag
@@ -293,18 +359,42 @@ quarantine_old_system_runs_if_needed() {
         local SYS_P2="${P2_DIR}/${tag}"
         [ -d "$SYS_P2" ] || continue
 
+        local expected_rl_name="N${N}_w${OMEGA}_g${G}_RL_MALA_tau${TAU}_amp${ACTOR_AMP}_pen${PENALTY}_sig${SIG_SCALE}"
         local needs_quarantine=0
-        if [ "$RERUN_FAILED_TRACES" -eq 1 ] && is_failed_trace_system "$N" "$G"; then
+        if [ "$FORCE_RERUN" -eq 1 ]; then
             needs_quarantine=1
+        fi
+        if [ "$needs_quarantine" -eq 0 ] && [ "$RERUN_FAILED_TRACES" -eq 1 ] && is_failed_trace_system "$N" "$G"; then
+            # En --rerun-failed-traces solo respaldar carpetas RL obsoletas o MALA inválido (preservar MALA b=256 válido si tau coincide)
+            for rld in "$SYS_P2"/*_RL_MALA_*; do
+                [ -d "$rld" ] || continue
+                if [ "$(basename "$rld")" != "$expected_rl_name" ]; then
+                    local ts_rl
+                    ts_rl=$(date "+%Y%m%d_%H%M%S")
+                    mkdir -p "$QUARANTINE_DIR"
+                    echo "  [Quarantine RL] Respaldando RL previo de ${tag}/$(basename "$rld") -> ${QUARANTINE_DIR}/${tag}_RL_${ts_rl}"
+                    mv "$rld" "${QUARANTINE_DIR}/${tag}_$(basename "$rld")_${ts_rl}"
+                fi
+            done
         fi
         for h5f in "$SYS_P2"/*/run_bundle.h5; do
             [ -e "$h5f" ] || continue
-            if [ "$FORCE_RERUN" -eq 1 ] || ! is_h5_completed_with_advisor_b256 "$h5f"; then
+            if ! is_h5_completed_with_advisor_b256 "$h5f"; then
                 needs_quarantine=1
                 break
             fi
+            # Evitar duplicados si existe una carpeta RL previa con distinta sig_scale/amp en el mismo SYS_P2
+            local dname
+            dname=$(basename "$(dirname "$h5f")")
+            if [[ "$dname" == *_RL_MALA_* ]] && [ "$dname" != "$expected_rl_name" ]; then
+                local ts_dup
+                ts_dup=$(date "+%Y%m%d_%H%M%S")
+                mkdir -p "$QUARANTINE_DIR"
+                echo "  [Quarantine RL] Reemplazando RL previo incompatible (${dname}) -> ${QUARANTINE_DIR}/${tag}_${dname}_${ts_dup}"
+                mv "$(dirname "$h5f")" "${QUARANTINE_DIR}/${tag}_${dname}_${ts_dup}"
+            fi
         done
-        # También poner en cuarentena si no hay ningún .h5 completo o si cambió el nombre del tag
+        # También poner en cuarentena si cambió el nombre del tag
         if [ "$needs_quarantine" -eq 0 ] && [ "$tag" != "N${N}_w${OMEGA}_g${G}" ]; then
             needs_quarantine=1
         fi
@@ -314,7 +404,7 @@ quarantine_old_system_runs_if_needed() {
             ts=$(date "+%Y%m%d_%H%M%S")
             local q_dest="${QUARANTINE_DIR}/${tag}_${ts}"
             mkdir -p "$QUARANTINE_DIR"
-            echo "  [Quarantine] Respaldando corrida previa (CASSCF antiguo c1-a4/b48 o --force-rerun) de ${tag} -> ${q_dest}"
+            echo "  [Quarantine] Respaldando corrida previa (CASSCF antiguo o --force-rerun) de ${tag} -> ${q_dest}"
             mv "$SYS_P2" "$q_dest"
             if [ -d "${FIG_P2_DIR}/${tag}" ]; then
                 mv "${FIG_P2_DIR}/${tag}" "${q_dest}/figures_p2" 2>/dev/null || true
@@ -323,15 +413,25 @@ quarantine_old_system_runs_if_needed() {
     done
 }
 
-# Si existen corridas de N=10 con CASSCF truncado c4-a4 que no convergió, moverlas a cuarentena
+# Solo respaldar corridas antiguas de N=10 si NO usaron el estado convergido b=256 del asesor (y no se pidió --keep-n10)
 if [ "$KEEP_N10" -eq 0 ]; then
     for n10_dir in "${P2_DIR}"/N10_w*; do
         [ -d "$n10_dir" ] || continue
-        n10_tag=$(basename "$n10_dir")
-        ts=$(date "+%Y%m%d_%H%M%S")
-        mkdir -p "$QUARANTINE_DIR"
-        echo "[Quarantine] Moviendo sistema ${n10_tag} (CASSCF c4-a4 truncado) a ${QUARANTINE_DIR}/${n10_tag}_${ts}"
-        mv "$n10_dir" "${QUARANTINE_DIR}/${n10_tag}_${ts}"
+        n10_legacy=0
+        for h10 in "$n10_dir"/*/run_bundle.h5; do
+            [ -e "$h10" ] || continue
+            if ! is_h5_completed_with_advisor_b256 "$h10"; then
+                n10_legacy=1
+                break
+            fi
+        done
+        if [ "$n10_legacy" -eq 1 ]; then
+            n10_tag=$(basename "$n10_dir")
+            ts=$(date "+%Y%m%d_%H%M%S")
+            mkdir -p "$QUARANTINE_DIR"
+            echo "[Quarantine] Moviendo sistema ${n10_tag} (CASSCF antiguo truncado) a ${QUARANTINE_DIR}/${n10_tag}_${ts}"
+            mv "$n10_dir" "${QUARANTINE_DIR}/${n10_tag}_${ts}"
+        fi
     done
 fi
 
@@ -339,26 +439,81 @@ echo "==========================================================================
 echo " PIPELINE DE PRODUCCIÓN CON ESTADOS CASSCF CONVERGIDOS DEL ASESOR (b=256)"
 echo " Carpeta de entrada CASSCF : $ADVISOR_DIR"
 echo " Carpeta raíz de resultados: $BASE_OUT_DIR"
+echo " Init entrenamiento / eval : $INIT_MODE -> $EVAL_INIT_MODE (eval_burn_in=${EVAL_BURN_IN})"
 echo " GPUs detectadas           : ${AVAILABLE_GPUS[*]} (máx $MAX_TOTAL_JOBS trabajos simultáneos)"
+if [ -n "$SYSTEMS_FILTER" ] || [ -n "$N_FILTER_STR" ] || [ -n "$G_FILTER_STR" ]; then
+    echo " Filtro selectivo          : systems='${SYSTEMS_FILTER}' | N='${N_FILTER_STR}' | g='${G_FILTER_STR}'"
+fi
 echo "=============================================================================="
 
-# Descubrir automáticamente todos los pares (N, g, npz_path) en CASSCF_csv
+# Descubrir pares (N, g, npz_path) en CASSCF_csv, agregar N=2 si se solicita y aplicar filtros selectivos
 SYSTEM_RECORDS=()
 while IFS= read -r line; do
     [ -n "$line" ] && SYSTEM_RECORDS+=("$line")
-done < <(python3 - "$ADVISOR_DIR" << 'PYEOF'
-import sys, glob, json, zipfile
+done < <(python3 - "$ADVISOR_DIR" "$SYSTEMS_FILTER" "$N_FILTER_STR" "$G_FILTER_STR" "$COMPUTE_MISSING_CASSCF" << 'PYEOF'
+import sys, json, re, zipfile
 from pathlib import Path
 
 adv_dir = Path(sys.argv[1])
+systems_spec = sys.argv[2].strip()
+n_filter_str = sys.argv[3].strip()
+g_filter_str = sys.argv[4].strip()
+compute_missing = int(sys.argv[5])
+
+def parse_systems(spec: str):
+    if not spec:
+        return None
+    mp = {}
+    for tok in re.split(r"[\s;]+", spec):
+        if not tok:
+            continue
+        m_tag = re.match(r"^N(\d+)_w[0-9.]+_g([0-9.]+)$", tok, flags=re.IGNORECASE)
+        if m_tag:
+            n_v, g_v = int(m_tag.group(1)), float(m_tag.group(2))
+            if mp.get(n_v) is not None:
+                mp.setdefault(n_v, []).append(g_v)
+            continue
+        if ":" in tok:
+            n_p, g_p = tok.split(":", 1)
+            n_v = int(re.sub(r"^[Nn]", "", n_p.strip()))
+            if g_p.strip().lower() in ("all", "*"):
+                mp[n_v] = None
+            else:
+                gs = [float(x) for x in g_p.split(",") if x.strip()]
+                if n_v in mp and mp[n_v] is None:
+                    continue
+                mp.setdefault(n_v, []).extend(gs)
+        else:
+            n_v = int(re.sub(r"^[Nn]", "", tok.strip()))
+            mp[n_v] = None
+    return mp or None
+
+sys_map = parse_systems(systems_spec)
+n_set = {int(re.sub(r"^[Nn]", "", x)) for x in re.split(r"[\s,;]+", n_filter_str) if x.strip()} if n_filter_str else None
+g_list = [float(x) for x in re.split(r"[\s,;]+", g_filter_str) if x.strip()] if g_filter_str else None
+
+def matches_filter(n_val: int, g_val: float) -> bool:
+    if n_set is not None and n_val not in n_set:
+        return False
+    if g_list is not None and not any(abs(g_val - gf) <= 1e-4 for gf in g_list):
+        return False
+    if sys_map is not None:
+        if n_val not in sys_map:
+            return False
+        gs_allowed = sys_map[n_val]
+        if gs_allowed is not None and not any(abs(g_val - ga) <= 1e-4 for ga in gs_allowed):
+            return False
+    return True
+
+def fmt_g(g_val: float) -> str:
+    return f"{g_val:.1f}" if abs(g_val - round(g_val)) < 1e-9 else f"{g_val:g}"
+
 candidates = list(sorted(adv_dir.glob("*.npz")))
-# Incluir también N=6, g=1.0 b=256 desde figures/ si no estuviera en CASSCF_csv
 fallback_n6_g1 = Path("figures/cas_n6_g1.0_omega0.1_soft0.1_b256_c0-a6_casscf_state_det-20.npz")
 if fallback_n6_g1.exists():
     candidates.append(fallback_n6_g1)
 
-seen_ng = set()
-items = []
+by_ng = {}
 for p in candidates:
     try:
         with zipfile.ZipFile(p, "r") as z:
@@ -368,14 +523,28 @@ for p in candidates:
         cfg = meta.get("config", {})
         n_elec = int(cfg.get("n_up", 0)) + int(cfg.get("n_down", 0))
         g_val = float(cfg.get("g", 0.0))
-        g_str = f"{g_val:.1f}" if abs(g_val - round(g_val)) < 1e-9 else f"{g_val:g}"
-        if (n_elec, round(g_val, 5)) in seen_ng:
-            continue
-        seen_ng.add((n_elec, round(g_val, 5)))
-        items.append((n_elec, g_val, g_str, str(p.resolve())))
+        key = (n_elec, round(g_val, 5))
+        if key not in by_ng:
+            by_ng[key] = (n_elec, g_val, fmt_g(g_val), str(p.resolve()))
     except Exception as e:
         sys.stderr.write(f"[WARN] No se pudo leer {p}: {e}\n")
 
+default_gs = [0.1, 0.5, 1.0, 2.0, 3.0, 5.0, 8.0]
+explicit_n2 = (sys_map is not None and 2 in sys_map) or (n_set is not None and 2 in n_set)
+if compute_missing or explicit_n2:
+    target_ns = sorted(set((sys_map.keys() if sys_map else []) or (n_set if n_set else [2])))
+    if compute_missing and not (sys_map or n_set):
+        target_ns = sorted(set([2] + [k[0] for k in by_ng]))
+    for n_req in target_ns:
+        cand_gs = g_list if g_list is not None else (
+            sys_map[n_req] if (sys_map and n_req in sys_map and sys_map[n_req] is not None) else default_gs
+        )
+        for gv in cand_gs:
+            key = (int(n_req), round(float(gv), 5))
+            if key not in by_ng and (compute_missing or int(n_req) == 2):
+                by_ng[key] = (int(n_req), float(gv), fmt_g(float(gv)), "")
+
+items = [v for v in by_ng.values() if matches_filter(v[0], v[1])]
 items.sort(key=lambda x: (x[0], x[1]))
 for n_elec, _, g_str, path_str in items:
     print(f"{n_elec}|{g_str}|{path_str}")
@@ -383,14 +552,32 @@ PYEOF
 )
 
 if [ "${#SYSTEM_RECORDS[@]}" -eq 0 ]; then
-    echo "[ERROR] No se encontraron archivos .npz válidos en $ADVISOR_DIR" >&2
+    echo "[ERROR] No se encontraron sistemas válidos que coincidan en $ADVISOR_DIR (systems='$SYSTEMS_FILTER', N='$N_FILTER_STR', g='$G_FILTER_STR')" >&2
     exit 1
 fi
 
-echo "[+] Se descubrieron ${#SYSTEM_RECORDS[@]} estados CASSCF convergidos del asesor:"
+HAS_SELECTIVE_FILTER=0
+if [ -n "$SYSTEMS_FILTER" ] || [ -n "$N_FILTER_STR" ] || [ -n "$G_FILTER_STR" ]; then
+    HAS_SELECTIVE_FILTER=1
+fi
+
+# Si hay estados N=10 convergidos en los registros descubiertos/seleccionados, mantener N=10 automáticamente en Stage 3
+for rec in "${SYSTEM_RECORDS[@]}"; do
+    IFS='|' read -r N _G _NPZ <<< "$rec"
+    if [ "$N" -eq 10 ]; then
+        KEEP_N10=1
+        break
+    fi
+done
+
+echo "[+] Se programaron ${#SYSTEM_RECORDS[@]} sistema(s) CASSCF b=256:"
 for rec in "${SYSTEM_RECORDS[@]}"; do
     IFS='|' read -r N G NPZ_PATH <<< "$rec"
-    echo "    -> N=${N}, g=${G} : $(basename "$NPZ_PATH")"
+    if [ -n "$NPZ_PATH" ]; then
+        echo "    -> N=${N}, g=${G} : $(basename "$NPZ_PATH")"
+    else
+        echo "    -> N=${N}, g=${G} : [A calcular en CPU con b=256, c0]"
+    fi
 done
 
 # ==============================================================================
@@ -399,7 +586,7 @@ done
 if [ "$POSTPROCESS_ONLY" -eq 0 ]; then
     echo ""
     echo "=============================================================================="
-    echo " [ETAPA 1] Instalando estados CASSCF convergidos del asesor en Pipeline 1..."
+    echo " [ETAPA 1] Instalando estados CASSCF convergidos en Pipeline 1..."
     echo "=============================================================================="
     for rec in "${SYSTEM_RECORDS[@]}"; do
         IFS='|' read -r N G NPZ_PATH <<< "$rec"
@@ -412,19 +599,45 @@ if [ "$POSTPROCESS_ONLY" -eq 0 ]; then
 
         quarantine_old_system_runs_if_needed "$N" "$G"
 
-        echo "  -> [Pipeline 1 | ${SYS_TAG}] Instalando $(basename "$NPZ_PATH")..."
-        env CUDA_VISIBLE_DEVICES="" python3 -u cli/run_casscf_1d.py \
-            --n_elec "$N" \
-            --n_up "$N_UP" \
-            --n_dn "$N_DN" \
-            --omega "$OMEGA" \
-            --g "$G" \
-            --advisor_npz_path "$NPZ_PATH" \
-            --outdir "$OUT_CASSCF" \
-            --master_csv "$LIVE_CSV_P1" \
-            --csv_collect_dir "$CSV_COLLECT_DIR" > "$SYS_LOG" 2>&1
+        if [ -n "$NPZ_PATH" ]; then
+            echo "  -> [Pipeline 1 | ${SYS_TAG}] Instalando $(basename "$NPZ_PATH")..."
+            env CUDA_VISIBLE_DEVICES="" python3 -u cli/run_casscf_1d.py \
+                --n_elec "$N" \
+                --n_up "$N_UP" \
+                --n_dn "$N_DN" \
+                --omega "$OMEGA" \
+                --g "$G" \
+                --advisor_npz_path "$NPZ_PATH" \
+                --outdir "$OUT_CASSCF" \
+                --master_csv "$LIVE_CSV_P1" \
+                --csv_collect_dir "$CSV_COLLECT_DIR" > "$SYS_LOG" 2>&1
+        else
+            local_nact=4
+            if [ "$N" -ge 6 ]; then
+                local_nact="$N"
+            fi
+            echo "  -> [Pipeline 1 | ${SYS_TAG}] Calculando CASSCF convergido en CPU (b=256, c0-a${local_nact})..."
+            env CUDA_VISIBLE_DEVICES="" python3 -u cli/run_casscf_1d.py \
+                --n_elec "$N" \
+                --n_up "$N_UP" \
+                --n_dn "$N_DN" \
+                --omega "$OMEGA" \
+                --g "$G" \
+                --softening 0.1 \
+                --n_core 0 \
+                --n_active_orbitals "$local_nact" \
+                --n_basis 256 \
+                --quadrature_order 800 \
+                --casscf_max_iter 2000 \
+                --casscf_energy_tol 1e-9 \
+                --casscf_grad_tol 1e-5 \
+                --outdir "$OUT_CASSCF" \
+                --master_csv "$LIVE_CSV_P1" \
+                --csv_collect_dir "$CSV_COLLECT_DIR" \
+                --reuse_existing --copy_from_advisor_if_available > "$SYS_LOG" 2>&1
+        fi
         if [ $? -ne 0 ] || [ ! -f "${OUT_CASSCF}/casscf_state.npz" ]; then
-            echo "  [ERROR] Falló instalación de CASSCF para ${SYS_TAG}. Ver log: $SYS_LOG" >&2
+            echo "  [ERROR] Falló instalación/cálculo de CASSCF para ${SYS_TAG}. Ver log: $SYS_LOG" >&2
             continue
         fi
 
@@ -517,7 +730,7 @@ run_advisor_p2_worker() {
     mkdir -p "$MALA_DIR" "$RL_DIR" "$COMP_DIR" "$FIG_SYS_P2"
 
     if [ "$POSTPROCESS_ONLY" -eq 0 ]; then
-        if ! is_h5_completed_with_advisor_b256 "$MALA_H5"; then
+        if [ "$FORCE_RERUN" -eq 1 ] || ! is_h5_completed_with_advisor_b256 "$MALA_H5"; then
             echo "[${SYS_TAG} | GPU ${GPU_ID}] Ejecutando MALA (tau=${TAU}) sobre CASSCF b=256..."
             env CUDA_VISIBLE_DEVICES="$GPU_ID" python3 -u cli/run_1d.py \
                 --run_name "P2_MALA_FixedCASSCF_${SYS_TAG}" \
@@ -553,8 +766,8 @@ run_advisor_p2_worker() {
             echo "[${SYS_TAG}] MALA ya completado con CASSCF b=256: $MALA_H5"
         fi
 
-        if ! is_h5_completed_with_advisor_b256 "$RL_H5"; then
-            echo "[${SYS_TAG} | GPU ${GPU_ID}] Ejecutando RL-MALA TD3 (tau=${TAU}, amp=${ACTOR_AMP}, pen=${PENALTY}) sobre CASSCF b=256..."
+        if [ "$FORCE_RERUN" -eq 1 ] || ! is_h5_completed_with_advisor_b256 "$RL_H5"; then
+            echo "[${SYS_TAG} | GPU ${GPU_ID}] Ejecutando RL-MALA TD3 (tau=${TAU}, amp=${ACTOR_AMP}, pen=${PENALTY}, sig=${SIG_SCALE}, init=${INIT_MODE}) sobre CASSCF b=256..."
             env CUDA_VISIBLE_DEVICES="$GPU_ID" python3 -u cli/run_1d.py \
                 --run_name "P2_RL_TD3_FixedCASSCF_${SYS_TAG}" \
                 --pipeline_stage "pipeline2_pure_sampling" \
@@ -670,11 +883,15 @@ for rec in "${SYSTEM_RECORDS[@]}"; do
 done
 
 # ==============================================================================
-# ETAPA 3: RESUMEN GLOBAL Y GRÁFICAS DE FLIPS VS g (N=2, 4, 6, 8)
+# ETAPA 3: RESUMEN GLOBAL Y GRÁFICAS DE FLIPS VS g
 # ==============================================================================
 echo ""
 echo "=============================================================================="
-echo " [ETAPA 3] Generando gráficas globales y análisis de flips vs g (N=2, 4, 6, 8)"
+if [ "$SKIP_GLOBAL_PLOTS" -eq 1 ]; then
+    echo " [ETAPA 3] Modo --skip-global-plots activo: actualizando flips individuales y tabla CSV"
+else
+    echo " [ETAPA 3] Generando gráficas globales y análisis de flips vs g"
+fi
 echo "=============================================================================="
 
 python3 - "$LIVE_CSV_P2_COMP" "$LIVE_CSV_ALL_MODELS" "$CSV_COLLECT_DIR" "$KEEP_N10" << 'PYEOF' || true
@@ -692,16 +909,36 @@ if os.path.exists(p2_csv) and os.path.getsize(p2_csv) > 0:
         atomic_copy_file(out_csv, os.path.join(collect_dir, os.path.basename(out_csv)))
 PYEOF
 
-if [ -f "$LIVE_CSV_ALL_MODELS" ] && [ -s "$LIVE_CSV_ALL_MODELS" ]; then
+if [ "$SKIP_GLOBAL_PLOTS" -eq 0 ] && [ -f "$LIVE_CSV_ALL_MODELS" ] && [ -s "$LIVE_CSV_ALL_MODELS" ]; then
     env CUDA_VISIBLE_DEVICES="" JAX_PLATFORMS=cpu python3 -u scripts/plot_benchmark_all_models_summary.py \
         --csv "$LIVE_CSV_ALL_MODELS" \
         --out_dir "$FIG_ALL_MODELS_DIR" \
         "${PLOT_STYLE_ARGS[@]}" || true
 fi
 
-FLIPS_FILTER_ARGS=(--n_filter 2 4 6 8)
-if [ "$KEEP_N10" -eq 1 ]; then
-    FLIPS_FILTER_ARGS=()
+FLIPS_FILTER_ARGS=()
+if [ "$HAS_SELECTIVE_FILTER" -eq 1 ]; then
+    if [ -n "$SYSTEMS_FILTER" ]; then
+        read -r -a _sys_toks <<< "${SYSTEMS_FILTER//;/ }"
+        FLIPS_FILTER_ARGS+=(--systems "${_sys_toks[@]}")
+    fi
+    if [ -n "$N_FILTER_STR" ]; then
+        _nf_clean="${N_FILTER_STR//,/ }"
+        read -r -a _nf_toks <<< "$_nf_clean"
+        FLIPS_FILTER_ARGS+=(--n_filter "${_nf_toks[@]}")
+    fi
+    if [ -n "$G_FILTER_STR" ]; then
+        _gf_clean="${G_FILTER_STR//,/ }"
+        read -r -a _gf_toks <<< "$_gf_clean"
+        FLIPS_FILTER_ARGS+=(--g_filter "${_gf_toks[@]}")
+    fi
+    FLIPS_FILTER_ARGS+=(--merge_summary_csv)
+elif [ "$KEEP_N10" -eq 0 ]; then
+    FLIPS_FILTER_ARGS=(--n_filter 2 4 6 8)
+fi
+
+if [ "$SKIP_GLOBAL_PLOTS" -eq 1 ]; then
+    FLIPS_FILTER_ARGS+=(--skip_summary_plots)
 fi
 
 env CUDA_VISIBLE_DEVICES="" JAX_PLATFORMS=cpu python3 -u scripts/analyze_flips_vs_g.py \

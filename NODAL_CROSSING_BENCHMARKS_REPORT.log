@@ -1,4 +1,4 @@
-This is XeTeX, Version 3.141592653-2.6-0.999996 (TeX Live 2024) (preloaded format=xelatex 2024.6.5)  11 NOV 2026 16:14
+This is XeTeX, Version 3.141592653-2.6-0.999996 (TeX Live 2024) (preloaded format=xelatex 2024.6.5)  13 NOV 2026 13:21
 entering extended mode
  restricted \write18 enabled.
  %&-line parsing enabled.
@@ -1320,22 +1320,89 @@ Overfull \hbox (18.88995pt too wide) in paragraph at lines 1189--1190
  [][] 
  []
 
-[28] (./NODAL_CROSSING_BENCHMARKS_REPORT.aux)
+
+Overfull \hbox (32.05421pt too wide) in paragraph at lines 1221--1222
+\TU/lmr/m/n/10 Tras corregir el piso numérico \TU/lmtt/m/n/10 1e-15 \TU/lmr/m/n
+/10 en \TU/lmtt/m/n/10 CASSCF1DAnsatz\TU/lmr/m/n/10 , actualizar la inicializac
+ión de evaluación a \TU/lmtt/m/n/10 spin_ordered_offset
+ []
+
+
+Package hyperref Warning: Token not allowed in a PDF string (Unicode):
+(hyperref)                removing `math shift' on input line 1223.
+
+
+Package hyperref Warning: Token not allowed in a PDF string (Unicode):
+(hyperref)                removing `math shift' on input line 1223.
+
+
+Package hyperref Warning: Token not allowed in a PDF string (Unicode):
+(hyperref)                removing `math shift' on input line 1223.
+
+
+Package hyperref Warning: Token not allowed in a PDF string (Unicode):
+(hyperref)                removing `math shift' on input line 1223.
+
+[28]
+
+Package hyperref Warning: Token not allowed in a PDF string (Unicode):
+(hyperref)                removing `math shift' on input line 1288.
+
+
+Package hyperref Warning: Token not allowed in a PDF string (Unicode):
+(hyperref)                removing `math shift' on input line 1288.
+
+
+Package hyperref Warning: Token not allowed in a PDF string (Unicode):
+(hyperref)                removing `math shift' on input line 1288.
+
+
+Package hyperref Warning: Token not allowed in a PDF string (Unicode):
+(hyperref)                removing `\ge' on input line 1288.
+
+
+Package hyperref Warning: Token not allowed in a PDF string (Unicode):
+(hyperref)                removing `math shift' on input line 1288.
+
+
+Overfull \hbox (16.86732pt too wide) in paragraph at lines 1293--1294
+[]\TU/lmr/bx/n/10 Trampa nodal inicial durante el entrenamiento (\TU/lmtt/b/n/1
+0 INIT_MODE="symmetric_gaussian"\TU/lmr/bx/n/10 )\TU/lmr/m/n/10 : Con \TU/lmtt/
+m/n/10 init_std=3.0
+ []
+
+
+Overfull \hbox (68.07423pt too wide) in paragraph at lines 1299--1300
+\TU/lmtt/m/n/10 rl_vmc/config.py\TU/lmr/m/n/10 , fijándolo como nuevo default \
+TU/lmtt/m/n/10 INIT_MODE="randomized_wigner" \TU/lmr/m/n/10 en \TU/lmtt/m/n/10 
+run_advisor_casscf_pipeline.sh
+ []
+
+[29]
+
+Package hyperref Warning: Token not allowed in a PDF string (Unicode):
+(hyperref)                removing `math shift' on input line 1306.
+
+
+Package hyperref Warning: Token not allowed in a PDF string (Unicode):
+(hyperref)                removing `math shift' on input line 1306.
+
+[30] (./NODAL_CROSSING_BENCHMARKS_REPORT.aux)
  ***********
 LaTeX2e <2023-11-01> patch level 1
 L3 programming layer <2024-02-20>
  ***********
 Package rerunfilecheck Info: File `NODAL_CROSSING_BENCHMARKS_REPORT.out' has no
 t changed.
-(rerunfilecheck)             Checksum: F11B877F6831015C06DD283259CF6D69;16080.
+(rerunfilecheck)             Checksum: 268B427FE50634CC5793A721E1D20B40;18466.
  ) 
 Here is how much of TeX's memory you used:
- 28556 strings out of 474773
- 561667 string characters out of 5757725
+ 28563 strings out of 474773
+ 561816 string characters out of 5757725
  2026839 words of memory out of 5000000
- 50154 multiletter control sequences out of 15000+600000
- 575414 words of font info for 122 fonts, out of 8000000 for 9000
+ 50159 multiletter control sequences out of 15000+600000
+ 575422 words of font info for 123 fonts, out of 8000000 for 9000
  1348 hyphenation exceptions out of 8191
  84i,14n,117p,1751b,1746s stack positions out of 10000i,1000n,20000p,200000b,200000s
 
-Output written on NODAL_CROSSING_BENCHMARKS_REPORT.pdf (28 pages).
+Output written on NODAL_CROSSING_BENCHMARKS_REPORT.pdf (30 pages).

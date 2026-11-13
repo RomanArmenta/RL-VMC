@@ -87,14 +87,16 @@ N_BURN_IN="${N_BURN_IN:-2000}"
 RL_ONLY_STEPS="${RL_ONLY_STEPS:-6000}"
 VMC_COUPLED_STEPS="${VMC_COUPLED_STEPS:-12000}"
 N_EVAL_CHAINS="${N_EVAL_CHAINS:-3}"
-EVAL_BURN_IN="${EVAL_BURN_IN:-200}"
+EVAL_BURN_IN="${EVAL_BURN_IN:-2000}"
 MEASURE_STEPS="${MEASURE_STEPS:-40000}"
-INIT_MODE="${INIT_MODE:-symmetric_gaussian}"
+INIT_MODE="${INIT_MODE:-randomized_wigner}"
 INIT_STD="${INIT_STD:-3.0}"
 EVAL_INIT_MODE="${EVAL_INIT_MODE:-spin_ordered_offset}"
 REWARD_TYPE="${REWARD_TYPE:-cdlb}"
 PENALTY_FACTOR="${PENALTY_FACTOR:-0.25}"
-SIGMA_ACTION_SCALE="${SIGMA_ACTION_SCALE:-1.1}"
+SIGMA_ACTION_SCALE="${SIGMA_ACTION_SCALE:-auto}"
+SYSTEMS_FILTER="${SYSTEMS_FILTER:-}"
+SKIP_GLOBAL_PLOTS="${SKIP_GLOBAL_PLOTS:-0}"
 MAX_PHYS_JUMP_FACTOR="${MAX_PHYS_JUMP_FACTOR:-2.0}"
 LR_ACTOR="${LR_ACTOR:-1e-4}"
 LR_CRITIC="${LR_CRITIC:-3e-4}"
@@ -124,8 +126,29 @@ while [[ $# -gt 0 ]]; do
         --postprocess-only|--postprocess_only|--plots-only) POSTPROCESS_ONLY=1; shift ;;
         --pipelines) PIPELINES_TO_RUN="$2"; shift 2 ;;
         --run-pipeline3|--with-pipeline3) PIPELINES_TO_RUN="1 2 3"; shift ;;
-        --n-list|--n_list) N_LIST="$2"; shift 2 ;;
-        --g-list|--g_list) G_LIST="$2"; shift 2 ;;
+        --n-list|--n_list|--n-filter) N_LIST="$2"; shift 2 ;;
+        --g-list|--g_list|--g-filter) G_LIST="$2"; shift 2 ;;
+        --systems|--system-filter) SYSTEMS_FILTER="$2"; shift 2 ;;
+        --skip-global-plots|--no-global-plots) SKIP_GLOBAL_PLOTS=1; shift ;;
+        --init-mode|--init_mode) INIT_MODE="$2"; shift 2 ;;
+        --sigma-scale|--sigma_action_scale) SIGMA_ACTION_SCALE="$2"; shift 2 ;;
+        -h|--help)
+            cat << 'HELP'
+Uso: ./run_production_benchmark_3pipelines.sh [carpeta_salida] [opciones]
+
+Opciones principales:
+  --systems "N2:all N8:3.0,5.0 N10:all"  Selección no-cartesiana exacta por (N, g)
+  --n-list "2 8 10"                      Lista de N (espacios)
+  --g-list "0.1 0.5 1.0 2.0 3.0 5.0 8.0" Lista de g (espacios)
+  --skip-global-plots                    Omitir gráficas globales vs N y g
+  --pipelines "1 2" | --run-pipeline3    Pipelines a ejecutar
+  --postprocess-only                     Regenerar sólo figuras/CSVs
+  --force-rerun                          Forzar recálculo completo
+  --init-mode <modo>                     Init entrenamiento (default: randomized_wigner)
+  --sigma-scale <valor|auto>             Escala propuesta RL (default: auto por dimensión)
+HELP
+            exit 0
+            ;;
         --figure-format|--figure_format|--format|-f) FIGURE_FORMAT="$2"; shift 2 ;;
         --pdf) FIGURE_FORMAT="pdf"; shift ;;
         --png) FIGURE_FORMAT="png"; shift ;;
@@ -141,6 +164,48 @@ while [[ $# -gt 0 ]]; do
         *) BASE_OUT_DIR="$1"; CSV_COLLECT_DIR="${BASE_OUT_DIR}/results_csv"; shift ;;
     esac
 done
+
+# Si se especificó --systems, derivar automáticamente N_LIST y G_LIST para cubrir exactamente los N y g pedidos
+if [[ -n "$SYSTEMS_FILTER" ]]; then
+    IFS='|' read -r N_LIST G_LIST <<< "$(python3 - "$SYSTEMS_FILTER" "$G_LIST" << 'PYEOF'
+import sys, re
+spec, base_gs = sys.argv[1], sys.argv[2]
+ns, gs = [], [float(x) for x in base_gs.split() if x.strip()]
+seen_n = set()
+seen_g = {round(x, 5) for x in gs}
+for tok in re.split(r"[\s;]+", spec.strip()):
+    if not tok:
+        continue
+    m_tag = re.match(r"^N(\d+)_w[0-9.]+_g([0-9.]+)$", tok, flags=re.IGNORECASE)
+    if m_tag:
+        nv, gv = int(m_tag.group(1)), float(m_tag.group(2))
+        if nv not in seen_n:
+            seen_n.add(nv); ns.append(nv)
+        if round(gv, 5) not in seen_g:
+            seen_g.add(round(gv, 5)); gs.append(gv)
+        continue
+    if ":" in tok:
+        n_p, g_p = tok.split(":", 1)
+        nv = int(re.sub(r"^[Nn]", "", n_p.strip()))
+        if nv not in seen_n:
+            seen_n.add(nv); ns.append(nv)
+        if g_p.strip().lower() not in ("all", "*"):
+            for x in g_p.split(","):
+                if x.strip():
+                    gv = float(x)
+                    if round(gv, 5) not in seen_g:
+                        seen_g.add(round(gv, 5)); gs.append(gv)
+    else:
+        nv = int(re.sub(r"^[Nn]", "", tok.strip()))
+        if nv not in seen_n:
+            seen_n.add(nv); ns.append(nv)
+ns.sort(); gs.sort()
+ns_str = " ".join(str(x) for x in ns)
+gs_str = " ".join(f"{x:.1f}" if abs(x - round(x)) < 1e-9 else f"{x:g}" for x in gs)
+print(f"{ns_str}|{gs_str}")
+PYEOF
+)"
+fi
 
 PLOT_STYLE_ARGS=(
     --figure_format "$FIGURE_FORMAT"
@@ -264,11 +329,12 @@ echo " Espacio libre disco  : ${STARTUP_FREE_MB} MiB (umbral crítico=${CRITICAL
 echo " Pipelines activos    : $PIPELINES_TO_RUN (Postprocess-only=$POSTPROCESS_ONLY)"
 echo " Sistemas N           : $N_LIST"
 echo " Acoplamientos g      : $G_LIST"
+[[ -n "$SYSTEMS_FILTER" ]] && echo " Filtro --systems     : $SYSTEMS_FILTER (skip_global_plots=$SKIP_GLOBAL_PLOTS)"
 echo " Frecuencia omega     : $OMEGA"
 echo " Bases CASSCF (N2/N4+): ${CASSCF_BASIS_N2} / ${CASSCF_BASIS_N4} (quad=${CASSCF_QUAD})"
 echo " GPUs en Pool         : ${AVAILABLE_GPUS[*]} (Trabajos/GPU=$JOBS_PER_GPU, Total=$MAX_TOTAL_JOBS)"
-echo " Muestreo RL-MALA TD3 : reward=${REWARD_TYPE}, sweeps=${RL_ONLY_STEPS}, walkers=${N_WALKERS}"
-echo " Evaluación CruceNod  : init=${EVAL_INIT_MODE}, chains=${N_EVAL_CHAINS}, steps=${MEASURE_STEPS}"
+echo " Muestreo RL-MALA TD3 : reward=${REWARD_TYPE}, sweeps=${RL_ONLY_STEPS}, walkers=${N_WALKERS}, init=${INIT_MODE}, sig=${SIGMA_ACTION_SCALE}"
+echo " Evaluación CruceNod  : init=${EVAL_INIT_MODE}, burn_in=${EVAL_BURN_IN}, chains=${N_EVAL_CHAINS}, steps=${MEASURE_STEPS}"
 echo " Almacenamiento HDF5  : energy=${SAVE_ENERGY_MODE}, walkers=${SAVE_WALKERS_DTYPE} (batch<=${SAVE_WALKERS_MAX_BATCH}), stats=${SAVE_STATS_DTYPE}, legacy=${EXPORT_LEGACY_FILES}"
 echo " Formato de Figuras   : ${FIGURE_FORMAT} @ ${FIGURE_DPI} PPI"
 echo "=============================================================================="
@@ -433,6 +499,9 @@ if collect_dir:
 
 update_global_all_models_figures() {
     local reason_msg="$1"
+    if [ "$SKIP_GLOBAL_PLOTS" -eq 1 ]; then
+        return 0
+    fi
     acquire_global_plot_lock
     local target_csv=""
     local rc=0
@@ -704,6 +773,61 @@ get_system_casscf_params() {
     echo "$n_core $n_act $n_basis $quad $soft"
 }
 
+get_system_wigner_init_offset() {
+    local N=$1
+    local G=$2
+    python3 -c '
+import sys
+N = int(sys.argv[1])
+g = float(sys.argv[2])
+step_pos = round(2.4 * ((1.0 + 1.8 * g) ** 0.28) * ((6.0 / max(N, 2)) ** 0.12), 3)
+base_pos = round(-0.5 * (N - 1) * step_pos, 3)
+print(f"{base_pos} {step_pos}")
+' "$N" "$G"
+}
+
+should_run_system_pair() {
+    local N=$1
+    local G=$2
+    if [[ -z "$SYSTEMS_FILTER" ]]; then
+        return 0
+    fi
+    python3 - "$SYSTEMS_FILTER" "$N" "$G" << 'PYEOF'
+import sys, re
+spec, n_req, g_req = sys.argv[1], int(sys.argv[2]), float(sys.argv[3])
+mp = {}
+for tok in re.split(r"[\s;]+", spec.strip()):
+    if not tok:
+        continue
+    m_tag = re.match(r"^N(\d+)_w[0-9.]+_g([0-9.]+)$", tok, flags=re.IGNORECASE)
+    if m_tag:
+        nv, gv = int(m_tag.group(1)), float(m_tag.group(2))
+        if mp.get(nv) is not None or nv not in mp:
+            mp.setdefault(nv, []).append(gv)
+        continue
+    if ":" in tok:
+        n_p, g_p = tok.split(":", 1)
+        nv = int(re.sub(r"^[Nn]", "", n_p.strip()))
+        if g_p.strip().lower() in ("all", "*"):
+            mp[nv] = None
+        else:
+            gs = [float(x) for x in g_p.split(",") if x.strip()]
+            if nv in mp and mp[nv] is None:
+                continue
+            mp.setdefault(nv, []).extend(gs)
+    else:
+        nv = int(re.sub(r"^[Nn]", "", tok.strip()))
+        mp[nv] = None
+if n_req not in mp:
+    sys.exit(1)
+allowed = mp[n_req]
+if allowed is None or any(abs(g_req - ga) <= 1e-4 for ga in allowed):
+    sys.exit(0)
+sys.exit(1)
+PYEOF
+    return $?
+}
+
 # ------------------------------------------------------------------------------
 # Hiperparámetros Óptimos de Muestreo Puro (MALA vs RL-MALA) calibrados en Baker:
 # Retorna: "TAU ACTOR_AMP PENALTY SIGMA_SCALE"
@@ -714,7 +838,7 @@ get_system_p2_params() {
     local tau="0.10"
     local actor_amp="0.15"
     local penalty="$PENALTY_FACTOR"
-    local sig_scale="$SIGMA_ACTION_SCALE"
+    local sig_scale="1.1"
 
     local is_strong_g
     is_strong_g=$(awk -v g="$G" 'BEGIN { print (g >= 2.5) ? 1 : 0 }')
@@ -726,16 +850,16 @@ get_system_p2_params() {
         else
             actor_amp="0.15"
         fi
+        sig_scale="1.1"
     elif [ "$N" -le 4 ]; then
-        # Calibrado directamente de Wigner_N4_g4.0: tau=0.10, amp=0.10 (g>=2.5) o 0.15 (g<2.5), pen=0.25, sig=1.1
         tau="0.10"
         if [ "$is_strong_g" -eq 1 ]; then
             actor_amp="0.10"
         else
             actor_amp="0.15"
         fi
+        sig_scale="1.1"
     elif [ "$N" -le 6 ]; then
-        # Calibrado directamente de MultiDet_N6_g1.0: tau=0.10, amp=0.15 (g<2.5) y tau=0.08, amp=0.12 (g>=2.5)
         if [ "$is_strong_g" -eq 1 ]; then
             tau="0.08"
             actor_amp="0.12"
@@ -743,14 +867,31 @@ get_system_p2_params() {
             tau="0.10"
             actor_amp="0.15"
         fi
-    else
-        # N=8, 10: movimiento simultáneo de 8-10 electrones requiere tau=0.06 para mantener aceptación ~50%
-        tau="0.06"
+        sig_scale="1.1"
+    elif [ "$N" -le 8 ]; then
+        # N=7, 8: escala calibrada sig=0.90 para evitar colapso de aceptación y preservar ESJD
         if [ "$is_strong_g" -eq 1 ]; then
-            actor_amp="0.10"
+            tau="0.06"
+            actor_amp="0.08"
         else
-            actor_amp="0.12"
+            tau="0.08"
+            actor_amp="0.10"
         fi
+        sig_scale="0.90"
+    else
+        # N>=9 (N=10): sig=0.80 mantiene alpha ~ 30-35% y máximo ESJD en 10D
+        if [ "$is_strong_g" -eq 1 ]; then
+            tau="0.06"
+            actor_amp="0.08"
+        else
+            tau="0.07"
+            actor_amp="0.08"
+        fi
+        sig_scale="0.80"
+    fi
+
+    if [ -n "$SIGMA_ACTION_SCALE" ] && [ "$SIGMA_ACTION_SCALE" != "auto" ]; then
+        sig_scale="$SIGMA_ACTION_SCALE"
     fi
 
     echo "$tau $actor_amp $penalty $sig_scale"
@@ -776,6 +917,7 @@ run_pipeline_1() {
         local N_UP=$((N / 2))
         local N_DN=$((N - N_UP))
         for G in $G_LIST; do
+            should_run_system_pair "$N" "$G" || continue
             read -r NCORE NACT NBASIS QUAD SOFT <<< "$(get_system_casscf_params "$N" "$G")"
             local SYS_TAG="N${N}_w${OMEGA}_g${G}"
             local OUT_CASSCF="${P1_DIR}/${SYS_TAG}"
@@ -846,6 +988,7 @@ run_sistema_pipeline_2() {
     local N_DN=$((N - N_UP))
     read -r NCORE NACT NBASIS QUAD SOFT <<< "$(get_system_casscf_params "$N" "$G")"
     read -r TAU ACTOR_AMP PENALTY SIG_SCALE <<< "$(get_system_p2_params "$N" "$G")"
+    read -r INIT_OFFSET_BASE INIT_OFFSET_STEP <<< "$(get_system_wigner_init_offset "$N" "$G")"
 
     local SYS_TAG="N${N}_w${OMEGA}_g${G}"
     local CASSCF_NPZ="${P1_DIR}/${SYS_TAG}/casscf_state.npz"
@@ -925,6 +1068,8 @@ run_sistema_pipeline_2() {
                         --init_mode "$INIT_MODE" \
                         --init_std "$INIT_STD" \
                         --eval_init_mode "$EVAL_INIT_MODE" \
+                        --init_offset_base "$INIT_OFFSET_BASE" \
+                        --init_offset_step "$INIT_OFFSET_STEP" \
                         --n_eval_chains "$N_EVAL_CHAINS" \
                         --eval_burn_in "$EVAL_BURN_IN" \
                         --measure_steps "$MEASURE_STEPS" \
@@ -986,6 +1131,8 @@ run_sistema_pipeline_2() {
                         --init_mode "$INIT_MODE" \
                         --init_std "$INIT_STD" \
                         --eval_init_mode "$EVAL_INIT_MODE" \
+                        --init_offset_base "$INIT_OFFSET_BASE" \
+                        --init_offset_step "$INIT_OFFSET_STEP" \
                         --n_eval_chains "$N_EVAL_CHAINS" \
                         --eval_burn_in "$EVAL_BURN_IN" \
                         --measure_steps "$MEASURE_STEPS" \
@@ -1114,6 +1261,7 @@ run_pipeline_2() {
 
     for N in $N_LIST; do
         for G in $G_LIST; do
+            should_run_system_pair "$N" "$G" || continue
             local SYS_TAG="N${N}_w${OMEGA}_g${G}"
             local SYS_LOG="p2_sampling_${SYS_TAG}.log"
             wait_for_free_gpu_slot "PIPELINE 2"
@@ -1152,10 +1300,20 @@ EOF
         record_failure "PIPELINE 2 (GLOBAL_PLOTS)" "FINAL_PIPELINE_2" "plot_benchmark_all_models_summary.py falló al cierre de Pipeline 2"
     fi
     if [ -f "${SCRIPT_DIR}/scripts/analyze_flips_vs_g.py" ]; then
-        echo "  [Flips vs g] Generando análisis y gráficas de intercambios topológicos (flips) respecto a N y g..."
+        echo "  [Flips vs g] Generando análisis y gráficas de intercambios topológicos (flips)..."
+        local FLIPS_EXTRA_ARGS=()
+        if [ -n "$SYSTEMS_FILTER" ]; then
+            local _sys_arr=()
+            read -r -a _sys_arr <<< "${SYSTEMS_FILTER//;/ }"
+            FLIPS_EXTRA_ARGS+=(--systems "${_sys_arr[@]}" --merge_summary_csv)
+        fi
+        if [ "$SKIP_GLOBAL_PLOTS" -eq 1 ]; then
+            FLIPS_EXTRA_ARGS+=(--skip_summary_plots)
+        fi
         if ! env CUDA_VISIBLE_DEVICES="" JAX_PLATFORMS=cpu python3 -u "${SCRIPT_DIR}/scripts/analyze_flips_vs_g.py" \
             --root_dir "$BASE_OUT_DIR" \
             --out_dir "${FIG_ROOT_DIR}/flips_analysis" \
+            "${FLIPS_EXTRA_ARGS[@]}" \
             "${PLOT_STYLE_ARGS[@]}"; then
             record_failure "PIPELINE 2 (FLIPS_ANALYSIS)" "FINAL_PIPELINE_2" "scripts/analyze_flips_vs_g.py falló al cierre de Pipeline 2"
         fi
@@ -1176,6 +1334,7 @@ run_sistema_pipeline_3() {
     local N_DN=$((N - N_UP))
     read -r NCORE NACT NBASIS QUAD SOFT <<< "$(get_system_casscf_params "$N" "$G")"
     read -r TAU ACTOR_AMP PENALTY SIG_SCALE <<< "$(get_system_p2_params "$N" "$G")"
+    read -r INIT_OFFSET_BASE INIT_OFFSET_STEP <<< "$(get_system_wigner_init_offset "$N" "$G")"
 
     local SYS_TAG="N${N}_w${OMEGA}_g${G}"
     local CASSCF_NPZ="${P1_DIR}/${SYS_TAG}/casscf_state.npz"
@@ -1216,6 +1375,8 @@ run_sistema_pipeline_3() {
                         --init_mode "$INIT_MODE" \
                         --init_std "$INIT_STD" \
                         --eval_init_mode "$EVAL_INIT_MODE" \
+                        --init_offset_base "$INIT_OFFSET_BASE" \
+                        --init_offset_step "$INIT_OFFSET_STEP" \
                         --n_eval_chains "$N_EVAL_CHAINS" \
                         --eval_burn_in "$EVAL_BURN_IN" \
                         --measure_steps "$MEASURE_STEPS" \
@@ -1274,6 +1435,8 @@ run_sistema_pipeline_3() {
                         --init_mode "$INIT_MODE" \
                         --init_std "$INIT_STD" \
                         --eval_init_mode "$EVAL_INIT_MODE" \
+                        --init_offset_base "$INIT_OFFSET_BASE" \
+                        --init_offset_step "$INIT_OFFSET_STEP" \
                         --n_eval_chains "$N_EVAL_CHAINS" \
                         --eval_burn_in "$EVAL_BURN_IN" \
                         --measure_steps "$MEASURE_STEPS" \
@@ -1377,6 +1540,7 @@ run_pipeline_3() {
 
     for N in $N_LIST; do
         for G in $G_LIST; do
+            should_run_system_pair "$N" "$G" || continue
             local SYS_TAG="N${N}_w${OMEGA}_g${G}"
             local SYS_LOG="p3_training_${SYS_TAG}.log"
             wait_for_free_gpu_slot "PIPELINE 3"

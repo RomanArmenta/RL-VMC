@@ -1,6 +1,6 @@
 \contentsline {section}{\numberline {1}Marco Teórico: Congelamiento Topológico y Cruce de Barreras Nodales en 1D}{2}{section.1}%
 \contentsline {subsection}{\numberline {1.1}Hamiltoniano Físico y Simetría Exacta de Espín}{2}{subsection.1.1}%
-\contentsline {subsection}{\numberline {1.2}Estructura Nodal y Seudo-Barreras de Wigner}{2}{subsection.1.2}%
+\contentsline {subsection}{\numberline {1.2}Estructura Nodal y Seudo-Barreras de Wigner}{3}{subsection.1.2}%
 \contentsline {section}{\numberline {2}Arquitectura RL-MALA con Actor DeepSet/SchNet y Recompensa CDLB}{3}{section.2}%
 \contentsline {subsection}{\numberline {2.1}Propuesta Neuronal Equivariante (Residual MALA + Escala Adaptativa)}{3}{subsection.2.1}%
 \contentsline {subsection}{\numberline {2.2}Recompensa CDLB (\textit {Clipped Detailed-Balance Log-Barrier}) con Exploración Entrópica}{4}{subsection.2.2}%
@@ -50,3 +50,8 @@
 \contentsline {section}{\numberline {10}Siguiente Frontera Científica: Transfer Learning y Aceleración de VMC ($g=1.0 \to g=2.0$)}{27}{section.10}%
 \contentsline {subsection}{\numberline {10.1}Fundamento Teórico del Aprendizaje por Transferencia en MCMC Cuántico}{27}{subsection.10.1}%
 \contentsline {subsection}{\numberline {10.2}Protocolo Experimental Propuesto: Benchmark de Transferencia $g=1.0 \to g=2.0$}{28}{subsection.10.2}%
+\contentsline {section}{\numberline {11}Resultados de Producción en Baker ($N=6, 8$), Diagnóstico en $N=8$ ($g \ge 2$) y Plan $N=2, 8, 10$}{28}{section.11}%
+\contentsline {subsection}{\numberline {11.1}Referencias CASSCF (\texttt {Pipeline 1}) Verificadas ($N=6$ y $N=8$, \texttt {b=256, c0})}{29}{subsection.11.1}%
+\contentsline {subsection}{\numberline {11.2}Comparación Cuantitativa MALA vs RL-MALA TD3 (\texttt {Pipeline 2}) y Flips Topológicos}{29}{subsection.11.2}%
+\contentsline {subsection}{\numberline {11.3}Diagnóstico de Causa Raíz: Regresión en $N=8$ ($g \ge 2.0$) y Truncamiento de Dominio}{29}{subsection.11.3}%
+\contentsline {subsection}{\numberline {11.4}Auditoría de \texttt {CASSCF\_csv/}, Ejecución Selectiva y Plan para $N=2, 8, 10$}{30}{subsection.11.4}%

@@ -60,6 +60,22 @@ class MHSampler1D:
             offset = jnp.arange(self.n_elec, dtype=target_dtype).reshape(1, self.n_elec, 1) * step_pos
             jitter = jax.random.normal(key, (bs, self.n_elec, 1), dtype=target_dtype) * (0.12 * step_pos)
             walkers = jnp.ones((bs, self.n_elec, 1), dtype=target_dtype) * base_pos + offset + jitter
+        elif mode == "randomized_wigner":
+            # Inicialización cristal de Wigner centrada con permutación aleatoria por caminante:
+            # evita trampas nodales iniciales en N >= 8 (g >= 2) preservando simetría exacta de espín y paridad x <-> -x.
+            step_pos = (
+                2.4
+                * ((1.0 + 1.8 * g) ** 0.28)
+                * ((6.0 / max(float(self.n_elec), 2.0)) ** 0.12)
+                / jnp.sqrt(10.0 * omega)
+            )
+            sites = (
+                jnp.arange(self.n_elec, dtype=target_dtype) - 0.5 * (self.n_elec - 1)
+            ) * step_pos
+            key_perm, key_jit = jax.random.split(key)
+            perm_idx = jnp.argsort(jax.random.uniform(key_perm, (bs, self.n_elec)), axis=-1)
+            jitter = jax.random.normal(key_jit, (bs, self.n_elec, 1), dtype=target_dtype) * (0.12 * step_pos)
+            walkers = sites[perm_idx][:, :, None] + jitter
         elif mode == "alternating_spin":
             n_up = int(self.cfg.system.n_up)
             n_dn = int(self.cfg.system.n_dn)

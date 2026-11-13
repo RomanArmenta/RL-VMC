@@ -154,8 +154,11 @@ def build_argparser() -> argparse.ArgumentParser:
     g_grid.add_argument(
         "--x_max",
         type=float,
-        default=15.0,
-        help="Semiancho del dominio espacial [-x_max, +x_max] en Bohr para histogramas y densidad exacta.",
+        default=None,
+        help=(
+            "Semiancho del dominio espacial [-x_max, +x_max] en Bohr para histogramas y densidad exacta. "
+            "Si es None o <= 0, se auto-expande según la extensión real de los caminantes (como en observables.py)."
+        ),
     )
     g_grid.add_argument(
         "--n_bins",
@@ -880,6 +883,7 @@ def main(argv: Optional[list[str]] = None) -> None:
     # Verificar si tenemos archivos .h5 locales o si usamos --from_postprocess_dir
     valid_h5 = [Path(p) for p in args.inputs if Path(p).exists()]
     pp_fallback_dir = Path(args.from_postprocess_dir) if args.from_postprocess_dir else (out_dir / "postprocess_standard")
+    eff_x_max = float(args.x_max) if (args.x_max is not None and float(args.x_max) > 0.0) else 15.0
 
     if valid_h5:
         # 1. Inspeccionar metadatos del primer .h5 SIN cargar caminantes para resolver la referencia CASSCF primero
@@ -891,6 +895,27 @@ def main(argv: Optional[list[str]] = None) -> None:
         omega = float(sys_meta.get("omega", 0.1))
         g_val = float(sys_meta.get("interaction_strength", 4.0))
         softening = float(sys_meta.get("softening", 0.1))
+
+        # Auto-expandir eff_x_max según la extensión real de los caminantes (evita recorte en N>=8 o N=10)
+        if args.x_max is not None and float(args.x_max) > 0.0:
+            eff_x_max = float(args.x_max)
+        else:
+            eff_x_max = 15.0 if omega <= 0.25 else 8.0
+            try:
+                import h5py
+                for p_h5 in valid_h5:
+                    with h5py.File(p_h5, "r") as fh5:
+                        if "production" in fh5 and "walkers" in fh5["production"]:
+                            w_ds = fh5["production/walkers"]
+                            if w_ds.shape[0] > 0:
+                                step_stride = max(1, int(w_ds.shape[0]) // 2000)
+                                w_sub = np.asarray(w_ds[::step_stride], dtype=np.float64)
+                                if w_sub.size > 0:
+                                    ext = float(np.percentile(np.abs(w_sub), 99.8)) * 1.25
+                                    eff_x_max = max(eff_x_max, float(np.ceil(ext)))
+            except Exception as exc_x:
+                print(f"[Aviso] No se pudo auto-estimar x_max desde HDF5 ({exc_x}); usando {eff_x_max:.1f} Bohr.")
+            print(f"[Grid] Dominio espacial auto-ajustado: [-{eff_x_max:.1f}, +{eff_x_max:.1f}] Bohr")
 
         npz_path = args.casscf_npz_path
         if not npz_path:
@@ -909,7 +934,7 @@ def main(argv: Optional[list[str]] = None) -> None:
         if npz_path and Path(npz_path).exists():
             print(f"[CASSCF] Calculando densidad analítica exacta desde: {npz_path}")
             casscf_ref = compute_exact_casscf_1body_density(
-                npz_path, x_min=-args.x_max, x_max=args.x_max, n_grid=args.n_grid_exact
+                npz_path, x_min=-eff_x_max, x_max=eff_x_max, n_grid=args.n_grid_exact
             )
 
         # 2. Procesar cada archivo .h5 UNO POR UNO liberando inmediatamente los caminantes de la RAM
@@ -974,7 +999,7 @@ def main(argv: Optional[list[str]] = None) -> None:
                 w4d,
                 n_up=n_up,
                 n_dn=n_dn,
-                x_max=args.x_max,
+                x_max=eff_x_max,
                 n_bins=args.n_bins,
                 n_subblocks=args.n_eval_subblocks,
             )
@@ -982,7 +1007,7 @@ def main(argv: Optional[list[str]] = None) -> None:
                 bundle, w4d, stride=args.obs_stride_steps
             )
             walker_trace_data = _precompute_walker_trace_for_bundle(
-                w4d, n_up=n_up, n_dn=n_dn, x_max=args.x_max
+                w4d, n_up=n_up, n_dn=n_dn, x_max=eff_x_max
             )
 
             if casscf_ref is not None:
@@ -1001,7 +1026,7 @@ def main(argv: Optional[list[str]] = None) -> None:
                     rho_tot_exact=rho_tot_ex,
                     rho_up_exact=rho_up_ex,
                     rho_dn_exact=rho_dn_ex,
-                    x_max=args.x_max,
+                    x_max=eff_x_max,
                     n_bins=args.n_bins,
                     stride=args.kl_stride_steps,
                     n_subblocks=args.n_eval_subblocks,
@@ -1122,6 +1147,12 @@ def main(argv: Optional[list[str]] = None) -> None:
             sys.exit(1)
         m0 = models[0]
         omega = m0["omega"]
+        if args.x_max is None or float(args.x_max) <= 0.0:
+            eff_x_max = 15.0 if omega <= 0.25 else 8.0
+            for m_fb in models:
+                x_m = m_fb.get("densities", {}).get("x")
+                if x_m is not None and len(x_m) > 0:
+                    eff_x_max = max(eff_x_max, float(np.ceil(np.max(np.abs(x_m)))))
     else:
         print("[Error] No se encontraron archivos .h5 ni directorio postprocess_standard.")
         sys.exit(1)
@@ -1267,7 +1298,7 @@ def main(argv: Optional[list[str]] = None) -> None:
             ax.plot(x_grid, v_scaled, "--", color="gray", alpha=0.4, label="Harmonic Trap (Scaled)")
             ax.set_title(title, fontsize=12.0, fontweight="bold")
             ax.set_xlabel("x (Bohr)", fontsize=11.5)
-            ax.set_xlim(-args.x_max, args.x_max)
+            ax.set_xlim(-eff_x_max, eff_x_max)
             if idx % ncols == 0:
                 ax.set_ylabel("One-Body Density ρ(x)", fontsize=11.5)
             ax.grid(True, alpha=0.25)

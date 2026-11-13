@@ -1768,6 +1768,34 @@ def build_arg_parser() -> argparse.ArgumentParser:
         default=None,
         help="Filtrar únicamente sistemas con N en esta lista (ej. --n_filter 2 4 6 8).",
     )
+    p.add_argument(
+        "--g_filter",
+        type=float,
+        nargs="+",
+        default=None,
+        help="Filtrar únicamente sistemas con g en esta lista (ej. --g_filter 2.0 3.0 5.0).",
+    )
+    p.add_argument(
+        "--systems",
+        "--system_filter",
+        dest="systems_filter",
+        nargs="+",
+        default=None,
+        help=(
+            "Filtro selectivo por sistema exacto o por par N:g "
+            "(ej. --systems N2:all N8:3.0,5.0 N10:all o N8_w0.1_g3.0)."
+        ),
+    )
+    p.add_argument(
+        "--skip_summary_plots",
+        action="store_true",
+        help="Omitir gráficas agregadas (per_N y maestra global); útil al actualizar sólo sistemas individuales.",
+    )
+    p.add_argument(
+        "--merge_summary_csv",
+        action="store_true",
+        help="Combinar/actualizar filas filtradas dentro del flips_vs_g_summary.csv existente en lugar de sobrescribirlo.",
+    )
     p.add_argument("--figure_format", choices=["png", "pdf", "both"], default="png", help="Formato de exportación de figuras.")
     p.add_argument("--dpi", type=int, default=300, help="Resolución en PPI/DPI para PNG.")
     p.add_argument("--font_scale", type=float, default=1.0, help="Factor de escala para tamaños de fuente.")
@@ -1779,9 +1807,64 @@ def build_arg_parser() -> argparse.ArgumentParser:
     return p
 
 
+def _parse_systems_filter(tokens: Optional[List[str]]) -> Optional[Dict[int, Optional[List[float]]]]:
+    """Convierte especificaciones como ['N2:all', 'N8:3.0,5.0', 'N10_w0.1_g5.0'] en {N: [gs] | None}."""
+    if not tokens:
+        return None
+    mapping: Dict[int, Optional[List[float]]] = {}
+    for raw in tokens:
+        for tok in re.split(r"[\s;]+", str(raw).strip()):
+            if not tok:
+                continue
+            m_tag = re.match(r"^N(\d+)_w[0-9.]+_g([0-9.]+)$", tok, flags=re.IGNORECASE)
+            if m_tag:
+                n_v = int(m_tag.group(1))
+                g_v = float(m_tag.group(2))
+                cur = mapping.get(n_v, [])
+                if cur is not None:
+                    mapping[n_v] = [*cur, g_v]
+                continue
+            if ":" in tok:
+                n_part, g_part = tok.split(":", 1)
+                n_v = int(re.sub(r"^[Nn]", "", n_part.strip()))
+                if g_part.strip().lower() in ("all", "*"):
+                    mapping[n_v] = None
+                else:
+                    gs = [float(x) for x in g_part.split(",") if x.strip()]
+                    if n_v in mapping and mapping[n_v] is None:
+                        continue
+                    cur = mapping.get(n_v, []) or []
+                    mapping[n_v] = [*cur, *gs]
+            else:
+                n_v = int(re.sub(r"^[Nn]", "", tok.strip()))
+                mapping[n_v] = None
+    return mapping or None
+
+
+def _matches_ng_filter(
+    n_val: int,
+    g_val: float,
+    n_filter: Optional[List[int]],
+    g_filter: Optional[List[float]],
+    systems_map: Optional[Dict[int, Optional[List[float]]]],
+) -> bool:
+    if n_filter is not None and int(n_val) not in set(int(x) for x in n_filter):
+        return False
+    if g_filter is not None and not any(abs(float(g_val) - float(gf)) <= 1e-4 for gf in g_filter):
+        return False
+    if systems_map is not None:
+        if int(n_val) not in systems_map:
+            return False
+        g_allowed = systems_map[int(n_val)]
+        if g_allowed is not None and not any(abs(float(g_val) - float(ga)) <= 1e-4 for ga in g_allowed):
+            return False
+    return True
+
+
 def main(argv: Optional[List[str]] = None) -> int:
     parser = build_arg_parser()
     args = parser.parse_args(argv)
+    systems_map = _parse_systems_filter(args.systems_filter)
 
     root_dir = os.path.abspath(args.root_dir_flag if args.root_dir_flag else args.root_dir)
     if not os.path.exists(root_dir):
@@ -1797,6 +1880,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     print(f" Carpeta raíz de entrada : {root_dir}")
     print(f" Carpeta de salida       : {out_dir}")
     print(f" Histéresis (eta * d_adj): eta = {args.hysteresis_frac:.2f}")
+    if args.n_filter or args.g_filter or systems_map:
+        print(f" Filtros activos         : n={args.n_filter} | g={args.g_filter} | systems={args.systems_filter}")
     print("==============================================================================")
 
     records: List[Dict[str, Any]] = []
@@ -1806,7 +1891,9 @@ def main(argv: Optional[List[str]] = None) -> int:
         print(f"[+] Modo --only_summary_plots: cargando tabla existente {out_csv}")
         with open(out_csv, "r", encoding="utf-8") as f:
             for r in csv.DictReader(f):
-                if args.n_filter is not None and _safe_int(r.get("N"), 0) not in set(args.n_filter):
+                n_r = _safe_int(r.get("N"), 0)
+                g_r = _safe_float(r.get("g"), float("nan"))
+                if not _matches_ng_filter(n_r, g_r, args.n_filter, args.g_filter, systems_map):
                     continue
                 summary_rows.append(dict(r))
     else:
@@ -1815,12 +1902,32 @@ def main(argv: Optional[List[str]] = None) -> int:
             print(f"[ERROR] No se encontraron archivos run_bundle*.h5 dentro de: {root_dir}", file=sys.stderr)
             return 2
 
+        # Pre-filtrar por ruta para evitar leer tensores pesados de sistemas excluidos
+        if args.n_filter or args.g_filter or systems_map:
+            filtered_paths = []
+            for p_cand in h5_paths:
+                n_p, _, g_p = _parse_n_omega_g_from_text(p_cand)
+                if n_p is not None and g_p is not None:
+                    if not _matches_ng_filter(n_p, g_p, args.n_filter, args.g_filter, systems_map):
+                        continue
+                filtered_paths.append(p_cand)
+            h5_paths = filtered_paths
+
         print(f"[+] Se descubrieron {len(h5_paths)} bundles HDF5 para analizar.")
         csv_lookup = _load_csv_lookup_tables(root_dir)
 
         for idx, h5p in enumerate(h5_paths, start=1):
             try:
                 bundle_info = load_bundle_walkers_and_meta(h5p)
+                if not _matches_ng_filter(
+                    int(bundle_info["N"]),
+                    float(bundle_info["g"]),
+                    args.n_filter,
+                    args.g_filter,
+                    systems_map,
+                ):
+                    del bundle_info["walkers"]
+                    continue
                 stats = compute_flip_statistics(
                     bundle_info["walkers"],
                     n_up=bundle_info["n_up"],
@@ -1854,8 +1961,6 @@ def main(argv: Optional[List[str]] = None) -> int:
                     bundle_info["ESJD"] = stats["empirical_esjd"]
 
                 bundle_info["stats"] = stats
-                if args.n_filter is not None and int(bundle_info["N"]) not in set(args.n_filter):
-                    continue
                 records.append(bundle_info)
 
                 row_csv = {
@@ -1920,6 +2025,27 @@ def main(argv: Optional[List[str]] = None) -> int:
             print("[ERROR] Ningún archivo HDF5 pudo ser procesado exitosamente.", file=sys.stderr)
             return 3
 
+        if args.merge_summary_csv and os.path.isfile(out_csv) and os.path.getsize(out_csv) > 0:
+            merged_map: Dict[Tuple[str, int, float, str], Dict[str, Any]] = {}
+            with open(out_csv, "r", encoding="utf-8") as f_old:
+                for old_r in csv.DictReader(f_old):
+                    k_old = (
+                        str(old_r.get("pipeline", "P2")),
+                        _safe_int(old_r.get("N"), 0),
+                        round(_safe_float(old_r.get("g"), 0.0), 6),
+                        str(old_r.get("method", "")),
+                    )
+                    merged_map[k_old] = dict(old_r)
+            for new_r in summary_rows:
+                k_new = (
+                    str(new_r.get("pipeline", "P2")),
+                    _safe_int(new_r.get("N"), 0),
+                    round(_safe_float(new_r.get("g"), 0.0), 6),
+                    str(new_r.get("method", "")),
+                )
+                merged_map[k_new] = new_r
+            summary_rows = list(merged_map.values())
+
         # Ordenar filas por pipeline, N, g, method
         summary_rows.sort(key=lambda r: (str(r["pipeline"]), _safe_int(r.get("N"), 0), _safe_float(r.get("g"), 0.0), str(r["method"])))
         fieldnames = list(summary_rows[0].keys())
@@ -1968,25 +2094,26 @@ def main(argv: Optional[List[str]] = None) -> int:
                     except Exception:
                         pass
 
-    # 2. Graficar evolución vs g para cada N
-    per_n_dir = os.path.join(out_dir, "per_N")
-    pipelines_present = sorted(set(str(r.get("pipeline", "P2")) for r in summary_rows))
-    for pipe in pipelines_present:
-        n_present = sorted(set(_safe_int(r.get("N"), 0) for r in summary_rows if str(r.get("pipeline", "P2")) == pipe and _safe_int(r.get("N"), 0) > 0))
-        for n_val in n_present:
-            rows_n = [r for r in summary_rows if str(r.get("pipeline", "P2")) == pipe and _safe_int(r.get("N"), 0) == n_val]
-            plot_flips_vs_g_for_N(rows_n, n_val, pipe, per_n_dir, args)
+    if not args.skip_summary_plots:
+        # 2. Graficar evolución vs g para cada N
+        per_n_dir = os.path.join(out_dir, "per_N")
+        pipelines_present = sorted(set(str(r.get("pipeline", "P2")) for r in summary_rows))
+        for pipe in pipelines_present:
+            n_present = sorted(set(_safe_int(r.get("N"), 0) for r in summary_rows if str(r.get("pipeline", "P2")) == pipe and _safe_int(r.get("N"), 0) > 0))
+            for n_val in n_present:
+                rows_n = [r for r in summary_rows if str(r.get("pipeline", "P2")) == pipe and _safe_int(r.get("N"), 0) == n_val]
+                plot_flips_vs_g_for_N(rows_n, n_val, pipe, per_n_dir, args)
 
-        # 3. Figura maestra con todos los N vs g
-        saved_master = plot_master_all_N_flips_vs_g(summary_rows, pipe, out_dir, args)
-        all_models_fig_dir = os.path.join(root_dir, "figures", "all_models_vs_N_and_g")
-        if os.path.isdir(all_models_fig_dir):
-            for sp in saved_master:
-                try:
-                    import shutil
-                    shutil.copy2(sp, os.path.join(all_models_fig_dir, os.path.basename(sp)))
-                except Exception:
-                    pass
+            # 3. Figura maestra con todos los N vs g
+            saved_master = plot_master_all_N_flips_vs_g(summary_rows, pipe, out_dir, args)
+            all_models_fig_dir = os.path.join(root_dir, "figures", "all_models_vs_N_and_g")
+            if os.path.isdir(all_models_fig_dir):
+                for sp in saved_master:
+                    try:
+                        import shutil
+                        shutil.copy2(sp, os.path.join(all_models_fig_dir, os.path.basename(sp)))
+                    except Exception:
+                        pass
 
     print("==============================================================================")
     print(" ANÁLISIS DE FLIPS FINALIZADO EXITOSAMENTE")

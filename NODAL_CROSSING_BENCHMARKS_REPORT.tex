@@ -1216,9 +1216,104 @@ Proponemos una secuencia experimental de tres etapas rigurosamente cuantificable
 \item Utilizar el sampler transferido y adaptado en tiempo real para generar las muestras de Monte Carlo reduce drásticamente el tiempo de autocorrelación $\tau_{\mathrm{int}}(E)$, permitiendo reducir el número de pasos de muestreo requeridos por iteración en un factor de $3\times$ a $5\times$.
 \end{itemize}
 
+\section{\texorpdfstring{Resultados de Producción en Baker ($N=6, 8$), Diagnóstico en $N=8$ ($g \ge 2$) y Plan $N=2, 8, 10$}{Resultados de Produccion en Baker (N=6, 8), Diagnostico N=8 (g >= 2) y Plan N=2, 8, 10}}
 
+Tras corregir el piso numérico \texttt{1e-15} en \texttt{CASSCF1DAnsatz}, actualizar la inicialización de evaluación a \texttt{spin\_ordered\_offset} y utilizar las funciones de onda convergidas del asesor ($N_{\mathrm{basis}}=256, N_{\mathrm{core}}=0, N_{\mathrm{quad}}=800$), se completó la corrida de producción en Baker para $N=6$ ($g \in \{0.1, 0.5, 1.0, 2.0, 3.0, 5.0, 8.0\}$) y $N=8$ ($g \in \{0.1, 0.5, 1.0, 2.0, 3.0, 5.0\}$) en \texttt{results\_production\_3pipelines\_baker\_N6\_N8/}. \textbf{Los 13 estados de referencia del Pipeline 1 y todas las corridas del Pipeline 2 finalizaron sin fugas brownianas ni errores de convergencia.}
 
+\subsection{Referencias CASSCF (\texttt{Pipeline 1}) Verificadas ($N=6$ y $N=8$, \texttt{b=256, c0})}
 
+Todos los estados instalados desde \texttt{CASSCF\_csv/} reportaron \texttt{converged=True}, $E_{\mathrm{core}}=0.0$ y $\omega=0.1, \eta_{\mathrm{soft}}=0.1$:
 
+\begin{table}[H]
+\centering
+\begin{adjustbox}{max width=\textwidth}
+\begin{tabular}{cccccc}
+\toprule
+$N$ & $g$ & Determinantes & $E_{\mathrm{CASSCF}}$ ($E_h$) & Radio RMS Exacto (Bohr) & Iteraciones L-BFGS \\
+\midrule
+6 & 0.1 & 6 / 400 & 1.58992883 & 4.4847 & 431 \\
+6 & 0.5 & 20 / 400 & 3.28187523 & 6.5724 & 56 \\
+6 & 1.0 & 20 / 400 & 4.52405213 & 7.3649 & 71 \\
+6 & 2.0 & 20 / 400 & 6.57676356 & 8.3981 & 99 \\
+6 & 3.0 & 20 / 400 & 8.30661370 & 8.0405 & 113 \\
+6 & 5.0 & 20 / 400 & 11.27280996 & 6.3790 & 144 \\
+6 & 8.0 & 20 / 400 & 15.06363820 & 6.7280 & 461 \\
+\midrule
+8 & 0.1 & 6 / 4900 & 2.75178389 & 5.0613 & 644 \\
+8 & 0.5 & 70 / 4900 & 5.84287110 & 7.3505 & 59 \\
+8 & 1.0 & 70 / 4900 & 8.07323817 & 7.4237 & 85 \\
+8 & 2.0 & 70 / 4900 & 11.78411490 & 7.2234 & 120 \\
+8 & 3.0 & 70 / 4900 & 15.20562413 & 7.5950 & 207 \\
+8 & 5.0 & 70 / 4900 & 20.29751211 & 7.5855 & 547 \\
+\bottomrule
+\end{tabular}
+\end{adjustbox}
+\end{table}
+
+\subsection{Comparación Cuantitativa MALA vs RL-MALA TD3 (\texttt{Pipeline 2}) y Flips Topológicos}
+
+\begin{table}[H]
+\centering
+\begin{adjustbox}{max width=\textwidth}
+\begin{tabular}{ccccccccccl}
+\toprule
+$N$ & $g$ & Acc (\%) M/RL & ESJD M/RL & $\tau_E$ M/RL & $G_{\mathrm{RL}}$ & $D_{\mathrm{KL}}^{\mathrm{spin}}$ (MALA $\to$ RL) & Flips/$10^3$ (MALA $\to$ RL) & 1-Paso RL & Estado \\
+\midrule
+6 & 0.1 & 87.13 / 40.77 & 1.027 / 3.052 & 5.76 / 4.61 & $1.249\times$ & $2.23\!\times\!10^{-5} \to 2.36\!\times\!10^{-5}$ & $91.95 \to 191.68$ ($2.08\times$) & 57.9\% & Exitoso \\
+6 & 0.5 & 82.78 / 32.37 & 0.971 / 2.357 & 8.37 / 6.58 & $1.273\times$ & $6.29\!\times\!10^{-2} \to 5.92\!\times\!10^{-5}$ & $0.845 \to 33.22$ ($39.3\times$) & 67.8\% & Exitoso ($1062\times$ KL) \\
+6 & 1.0 & 83.41 / 32.24 & 0.978 / 2.304 & 7.93 / 5.80 & $1.367\times$ & $1.24\!\times\!10^{-1} \to 8.53\!\times\!10^{-5}$ & $0.442 \to 19.20$ ($43.4\times$) & 58.5\% & Exitoso ($1452\times$ KL) \\
+6 & 2.0 & 83.07 / 29.88 & 0.972 / 2.057 & 8.57 / 5.51 & $1.554\times$ & $3.32\!\times\!10^{-1} \to 3.08\!\times\!10^{-4}$ & $0.124 \to 6.11$ ($49.3\times$) & 47.1\% & Exitoso ($1078\times$ KL) \\
+6 & 3.0 & 84.74 / 34.27 & 0.795 / 1.929 & 11.27 / 5.79 & $1.946\times$ & $5.41\!\times\!10^{-1} \to 9.25\!\times\!10^{-3}$ & $0.028 \to 1.706$ ($60.1\times$) & 29.1\% & Exitoso ($58.5\times$ KL*) \\
+6 & 5.0 & 84.83 / 34.30 & 0.796 / 1.926 & 13.64 / 7.14 & $1.912\times$ & $6.59\!\times\!10^{-1} \to 2.10\!\times\!10^{-1}$ & $0.0042 \to 0.343$ ($82.4\times$) & 23.7\% & Exitoso ($3.1\times$ KL*) \\
+6 & 8.0 & 85.05 / 34.88 & 0.798 / 1.967 & 16.58 / 8.24 & $2.011\times$ & $6.93\!\times\!10^{-1} \to 4.51\!\times\!10^{-1}$ & $0.00078 \to 0.0458$ ($58.7\times$) & 16.5\% & Exitoso (KL* truncado) \\
+\midrule
+8 & 0.1 & 84.19 / 34.55 & 1.060 / 2.821 & 9.48 / 7.39 & $1.282\times$ & $2.96\!\times\!10^{-5} \to 2.95\!\times\!10^{-5}$ & $130.06 \to 240.23$ ($1.85\times$) & 60.2\% & Exitoso \\
+8 & 0.5 & 79.29 / 25.32 & 0.996 / 2.003 & 8.80 / 9.45 & $0.931\times$ & $1.30\!\times\!10^{-1} \to 7.58\!\times\!10^{-5}$ & $1.288 \to 40.74$ ($31.6\times$) & 67.9\% & Exitoso ($1712\times$ KL) \\
+8 & 1.0 & 80.44 / 25.73 & 1.010 / 2.003 & 8.75 / 8.32 & $1.052\times$ & $2.03\!\times\!10^{-1} \to 3.36\!\times\!10^{-4}$ & $0.704 \to 24.85$ ($35.3\times$) & 59.2\% & Exitoso ($605\times$ KL) \\
+8 & 2.0 & 80.30 / 12.78 & 1.006 / 0.600 & 7.99 / 177.54 & $0.045\times$ & $3.83\!\times\!10^{-1} \to 3.16\!\times\!10^{-1}$ & $0.238 \to 3.067$ ($12.9\times$) & 45.8\% & \textbf{Regresión entrenamiento} \\
+8 & 3.0 & 82.68 / 16.78 & 0.778 / 0.627 & 14.72 / 202.85 & $0.073\times$ & $4.88\!\times\!10^{-1} \to 3.35\!\times\!10^{-1}$ & $0.066 \to 1.095$ ($16.5\times$) & 27.2\% & \textbf{Regresión entrenamiento} \\
+8 & 5.0 & 82.86 / 16.50 & 0.780 / 0.608 & 14.53 / 190.95 & $0.076\times$ & $6.38\!\times\!10^{-1} \to 4.22\!\times\!10^{-1}$ & $0.0083 \to 0.216$ ($26.0\times$) & 18.1\% & \textbf{Regresión entrenamiento} \\
+\bottomrule
+\end{tabular}
+\end{adjustbox}
+\end{table}
+
+\textit{*Nota: En $N=6, g \ge 3.0$ y $N=8, g \ge 1.0$, el diagnóstico de densidad en \texttt{evaluate\_nodal\_crossing\_1d.py} se calculó sobre una malla truncada en $[-14.94, +14.94]$ Bohr (ver Subsección siguiente).}
+
+\begin{itemize}
+\item \textbf{Cero fugas brownianas en todos los sistemas}: En los 13 casos ($N=6$ y $N=8$), $D_{\mathrm{KL}}^{\mathrm{tot}}$ permaneció en el rango $7.17\times 10^{-6}$ a $5.19\times 10^{-5}$ (salvo $N=8, g=3.0$ en RL-MALA por la asimetría inducida por el actor colapsado, $D_{\mathrm{KL}}^{\mathrm{tot}} = 3.07\times 10^{-2}$).
+\item \textbf{Desempeño en $N=6$ ($g=0.1 \dots 8.0$) y $N=8$ ($g=0.1 \dots 1.0$)}: RL-MALA multiplica los \textit{flips} topológicos con histéresis por $31.6\times$ a $82.4\times$ en el régimen fuertemente correlacionado, logrando entre $16.5\%$ y $67.9\%$ de los intercambios mediante saltos cuánticos en \textbf{1 solo paso} (frente a $0.0\%$ de MALA para $g \ge 2.0$), reduciendo $D_{\mathrm{KL}}^{\mathrm{spin}}$ hasta $1452\times$ ($N=6, g=1.0$) y $1712\times$ ($N=8, g=0.5$).
+\end{itemize}
+
+\subsection{Diagnóstico de Causa Raíz: Regresión en $N=8$ ($g \ge 2.0$) y Truncamiento de Dominio}
+
+El análisis conjunto de \texttt{training\_history\_*.csv}, \texttt{data\_densities\_*.csv} y \texttt{observables\_P2\_*.csv} identificó tres causas acopladas detrás de la degradación de RL-MALA en $N=8, g \ge 2.0$:
+
+\begin{enumerate}
+\item \textbf{Trampa nodal inicial durante el entrenamiento (\texttt{INIT\_MODE="symmetric\_gaussian"})}: Con \texttt{init\_std=3.0} y \texttt{n\_burn\_in=2000} barridos, los caminantes iniciales en $N=8, g \ge 2.0$ quedaron atrapados en bolsillos nodales locales fuera de equilibrio durante los $6{,}000$ pasos de TD3:
+\begin{itemize}
+\item $N=8, g=2.0$: $E_{\mathrm{mean}}: -87.69 \to -92.36$, $\mathrm{Var}(E): 7.87\times 10^5 \to 7.85\times 10^5$, recompensa $R = -0.026 \to -0.019$, $\mathcal{L}_{\mathrm{actor}} = +1.710 \to +1.755$, $\alpha_{\mathrm{final}}=0.125$.
+\item $N=8, g=3.0$: $E_{\mathrm{mean}}: +35.20 \to +34.22$, $\mathrm{Var}(E): 2.59\times 10^4 \to 2.59\times 10^4$, recompensa $R = -0.123 \to -0.068$, $\mathcal{L}_{\mathrm{actor}} = +2.414 \to +2.993$, $\alpha_{\mathrm{final}}=0.164$.
+\item $N=8, g=5.0$: $E_{\mathrm{mean}}: -181.58 \to -195.43$, $\mathrm{Var}(E): 5.38\times 10^6 \to 5.28\times 10^6$, recompensa $R = -0.095 \to -0.066$, $\mathcal{L}_{\mathrm{actor}} = +2.595 \to +3.031$, $\alpha_{\mathrm{final}}=0.188$.
+\end{itemize}
+Al evaluar luego en equilibrio (\texttt{spin\_ordered\_offset}, $|x| \sim 20\text{–}30$ Bohr), el actor operó fuera de distribución con asimetría de espín marcada ($\rho_\uparrow^{\max}=0.3693$ vs $\rho_\downarrow^{\max}=0.2858$ en $g=3.0$; $D_{\mathrm{KL}}^{\uparrow}=0.212$ vs $D_{\mathrm{KL}}^{\downarrow}=0.458$), reduciendo $G_{\mathrm{RL}}$ a $0.045\times\text{–}0.076\times$ y elevando $\tau_{\mathrm{int}}(E)$ a $177.5\text{–}202.9$. \textbf{Solución:} Se implementó \texttt{randomized\_wigner} en \texttt{rl\_vmc/samplers/mh\_sampler\_1d.py} (\texttt{MHSampler1D.init\_state}) y \texttt{rl\_vmc/config.py}, fijándolo como nuevo default \texttt{INIT\_MODE="randomized\_wigner"} en \texttt{run\_advisor\_casscf\_pipeline.sh} y \texttt{run\_production\_benchmark\_3pipelines.sh}.
+
+\item \textbf{Sobreescala dimensional de $\sigma_{\mathrm{action\_scale}} = 1.1$ en $N \ge 8$}: En $8\mathrm{D}\text{–}10\mathrm{D}$, la varianza radial de la propuesta gaussiana escala linealmente con $N$, reduciendo la aceptación incluso en $N=8, g=0.5\text{–}1.0$ ($25.3\%\text{–}25.7\%$ vs $32.2\%\text{–}34.9\%$ en $N=6$). \textbf{Solución:} Calibración automática por dimensión en \texttt{get\_system\_p2\_params}: $\sigma_{\mathrm{scale}}=1.1$ ($N \le 6$), $0.90$ ($N \in \{7,8\}$) y $0.80$ ($N \ge 9$, con $\tau=0.07/0.06$ y \texttt{amp=0.08}), más la bandera \texttt{--sigma-scale}.
+
+\item \textbf{Truncamiento de malla en \texttt{cli/evaluate\_nodal\_crossing\_1d.py} ($x_{\max} = 15.0$ Bohr)}: Mientras \texttt{observables.py} expandió automáticamente hasta $[-29.75, +29.75]$ ($N=6, g=8$; $N=8, g=3$) y $[-30.74, +30.74]$ Bohr ($N=8, g=5$), \texttt{data\_densities\_*.csv} truncó a $[-14.94, +14.94]$ Bohr, reteniendo solo $\int \rho_{\mathrm{exact}}\,dx = 4.0000$ de $6.0$ en $N=6, g=8.0$ y $5.6687$ de $8.0$ en $N=8, g=5.0$ (densidad de borde $0.2299$). \textbf{Solución:} \texttt{--x\_max} pasa a \texttt{default=None} y auto-expande \texttt{eff\_x\_max} a $\lceil 1.25 \cdot P_{99.8}(|x|) \rceil$ desde \texttt{production/walkers} antes de evaluar \texttt{casscf\_ref} e histogramas.
+\end{enumerate}
+
+\subsection{Auditoría de \texttt{CASSCF\_csv/}, Ejecución Selectiva y Plan para $N=2, 8, 10$}
+
+La auditoría de \texttt{CASSCF\_csv/} confirmó \textbf{24 estados convergidos} ($N_{\mathrm{basis}}=256, N_{\mathrm{core}}=0, \omega=0.1, \eta_{\mathrm{soft}}=0.1$, \texttt{converged=True}, $|g_{\mathrm{orb}}| < 10^{-5}$):
+\begin{itemize}
+\item \textbf{$N=4$ (7 estados, \texttt{c0-a4}, 36 dets):} $g \in \{0.1, 0.5, 1.0, 2.0, 3.0, 5.0, 8.0\}$.
+\item \textbf{$N=6$ (7 estados, \texttt{c0-a6}, 400 dets):} $g \in \{0.1, 0.5, 1.0, 2.0, 3.0, 5.0, 8.0\}$.
+\item \textbf{$N=8$ (6 estados, \texttt{c0-a8}, 4900 dets):} $g \in \{0.1, 0.5, 1.0, 2.0, 3.0, 5.0\}$ (sin $g=8.0$).
+\item \textbf{$N=10$ (4 estados, \texttt{c0-a10}, 63,504 dets):} $g=1.0$ ($12.555692\,E_h$), $g=2.0$ ($18.357692\,E_h$), $g=3.0$ ($23.272532\,E_h$), $g=5.0$ ($31.703367\,E_h$).
+\item \textbf{$N=2$ (0 archivos en \texttt{CASSCF\_csv/}):} Se incorporó \texttt{--include-n2} (activado automáticamente con \texttt{N2} en \texttt{--systems}) para generar las referencias \texttt{b=256, c0-a4, quad=800}.
+\end{itemize}
+
+Finalmente, se corrigió la cuarentena ciega sobre $N=10$ para conservar los nuevos estados $b=256$, y se añadieron banderas de ejecución y posprocesado selectivo (\texttt{--systems "N2:all N8:2.0,3.0,5.0 N10:all"}, \texttt{--n-filter}, \texttt{--g-filter}, \texttt{--skip-global-plots}, \texttt{--merge\_summary\_csv}) en \texttt{run\_advisor\_casscf\_pipeline.sh}, \texttt{run\_production\_benchmark\_3pipelines.sh} y \texttt{scripts/analyze\_flips\_vs\_g.py}.
 
 \end{document}

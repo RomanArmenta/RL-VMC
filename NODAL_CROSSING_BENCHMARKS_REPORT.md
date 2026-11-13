@@ -582,3 +582,85 @@ flowchart LR
    - En la optimización variacional estándar de wave functions neuronales ($\Psi_\Theta(\mathbf{x}) = \Psi_{\mathrm{CASSCF}}(\mathbf{x})\,e^{J_\Theta(\mathbf{x})}$), el paso más costoso es el re-muestreo MCMC en cada iteración del gradiente de energía.
    - Utilizar el sampler transferido y adaptado en tiempo real para generar las muestras de Monte Carlo reduce drásticamente el tiempo de autocorrelación $\tau_{\mathrm{int}}(E)$, permitiendo reducir el número de pasos de muestreo requeridos por iteración en un factor de $3\times$ a $5\times$.
 
+---
+
+## 11. Resultados de Producción en Baker (`results_production_3pipelines_baker_N6_N8`), Diagnóstico de Regresión en $N=8$ ($g \ge 2$) y Preparación para $N=2, 8, 10$
+
+Tras corregir el piso numérico `1e-15` en `CASSCF1DAnsatz`, actualizar la inicialización de evaluación a `spin_ordered_offset` y usar las funciones de onda convergidas del asesor (`n_basis=256, n_core=0, quad=800`), se completó la corrida de producción en Baker para $N=6$ ($g \in \{0.1, 0.5, 1.0, 2.0, 3.0, 5.0, 8.0\}$) y $N=8$ ($g \in \{0.1, 0.5, 1.0, 2.0, 3.0, 5.0\}$) en `results_production_3pipelines_baker_N6_N8/`. **Los 13 estados de referencia del Pipeline 1 y todas las corridas del Pipeline 2 finalizaron sin fugas brownianas ni errores de convergencia**.
+
+### 11.1 Referencias CASSCF (`Pipeline 1`) Verificadas ($N=6$ y $N=8$, `b=256, c0`)
+
+Todos los estados instalados desde `CASSCF_csv/` reportaron `converged=True`, $E_{\mathrm{core}} = 0.0$ y $\omega=0.1, \eta_{\mathrm{soft}}=0.1$:
+
+| $N$ | $g$ | Determinantes | $E_{\mathrm{CASSCF}}$ ($E_h$) | Radio RMS Exacto (Bohr) | Iteraciones L-BFGS |
+| :---: | :---: | :---: | :---: | :---: | :---: |
+| 6 | 0.1 | 6 / 400 | $1.58992883$ | $4.4847$ | 431 |
+| 6 | 0.5 | 20 / 400 | $3.28187523$ | $6.5724$ | 56 |
+| 6 | 1.0 | 20 / 400 | $4.52405213$ | $7.3649$ | 71 |
+| 6 | 2.0 | 20 / 400 | $6.57676356$ | $8.3981$ | 99 |
+| 6 | 3.0 | 20 / 400 | $8.30661370$ | $8.0405$ | 113 |
+| 6 | 5.0 | 20 / 400 | $11.27280996$ | $6.3790$ | 144 |
+| 6 | 8.0 | 20 / 400 | $15.06363820$ | $6.7280$ | 461 |
+| 8 | 0.1 | 6 / 4900 | $2.75178389$ | $5.0613$ | 644 |
+| 8 | 0.5 | 70 / 4900 | $5.84287110$ | $7.3505$ | 59 |
+| 8 | 1.0 | 70 / 4900 | $8.07323817$ | $7.4237$ | 85 |
+| 8 | 2.0 | 70 / 4900 | $11.78411490$ | $7.2234$ | 120 |
+| 8 | 3.0 | 70 / 4900 | $15.20562413$ | $7.5950$ | 207 |
+| 8 | 5.0 | 70 / 4900 | $20.29751211$ | $7.5855$ | 547 |
+
+### 11.2 Comparación Cuantitativa MALA vs RL-MALA TD3 (`Pipeline 2`) y Flips Topológicos
+
+| $N$ | $g$ | MALA Acc (%) | RL Acc (%) | MALA ESJD | RL ESJD | $\tau_{\mathrm{MALA}}$ | $\tau_{\mathrm{RL}}$ | $G_{\mathrm{RL}}$ | $D_{\mathrm{KL}}^{\mathrm{spin}}$ (MALA $\to$ RL) | Flips / 1k (MALA $\to$ RL) | 1-Paso RL (%) | Estado |
+| :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :--- |
+| 6 | 0.1 | $87.13$ | $40.77$ | $1.027$ | $3.052$ | $5.76$ | $4.61$ | $1.249\times$ | $2.23\times 10^{-5} \to 2.36\times 10^{-5}$ | $91.95 \to 191.68$ ($2.08\times$) | $57.9$ | Exitoso |
+| 6 | 0.5 | $82.78$ | $32.37$ | $0.971$ | $2.357$ | $8.37$ | $6.58$ | $1.273\times$ | $6.29\times 10^{-2} \to 5.92\times 10^{-5}$ | $0.845 \to 33.22$ ($39.3\times$) | $67.8$ | Exitoso ($1062\times$ KL) |
+| 6 | 1.0 | $83.41$ | $32.24$ | $0.978$ | $2.304$ | $7.93$ | $5.80$ | $1.367\times$ | $1.24\times 10^{-1} \to 8.53\times 10^{-5}$ | $0.442 \to 19.20$ ($43.4\times$) | $58.5$ | Exitoso ($1452\times$ KL) |
+| 6 | 2.0 | $83.07$ | $29.88$ | $0.972$ | $2.057$ | $8.57$ | $5.51$ | $1.554\times$ | $3.32\times 10^{-1} \to 3.08\times 10^{-4}$ | $0.124 \to 6.11$ ($49.3\times$) | $47.1$ | Exitoso ($1078\times$ KL) |
+| 6 | 3.0 | $84.74$ | $34.27$ | $0.795$ | $1.929$ | $11.27$ | $5.79$ | $1.946\times$ | $5.41\times 10^{-1} \to 9.25\times 10^{-3}$ | $0.028 \to 1.706$ ($60.1\times$) | $29.1$ | Exitoso ($58.5\times$ KL*) |
+| 6 | 5.0 | $84.83$ | $34.30$ | $0.796$ | $1.926$ | $13.64$ | $7.14$ | $1.912\times$ | $6.59\times 10^{-1} \to 2.10\times 10^{-1}$ | $0.0042 \to 0.343$ ($82.4\times$) | $23.7$ | Exitoso ($3.1\times$ KL*) |
+| 6 | 8.0 | $85.05$ | $34.88$ | $0.798$ | $1.967$ | $16.58$ | $8.24$ | $2.011\times$ | $6.93\times 10^{-1} \to 4.51\times 10^{-1}$ | $0.00078 \to 0.0458$ ($58.7\times$) | $16.5$ | Exitoso (KL* truncado) |
+| 8 | 0.1 | $84.19$ | $34.55$ | $1.060$ | $2.821$ | $9.48$ | $7.39$ | $1.282\times$ | $2.96\times 10^{-5} \to 2.95\times 10^{-5}$ | $130.06 \to 240.23$ ($1.85\times$) | $60.2$ | Exitoso |
+| 8 | 0.5 | $79.29$ | $25.32$ | $0.996$ | $2.003$ | $8.80$ | $9.45$ | $0.931\times$ | $1.30\times 10^{-1} \to 7.58\times 10^{-5}$ | $1.288 \to 40.74$ ($31.6\times$) | $67.9$ | Exitoso ($1712\times$ KL) |
+| 8 | 1.0 | $80.44$ | $25.73$ | $1.010$ | $2.003$ | $8.75$ | $8.32$ | $1.052\times$ | $2.03\times 10^{-1} \to 3.36\times 10^{-4}$ | $0.704 \to 24.85$ ($35.3\times$) | $59.2$ | Exitoso ($605\times$ KL) |
+| 8 | 2.0 | $80.30$ | $12.78$ | $1.006$ | $0.600$ | $7.99$ | $177.54$ | $0.045\times$ | $3.83\times 10^{-1} \to 3.16\times 10^{-1}$ | $0.238 \to 3.067$ ($12.9\times$) | $45.8$ | **Regresión de entrenamiento** |
+| 8 | 3.0 | $82.68$ | $16.78$ | $0.778$ | $0.627$ | $14.72$ | $202.85$ | $0.073\times$ | $4.88\times 10^{-1} \to 3.35\times 10^{-1}$ | $0.066 \to 1.095$ ($16.5\times$) | $27.2$ | **Regresión de entrenamiento** |
+| 8 | 5.0 | $82.86$ | $16.50$ | $0.780$ | $0.608$ | $14.53$ | $190.95$ | $0.076\times$ | $6.38\times 10^{-1} \to 4.22\times 10^{-1}$ | $0.0083 \to 0.216$ ($26.0\times$) | $18.1$ | **Regresión de entrenamiento** |
+
+*\*En $N=6, g \ge 3.0$ y $N=8, g \ge 1.0$, el diagnóstico de densidad en `evaluate_nodal_crossing_1d.py` usó una malla truncada en $[-14.94, +14.94]$ Bohr (ver Sección 11.3).*
+
+**Conclusiones principales de esta corrida:**
+1. **Cero fugas brownianas en todos los sistemas**: En los 13 sistemas ($N=6$ y $N=8$), la divergencia KL de densidad total $D_{\mathrm{KL}}^{\mathrm{tot}}$ permaneció en el orden de $7.17\times 10^{-6}$ a $5.19\times 10^{-5}$ (excepto $N=8, g=3.0$ en RL-MALA debido a la asimetría inducida por el actor colapsado, $D_{\mathrm{KL}}^{\mathrm{tot}} = 3.07\times 10^{-2}$). Las energías medias coinciden dentro de $10^{-3}\text{–}10^{-4}\ E_h$ con CASSCF (salvo el sesgo base de Gauss-Hermite finito en $g=0.1$ ya documentado).
+2. **Desempeño sobresaliente en $N=6$ ($g=0.1 \dots 8.0$) y $N=8$ ($g=0.1 \dots 1.0$)**: RL-MALA multiplica los *flips* topológicos con histéresis por un factor de $31.6\times$ a $82.4\times$ en el régimen fuertemente correlacionado, realizando entre $16.5\%$ y $67.9\%$ de los cruces mediante saltos cuánticos directos en **1 solo paso** (frente a $0.0\%$ de MALA para $g \ge 2.0$), lo que reduce $D_{\mathrm{KL}}^{\mathrm{spin}}$ hasta $1452\times$ ($N=6, g=1.0$) y $1712\times$ ($N=8, g=0.5$).
+
+### 11.3 Diagnóstico de Causa Raíz: Regresión en $N=8$ ($g \ge 2.0$) y Truncamiento de Dominio
+
+El análisis conjunto de `training_history_*.csv`, `data_densities_*.csv` y `observables_P2_*.csv` identificó **tres causas acopladas** detrás de la degradación de RL-MALA en $N=8, g \ge 2.0$ (y del sesgo métrico en los regímenes cristalizados grandes):
+
+1. **Trampa nodal inicial durante el entrenamiento (`INIT_MODE="symmetric_gaussian"`)**:
+   Al entrenar RL-MALA con `init_mode=symmetric_gaussian` (`init_std=3.0`) y `n_burn_in=2000` barridos, los caminantes iniciales en $N=8, g \ge 2.0$ quedaron atrapados en bolsillos nodales locales fuera de equilibrio (varianza de energía inicial y final estancada sin relajar durante los $6,000$ pasos de TD3):
+   - $N=8, g=2.0$: $E_{\mathrm{mean}}: -87.69 \to -92.36$, $\mathrm{Var}(E): 7.87\times 10^5 \to 7.85\times 10^5$, recompensa $R = -0.026 \to -0.019$, $\mathcal{L}_{\mathrm{actor}} = +1.710 \to +1.755$, $\alpha_{\mathrm{final}}=0.125$.
+   - $N=8, g=3.0$: $E_{\mathrm{mean}}: +35.20 \to +34.22$, $\mathrm{Var}(E): 2.59\times 10^4 \to 2.59\times 10^4$, recompensa $R = -0.123 \to -0.068$, $\mathcal{L}_{\mathrm{actor}} = +2.414 \to +2.993$, $\alpha_{\mathrm{final}}=0.164$.
+   - $N=8, g=5.0$: $E_{\mathrm{mean}}: -181.58 \to -195.43$, $\mathrm{Var}(E): 5.38\times 10^6 \to 5.28\times 10^6$, recompensa $R = -0.095 \to -0.066$, $\mathcal{L}_{\mathrm{actor}} = +2.595 \to +3.031$, $\alpha_{\mathrm{final}}=0.188$.
+   Al pasar luego a evaluación en equilibrio (`eval_init_mode=spin_ordered_offset`, $|x| \sim 20\text{–}30$ Bohr), el actor entrenado fuera de distribución propuso desplazamientos anómalos y asimétricos ($\rho_\uparrow^{\max}=0.3693$ vs $\rho_\downarrow^{\max}=0.2858$ en $g=3.0$; $D_{\mathrm{KL}}^{\uparrow}=0.212$ vs $D_{\mathrm{KL}}^{\downarrow}=0.458$), colapsando $G_{\mathrm{RL}}$ a $0.045\times\text{–}0.076\times$ y disparando $\tau_{\mathrm{int}}(E)$ a $177.5\text{–}202.9$.
+   - **Solución implementada**: Se creó la inicialización `randomized_wigner` en `rl_vmc/samplers/mh_sampler_1d.py` (`MHSampler1D.init_state`) y `rl_vmc/config.py` (red centrada simétrica escalada en $\omega, g, N$ con permutación aleatoria por caminante e invariancia de espín/paridad), fijándola como nuevo default `INIT_MODE="randomized_wigner"` en `run_advisor_casscf_pipeline.sh` y `run_production_benchmark_3pipelines.sh`.
+
+2. **Sobreescala dimensional de $\sigma_{\mathrm{action\_scale}} = 1.1$ en $N \ge 8$**:
+   Mantener fijo $\sigma_{\mathrm{action\_scale}} = 1.1$ al crecer de $6\mathrm{D}$ a $8\mathrm{D}\text{–}10\mathrm{D}$ eleva linealmente con $N$ la varianza radial de la propuesta gaussiana ($\sum_{i=1}^N \sigma_i^2$), explicando por qué incluso los casos exitosos en $N=8$ ($g=0.5, 1.0$) mostraron caída de aceptación a $25.3\%\text{–}25.7\%$ (vs $32.2\%\text{–}34.9\%$ en $N=6$).
+   - **Solución implementada**: Calibración automática por dimensión en `get_system_p2_params`: $\sigma_{\mathrm{scale}} = 1.1$ ($N \le 6$), $\sigma_{\mathrm{scale}} = 0.90$ ($N \in \{7, 8\}$) y $\sigma_{\mathrm{scale}} = 0.80$ ($N \ge 9$, junto con $\tau=0.07/0.06$, `actor_amp=0.08`), más la bandera `--sigma-scale` para sobrescribirlo.
+
+3. **Truncamiento del dominio de densidad en `cli/evaluate_nodal_crossing_1d.py` ($x_{\max} = 15.0$ Bohr)**:
+   Mientras `observables.py` expandió correctamente las mallas hasta $[-29.75, +29.75]$ ($N=6, g=8$; $N=8, g=3$) y $[-30.74, +30.74]$ Bohr ($N=8, g=5$), `data_densities_*.csv` mantuvo fijo $x_{\max}=15.0$ Bohr: en $N=6, g=8.0$, la integral exacta retenida cayó a $\int \rho_{\mathrm{exact}}\,dx = 4.0000$ de $6.0$ (recortando ambos picos externos de Wigner), y en $N=8, g=5.0$ cayó a $5.6687$ de $8.0$ (con densidad de borde $\rho(14.94) = 0.2299$), sesgando los valores aparentes de `eval_kl_spin` sobre la malla recortada.
+   - **Solución implementada**: En `cli/evaluate_nodal_crossing_1d.py`, `--x_max` pasa a `default=None` y calcula automáticamente `eff_x_max` usando $\lceil 1.25 \cdot P_{99.8}(|x|) \rceil$ a partir de `production/walkers` antes de evaluar la referencia exacta y los histogramas.
+
+### 11.4 Auditoría de `CASSCF_csv/`, Ejecución Selectiva y Plan para $N=2, 8, 10$
+
+La auditoría completa de `CASSCF_csv/` verificó **24 estados convergidos** (`n_basis=256, n_core=0, omega=0.1, softening=0.1`, todos con `converged=True` y $|g_{\mathrm{orb}}| < 10^{-5}$):
+- **$N=4$ (7 estados, $c0\text{-}a4$, 36 dets):** $g \in \{0.1, 0.5, 1.0, 2.0, 3.0, 5.0, 8.0\}$.
+- **$N=6$ (7 estados, $c0\text{-}a6$, 400 dets):** $g \in \{0.1, 0.5, 1.0, 2.0, 3.0, 5.0, 8.0\}$.
+- **$N=8$ (6 estados, $c0\text{-}a8$, 4900 dets):** $g \in \{0.1, 0.5, 1.0, 2.0, 3.0, 5.0\}$ (sin $g=8.0$).
+- **$N=10$ (4 estados, $c0\text{-}a10$, 63,504 dets):** $g=1.0$ ($12.555692\ E_h$), $g=2.0$ ($18.357692\ E_h$), $g=3.0$ ($23.272532\ E_h$), $g=5.0$ ($31.703367\ E_h$).
+- **$N=2$ (0 estados en `CASSCF_csv/`):** Se agregó `--include-n2` (activado automáticamente al incluir `N2` en `--systems`) para calcular las referencias $N=2$ con `b=256, c0-a4, quad=800`.
+
+Además, se eliminó la cuarentena ciega sobre `N=10` cuando existen archivos `b=256` convergidos, y se incorporó filtrado no cartesiano (`--systems "N2:all N8:2.0,3.0,5.0 N10:all"`, `--n-filter`, `--g-filter`, `--skip-global-plots`, `--merge_summary_csv`) en `run_advisor_casscf_pipeline.sh`, `run_production_benchmark_3pipelines.sh` y `scripts/analyze_flips_vs_g.py` para ejecutar únicamente $N=2$, $N=8$ ($g=2.0, 3.0, 5.0$) y $N=10$ sin recalcular $N=4$ ni $N=6$.
+
+
