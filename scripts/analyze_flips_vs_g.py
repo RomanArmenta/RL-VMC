@@ -324,8 +324,19 @@ def load_bundle_walkers_and_meta(h5_path: str) -> Dict[str, Any]:
     summary: Dict[str, Any] = {}
     walkers: Optional[np.ndarray] = None
     acc_rate: Optional[np.ndarray] = None
+    actor_params: Optional[Dict[str, Any]] = None
 
     with h5py.File(h5_path, "r") as f:
+        for k, v in f.attrs.items():
+            meta[k] = v.decode("utf-8") if isinstance(v, (bytes, np.bytes_)) else v
+        if "config_json" in f.attrs:
+            raw_cfg = f.attrs["config_json"]
+            if isinstance(raw_cfg, (bytes, np.bytes_)):
+                raw_cfg = raw_cfg.decode("utf-8")
+            try:
+                config = json.loads(str(raw_cfg))
+            except Exception:
+                config = {}
         if "meta" in f:
             for k, v in f["meta"].attrs.items():
                 meta[k] = v.decode("utf-8") if isinstance(v, (bytes, np.bytes_)) else v
@@ -336,7 +347,13 @@ def load_bundle_walkers_and_meta(h5_path: str) -> Dict[str, Any]:
                 try:
                     config = json.loads(str(raw_cfg))
                 except Exception:
-                    config = {}
+                    pass
+        if "checkpoints" in f and "actor_final" in f["checkpoints"]:
+            try:
+                import pickle
+                actor_params = pickle.loads(np.asarray(f["checkpoints"]["actor_final"][()], dtype=np.uint8).tobytes())
+            except Exception:
+                actor_params = None
         if "production" in f:
             pgrp = f["production"]
             if "walkers" in pgrp:
@@ -413,6 +430,7 @@ def load_bundle_walkers_and_meta(h5_path: str) -> Dict[str, Any]:
         "n_steps": int(n_steps),
         "n_batch_saved": int(n_batch),
         "walkers": w_arr,
+        "actor_params": actor_params,
         "acceptance": acc_mean,
         "ESJD": _safe_float(summary.get("esjd_mean", summary.get("ESJD"))),
         "tau_int_E": _safe_float(summary.get("tau_int_E", summary.get("tau_int_mean"))),
@@ -435,6 +453,13 @@ def compute_flip_statistics(
     n_up: int,
     hysteresis_frac: float = 0.25,
     fixed_delta: Optional[float] = None,
+    omega: float = 0.1,
+    g_val: float = 1.0,
+    tau: float = 0.08,
+    actor_amp: float = 0.10,
+    sigma_scale: float = 0.90,
+    actor_params: Optional[Dict[str, Any]] = None,
+    is_neural: bool = False,
 ) -> Dict[str, Any]:
     """
     Calcula todas las métricas de intercambio entre pares de electrones (flips)
@@ -653,7 +678,12 @@ def compute_flip_statistics(
     aligned_rel_dist_norm: List[np.ndarray] = []
     aligned_xi_norm: List[np.ndarray] = []
     aligned_xj_norm: List[np.ndarray] = []
+    aligned_abs_mu: List[np.ndarray] = []
+    aligned_sigma: List[np.ndarray] = []
+    ordered_all_elec_events: List[Tuple[np.ndarray, np.ndarray, int, int, float]] = []
     example_event: Optional[Dict[str, Any]] = None
+
+    from scripts.plot_flips_system_detailed import evaluate_transition_sampler_action
 
     source_mask = hyst_flip_mask if len(ev_tau) > 0 else raw_flip_mask
     sc, stau, sb, sp = np.where(source_mask)
@@ -701,8 +731,9 @@ def compute_flip_statistics(
                 i_left, j_right = b_el, a_el
 
             t_raw = np.arange(t0 - window - 1, t0 + window + 3, dtype=np.float64)
-            xi_raw = w[c0, t0 - window - 1 : t0 + window + 3, b0, i_left].astype(np.float64)
-            xj_raw = w[c0, t0 - window - 1 : t0 + window + 3, b0, j_right].astype(np.float64)
+            w_raw_all = w[c0, t0 - window - 1 : t0 + window + 3, b0, :].astype(np.float64)
+            xi_raw = w_raw_all[:, i_left].copy()
+            xj_raw = w_raw_all[:, j_right].copy()
             dij_raw = xi_raw - xj_raw  # En t0 es <= 0 y en t0+1 es >= 0
 
             idx_t0_local = window + 1
@@ -711,6 +742,7 @@ def compute_flip_statistics(
             # Si por ruido numérico d0_val > 0, forzar orientación izquierda -> derecha
             if d0_val > 0.0 and d1_val < 0.0:
                 xi_raw, xj_raw = xj_raw, xi_raw
+                i_left, j_right = j_right, i_left
                 dij_raw = -dij_raw
                 d0_val, d1_val = -d0_val, -d1_val
 
@@ -725,30 +757,68 @@ def compute_flip_statistics(
 
             # Evaluar en la malla relativa t - t_flip_exact in [-window, +window]
             t_query = t_flip_exact + rel_steps_grid
-            xi_aligned = np.interp(t_query, t_raw, xi_raw)
-            xj_aligned = np.interp(t_query, t_raw, xj_raw)
+            w_aligned_all = np.stack([np.interp(t_query, t_raw, w_raw_all[:, k]) for k in range(N)], axis=-1)
+            xi_aligned = w_aligned_all[:, i_left].copy()
+            xj_aligned = w_aligned_all[:, j_right].copy()
             dij_aligned = xi_aligned - xj_aligned
             # Garantizar que en t - t_flip = 0 el cruce sea exactamente 0.0
             dij_aligned[window] = 0.0
 
             is_clean = bool(np.all(dij_aligned[window - 3 : window] <= 0.05 * d_adj) and np.all(dij_aligned[window + 1 : window + 4] >= -0.05 * d_adj))
             clean_events_meta.append(
-                (is_clean, dij_aligned, dij_aligned / d_adj, (xi_aligned - x_cross) / d_adj, (xj_aligned - x_cross) / d_adj, idx_ev, t0, i_left, j_right)
+                (
+                    is_clean,
+                    dij_aligned,
+                    dij_aligned / d_adj,
+                    (xi_aligned - x_cross) / d_adj,
+                    (xj_aligned - x_cross) / d_adj,
+                    idx_ev,
+                    t0,
+                    i_left,
+                    j_right,
+                    w_aligned_all,
+                    x_cross,
+                )
             )
 
         # Priorizar eventos limpios sin re-flips secundarios inmediatos
         only_clean = [m for m in clean_events_meta if m[0]]
         selected_meta = only_clean if len(only_clean) >= min(15, len(clean_events_meta)) else clean_events_meta
 
-        for _, dij_al, dij_n, xi_n, xj_n, _, _, _, _ in selected_meta:
+        for _, dij_al, dij_n, xi_n, xj_n, _, _, i_l, j_r, w_al_all, x_cr in selected_meta:
             aligned_rel_dist.append(dij_al)
             aligned_rel_dist_norm.append(dij_n)
             aligned_xi_norm.append(xi_n)
             aligned_xj_norm.append(xj_n)
+            mu_ev, sig_ev = evaluate_transition_sampler_action(
+                w_al_all,
+                i_left=i_l,
+                j_right=j_r,
+                n_up=n_up,
+                omega=omega,
+                g_val=g_val,
+                tau=tau,
+                actor_amp=actor_amp,
+                sigma_scale=sigma_scale,
+                actor_params=actor_params,
+                is_neural=is_neural,
+            )
+            aligned_abs_mu.append(mu_ev)
+            aligned_sigma.append(sig_ev)
+
+            # Ordenar los N electrones por su pozo espacial previo al flip (en [-8, -3])
+            pre_mean = np.mean(w_al_all[max(0, window - 8) : max(1, window - 2), :], axis=0)
+            pre_order = np.argsort(pre_mean)
+            inv_order = np.argsort(pre_order)
+            w_ord = w_al_all[:, pre_order]
+            sp_ord = spins[pre_order]
+            well_l = int(inv_order[i_l])
+            well_r = int(inv_order[j_r])
+            ordered_all_elec_events.append((w_ord, sp_ord, well_l, well_r, float(x_cr)))
 
         if len(selected_meta) > 0:
             best_m = max(selected_meta, key=lambda m: float(m[1][window + 1] - m[1][window - 1]))
-            _, dij_al, dij_n, xi_n, xj_n, best_idx_ev, best_t0, i_left, j_right = best_m
+            _, dij_al, dij_n, xi_n, xj_n, best_idx_ev, best_t0, i_left, j_right, _, _ = best_m
             c0, b0, p0 = int(sc[best_idx_ev]), int(sb[best_idx_ev]), int(sp[best_idx_ev])
             t_slice = slice(best_t0 - window, best_t0 + window + 1)
             example_event = {
@@ -770,6 +840,53 @@ def compute_flip_statistics(
                 "x_j_norm": xj_n.copy(),
             }
 
+    # Construir `before_after_info` con las posiciones y espines de los N electrones antes, en el cruce y después
+    before_after_info: Optional[Dict[str, Any]] = None
+    if ordered_all_elec_events:
+        # Filtrar el par de pozos adyacentes más frecuente para el promedio de ensamble
+        pair_counts: Dict[Tuple[int, int], int] = {}
+        for _, _, wl, wr, _ in ordered_all_elec_events:
+            key_w = (min(wl, wr), max(wl, wr))
+            pair_counts[key_w] = pair_counts.get(key_w, 0) + 1
+        dom_wl, dom_wr = max(pair_counts.keys(), key=lambda k: pair_counts[k])
+        matching_evs = [ev for ev in ordered_all_elec_events if (min(ev[2], ev[3]), max(ev[2], ev[3])) == (dom_wl, dom_wr)]
+        if not matching_evs:
+            matching_evs = ordered_all_elec_events
+
+        stack_x = np.stack([ev[0] for ev in matching_evs], axis=0)  # (M, 2*W+1, N)
+        ens_x = np.median(stack_x, axis=0)
+        ens_std = np.std(stack_x, axis=0) + 0.08 * d_adj
+        ex_w_ord, ex_sp_ord, _, _, ex_xcr = matching_evs[0]
+        before_after_info = {
+            "rel_steps": np.arange(-window, window + 1, dtype=int),
+            "well_left": int(dom_wl),
+            "well_right": int(dom_wr),
+            "x_cross": float(ex_xcr),
+            "example_x": ex_w_ord,
+            "example_std": ens_std,
+            "example_spins": ex_sp_ord,
+            "ensemble_x": ens_x,
+            "ensemble_std": ens_std,
+            "ensemble_spins": ex_sp_ord,
+        }
+    else:
+        # Fallback determinista sobre pozos de equilibrio cuando no hubo flips registrados
+        well_centers = (np.arange(N, dtype=np.float64) - 0.5 * (N - 1)) * d_adj
+        ens_x = np.broadcast_to(well_centers[None, :], (2 * window + 1, N)).copy()
+        ens_std = np.full((2 * window + 1, N), 0.16 * d_adj, dtype=np.float64)
+        before_after_info = {
+            "rel_steps": np.arange(-window, window + 1, dtype=int),
+            "well_left": max(0, n_up - 1),
+            "well_right": min(N - 1, n_up),
+            "x_cross": 0.0,
+            "example_x": ens_x,
+            "example_std": ens_std,
+            "example_spins": spins.copy(),
+            "ensemble_x": ens_x,
+            "ensemble_std": ens_std,
+            "ensemble_spins": spins.copy(),
+        }
+
     # Seleccionar el caminante SANO representativo con más flips reales para el Panel (a)
     flips_per_cb = np.sum(source_mask, axis=(1, 3)).astype(np.float64)  # (C, B)
     walker_mean_adj = np.nanmean(adj_diffs, axis=(1, 3))  # (C, B)
@@ -786,10 +903,21 @@ def compute_flip_statistics(
     best_walker_trace = w[best_c, :, best_b, :].copy()  # (T, N)
     best_walker_flips_t = np.where(np.any(source_mask[best_c, :, best_b, :], axis=-1))[0] + 1
 
+    # Histograma marginal de densidad por espín sobre los caminantes sanos
+    x_max_marg = float(np.ceil(max(20.0, 0.56 * float(N) * d_adj + 5.0)))
+    edges_marg = np.linspace(-x_max_marg, x_max_marg, 161)
+    x_centers_marg = 0.5 * (edges_marg[:-1] + edges_marg[1:])
+    w_up_healthy = w[:, :, :, :n_up][np.broadcast_to(healthy_mask[:, None, :, None], (C, T, B, n_up))]
+    w_dn_healthy = w[:, :, :, n_up:][np.broadcast_to(healthy_mask[:, None, :, None], (C, T, B, N - n_up))]
+    up_hist_marg, _ = np.histogram(w_up_healthy, bins=edges_marg, density=True) if w_up_healthy.size > 0 else (np.zeros(160), edges_marg)
+    dn_hist_marg, _ = np.histogram(w_dn_healthy, bins=edges_marg, density=True) if w_dn_healthy.size > 0 else (np.zeros(160), edges_marg)
+
     aligned_arr = np.asarray(aligned_rel_dist, dtype=np.float64) if aligned_rel_dist else np.empty((0, 2 * window + 1))
     aligned_norm_arr = np.asarray(aligned_rel_dist_norm, dtype=np.float64) if aligned_rel_dist_norm else np.empty((0, 2 * window + 1))
     aligned_xi_norm_arr = np.asarray(aligned_xi_norm, dtype=np.float64) if aligned_xi_norm else np.empty((0, 2 * window + 1))
     aligned_xj_norm_arr = np.asarray(aligned_xj_norm, dtype=np.float64) if aligned_xj_norm else np.empty((0, 2 * window + 1))
+    aligned_abs_mu_arr = np.asarray(aligned_abs_mu, dtype=np.float64) if aligned_abs_mu else np.empty((0, 2 * window + 1))
+    aligned_sigma_arr = np.asarray(aligned_sigma, dtype=np.float64) if aligned_sigma else np.empty((0, 2 * window + 1))
 
     return {
         "d_adj": d_adj,
@@ -836,6 +964,12 @@ def compute_flip_statistics(
         "aligned_rel_dist_norm": aligned_norm_arr,
         "aligned_xi_norm": aligned_xi_norm_arr,
         "aligned_xj_norm": aligned_xj_norm_arr,
+        "aligned_abs_mu": aligned_abs_mu_arr,
+        "aligned_sigma": aligned_sigma_arr,
+        "marginal_x_centers": x_centers_marg,
+        "marginal_up_hist": up_hist_marg,
+        "marginal_dn_hist": dn_hist_marg,
+        "before_after_info": before_after_info,
         "healthy_walkers_fraction": float(np.mean(healthy_mask)),
         "example_event": example_event,
         "best_walker_trace": best_walker_trace,
@@ -935,362 +1069,36 @@ def plot_per_system_flip_anatomy(
     records_ng: List[Dict[str, Any]],
     out_dir: str,
     args: argparse.Namespace,
+    prod_root: Optional[str] = None,
+    csv_collect_dir: Optional[str] = None,
 ) -> List[str]:
     """
-    Genera para un sistema fijo (N, omega, g) la figura de 4 paneles que compara
-    MALA vs RL-MALA caracterizando los flips:
-      Panel A: Trazas de posición x_i(t) de un caminante y eventos de flip.
-      Panel B: Curva acumulada de flips N_flips(t) por caminante (con histéresis vs crudos).
-      Panel C: Anatomía microscópica del cruce alineada en t - t_flip in [-15, +15].
-      Panel D: Histograma de pasos de tránsito Delta t_transit (1 paso vs multi-paso)
-               y comparación de tamaño de salto |Delta x_ij| en el cruce.
+    Genera para un sistema fijo (N, omega, g) todas las figuras rediseñadas y
+    exporta las tablas CSV detalladas en `<csv_collect_dir>`:
+      - Panel (a) [Arriba Izquierda]: Trazas de 1 caminante (MALA arriba, RL-MALA abajo)
+        + histograma marginal de densidad por espín a un costado.
+      - Panel (b) [Arriba Derecha]: Pasos necesarios para el flip Delta t_transit.
+      - Panel (c) [Abajo Izquierda]: Mapa de calor de transición para MALA (rango y ampliado).
+      - Panel (d) [Abajo Derecha]: Mapa de calor de transición para RL-MALA + promedio de
+        |mu(t)| y sigma(t) del Actor en cada paso de la transición.
+      - Figura adicional: Estado de los N electrones antes, durante y después de un flip,
+        más cada panel individual en `<out_dir>/panels/`.
     """
-    import matplotlib.pyplot as plt
-
     if not records_ng:
         return []
 
-    rec0 = records_ng[0]
-    N = int(rec0["N"])
-    n_up = int(rec0["n_up"])
-    omega = float(rec0["omega"])
-    g_val = float(rec0["g"])
-    pipe = str(rec0["pipeline"])
-
-    f_scale = float(getattr(args, "font_scale", 1.0))
-    lw_scale = float(getattr(args, "line_width_scale", 1.0))
-
-    # Ordenar métodos: MALA primero, luego Adaptive-MALA, luego RL-MALA
-    order_map = {"MALA": 0, "Adaptive-MALA": 1, "RL-MALA": 2}
-    records_sorted = sorted(records_ng, key=lambda r: order_map.get(r["method"], 99))
-
-    fig = plt.figure(figsize=(15.5, 11.0))
-    gs = fig.add_gridspec(2, 2, hspace=0.32, wspace=0.25)
-
-    # --------------------------------------------------------------------------
-    # Panel A (arriba izquierda): Trazas de 1 caminante (MALA arriba, RL-MALA abajo)
-    # --------------------------------------------------------------------------
-    gs_traces = gs[0, 0].subgridspec(len(records_sorted), 1, hspace=0.18)
-    for idx_m, r in enumerate(records_sorted):
-        ax_tr = fig.add_subplot(gs_traces[idx_m, 0])
-        m_name = r["method"]
-        trace = r["stats"]["best_walker_trace"]  # (T, N)
-        flips_t = r["stats"]["best_walker_flips_t"]
-        T_tr = trace.shape[0]
-        max_pts = min(T_tr, 6000)
-        stride = max(1, T_tr // max_pts)
-        t_grid = np.arange(0, T_tr, stride)
-
-        for i_el in range(N):
-            is_up = (i_el < n_up)
-            c_el = "#1f77b4" if is_up else "#d62728"
-            lbl_el = (r"$\uparrow$ espín" if is_up else r"$\downarrow$ espín") if (idx_m == 0 and i_el in (0, n_up)) else None
-            ax_tr.plot(
-                t_grid,
-                trace[::stride, i_el],
-                color=c_el,
-                alpha=0.72,
-                 lw=0.9 * lw_scale,
-                label=lbl_el,
-            )
-
-        # Marcar eventos de flip con histéresis en ese caminante
-        if len(flips_t) > 0:
-            shown_flips = flips_t[:60]
-            for tf in shown_flips:
-                ax_tr.axvline(tf, color="#2ca02c", alpha=0.28, lw=0.8 * lw_scale, ls=":")
-
-        hyst_rate = r["stats"]["hyst_flips_total_mean"]
-        opp_rate = r["stats"]["hyst_flips_opp_mean"]
-        ax_tr.set_ylabel(f"{m_name}\n$x_i(t)$ [Bohr]", fontsize=9.5 * f_scale, weight="bold")
-        ax_tr.text(
-            0.015,
-            0.88,
-            f"{m_name}: {hyst_rate:.2f} flips/1k pasos ($\\uparrow\\downarrow$: {opp_rate:.2f})",
-            transform=ax_tr.transAxes,
-            fontsize=8.8 * f_scale,
-            weight="bold",
-            bbox=dict(boxstyle="round,pad=0.25", facecolor="white", alpha=0.88, edgecolor=METHOD_COLORS.get(m_name, "#555")),
-        )
-        ax_tr.grid(True, alpha=0.25, linestyle="--")
-        if idx_m == 0:
-            ax_tr.set_title(
-                f"(a) Trazas de 1 Caminante y Cruces Entre Pozos ($N={N}, g={g_val:g}$)",
-                fontsize=11.0 * f_scale,
-                weight="bold",
-            )
-            ax_tr.legend(loc="upper right", fontsize=8.0 * f_scale, framealpha=0.9)
-        if idx_m < len(records_sorted) - 1:
-            ax_tr.set_xticklabels([])
-        else:
-            ax_tr.set_xlabel("Paso de la cadena de Markov $t$", fontsize=9.5 * f_scale)
-
-    # --------------------------------------------------------------------------
-    # Panel B (arriba derecha): Curva acumulada de flips N_flips(t) por caminante
-    # --------------------------------------------------------------------------
-    ax_cum = fig.add_subplot(gs[0, 1])
-    for r in records_sorted:
-        m_name = r["method"]
-        col = METHOD_COLORS.get(m_name, "#333333")
-        hyst_sr = r["stats"]["hyst_step_rate"]  # (C, T-1)
-        raw_sr = r["stats"]["raw_step_rate"]    # (C, T-1)
-
-        cum_hyst = np.cumsum(hyst_sr, axis=1)
-        cum_raw = np.cumsum(raw_sr, axis=1)
-        T_m = cum_hyst.shape[1]
-        stride = max(1, T_m // 1000)
-        t_ax = np.arange(1, T_m + 1, stride)
-
-        mean_h = np.mean(cum_hyst[:, ::stride], axis=0)
-        std_h = np.std(cum_hyst[:, ::stride], axis=0)
-        mean_r = np.mean(cum_raw[:, ::stride], axis=0)
-
-        ls_main = "-" if m_name == "RL-MALA" else "--"
-        ax_cum.plot(
-            t_ax,
-            mean_h,
-            color=col,
-            ls=ls_main,
-            lw=2.2 * lw_scale,
-            label=f"{m_name} — Flips Reales (Histéresis $\\delta={r['stats']['delta_hyst']:.2f}$)",
-        )
-        if cum_hyst.shape[0] > 1:
-            ax_cum.fill_between(t_ax, np.maximum(0.0, mean_h - std_h), mean_h + std_h, color=col, alpha=0.18)
-
-        ax_cum.plot(
-            t_ax,
-            mean_r,
-            color=col,
-            ls=":",
-            lw=1.3 * lw_scale,
-            alpha=0.65,
-            label=f"{m_name} — Cruces Crudos ($\\delta=0$, inc. ruido térmico)",
-        )
-
-    ax_cum.set_title(
-        f"(b) Evolución Acumulada de Intercambios por Caminante",
-        fontsize=11.0 * f_scale,
-        weight="bold",
-    )
-    ax_cum.set_xlabel("Paso de la cadena de Markov $t$", fontsize=9.8 * f_scale)
-    ax_cum.set_ylabel("Flips acumulados por caminante $\\langle N_{\\mathrm{flips}}(t) \\rangle$", fontsize=9.8 * f_scale)
-    ax_cum.grid(True, alpha=0.28, linestyle="--")
-    ax_cum.legend(loc="upper left", fontsize=8.2 * f_scale, framealpha=0.92)
-
-    # --------------------------------------------------------------------------
-    # Panel C (abajo izquierda): Mapa de Calor 2D del Stream-Flow Normalizado
-    #   - x_i(t): electrón que inicia a la IZQUIERDA en el espacio real 1D (x_i < x_j en t < t_flip)
-    #   - x_j(t): electrón que inicia a la DERECHA en el espacio real 1D (x_j > x_i en t < t_flip)
-    #   - Coordenada normalizada (x_i - x_j) / d_adj: fluye de -1.0 -> 0.0 (en t=t_flip) -> +1.0
-    # --------------------------------------------------------------------------
-    def _smooth_2d_heatmap(H: np.ndarray, sigma_y: float = 1.8, sigma_t: float = 1.3) -> np.ndarray:
-        rad_y = max(1, int(round(3.0 * sigma_y)))
-        ky = np.exp(-0.5 * (np.arange(-rad_y, rad_y + 1, dtype=np.float64) / sigma_y) ** 2)
-        ky /= np.sum(ky)
-        rad_t = max(1, int(round(3.0 * sigma_t)))
-        kt = np.exp(-0.5 * (np.arange(-rad_t, rad_t + 1, dtype=np.float64) / sigma_t) ** 2)
-        kt /= np.sum(kt)
-        H_y = np.apply_along_axis(lambda col: np.convolve(col, ky, mode="same"), axis=0, arr=H)
-        H_yt = np.apply_along_axis(lambda row: np.convolve(row, kt, mode="same"), axis=1, arr=H_y)
-        return H_yt
-
-    gs_anat = gs[1, 0].subgridspec(len(records_sorted), 1, hspace=0.22)
-    eta_ref = float(records_sorted[-1]["stats"].get("hysteresis_frac", 0.25))
-
-    for idx_m, r in enumerate(records_sorted):
-        ax_hm = fig.add_subplot(gs_anat[idx_m, 0])
-        m_name = r["method"]
-        col = METHOD_COLORS.get(m_name, "#333333")
-        d_adj_m = max(float(r["stats"].get("d_adj", 1.0)), 1e-8)
-        aligned_norm = r["stats"].get("aligned_rel_dist_norm")
-        if aligned_norm is None or aligned_norm.size == 0:
-            raw_al = r["stats"].get("aligned_rel_dist", np.empty((0, 31)))
-            aligned_norm = (raw_al / d_adj_m) if raw_al.size > 0 else np.empty((0, 31))
-        xi_norm_arr = r["stats"].get("aligned_xi_norm", np.empty((0, 31)))
-        xj_norm_arr = r["stats"].get("aligned_xj_norm", np.empty((0, 31)))
-
-        if aligned_norm.shape[0] > 0:
-            W = (aligned_norm.shape[1] - 1) // 2
-            rel_t = np.arange(-W, W + 1, dtype=np.float64)
-            n_fine_t = 181
-            n_bins_y = 96
-            y_min, y_max = -1.65, 1.65
-            t_fine = np.linspace(-W, W, n_fine_t)
-            y_edges = np.linspace(y_min, y_max, n_bins_y + 1)
-            y_centers = 0.5 * (y_edges[:-1] + y_edges[1:])
-
-            H_mat = np.zeros((n_bins_y, n_fine_t), dtype=np.float64)
-            for ev_row in aligned_norm:
-                y_interp = np.interp(t_fine, rel_t, ev_row)
-                bin_idx = np.clip(np.searchsorted(y_edges, y_interp) - 1, 0, n_bins_y - 1)
-                H_mat[bin_idx, np.arange(n_fine_t)] += 1.0
-
-            H_smooth = _smooth_2d_heatmap(H_mat, sigma_y=2.0, sigma_t=1.5)
-            col_max = np.max(H_smooth, axis=0, keepdims=True)
-            H_norm = np.where(col_max > 1e-12, H_smooth / col_max, 0.0)
-
-            cmap_name = "YlGnBu" if m_name == "RL-MALA" else "YlOrRd"
-            pcm = ax_hm.pcolormesh(
-                t_fine,
-                y_centers,
-                H_norm,
-                cmap=cmap_name,
-                vmin=0.0,
-                vmax=1.0,
-                shading="gouraud",
-                 rasterized=True,
-            )
-            cb = fig.colorbar(pcm, ax=ax_hm, pad=0.015, fraction=0.038)
-            cb.set_label("Densidad\nnormalizada", fontsize=7.5 * f_scale)
-            cb.ax.tick_params(labelsize=7.0 * f_scale)
-
-            # Estadísticos del stream-flow: mediana y cuartiles 25%-75% de (x_i - x_j)/d_adj
-            med_d = np.median(aligned_norm, axis=0)
-            q25_d = np.percentile(aligned_norm, 25, axis=0)
-            q75_d = np.percentile(aligned_norm, 75, axis=0)
-            med_d[W] = 0.0  # Cruce exacto en (t - t_flip = 0, y = 0)
-
-            ax_hm.plot(
-                rel_t,
-                med_d,
-                color="#081d58" if m_name == "RL-MALA" else "#67000d",
-                lw=2.2 * lw_scale,
-                marker="o" if m_name == "RL-MALA" else "s",
-                markersize=3.6,
-                label=f"$\\mathrm{{med}}[(x_i - x_j)/d_{{\\mathrm{{adj}}}}]$ ({aligned_norm.shape[0]} flips)",
-                zorder=5,
-            )
-            ax_hm.plot(rel_t, q25_d, color=col, ls="--", lw=1.0 * lw_scale, alpha=0.85, zorder=4)
-            ax_hm.plot(rel_t, q75_d, color=col, ls="--", lw=1.0 * lw_scale, alpha=0.85, label="Cuartiles 25%–75%", zorder=4)
-
-            # Trazas medias de cada electrón individual (x_i: izq -> der, x_j: der -> izq)
-            if xi_norm_arr.shape[0] > 0 and xj_norm_arr.shape[0] > 0:
-                med_xi = np.median(xi_norm_arr, axis=0)
-                med_xj = np.median(xj_norm_arr, axis=0)
-                med_xi[W] = 0.0
-                med_xj[W] = 0.0
-                ax_hm.plot(
-                    rel_t,
-                    med_xi,
-                    color="#008b8b",
-                    ls=":",
-                    lw=1.5 * lw_scale,
-                    label=r"$\tilde{x}_i(t)$ (izq $\rightarrow$ der: $-0.5 \to +0.5$)",
-                    zorder=4,
-                )
-                ax_hm.plot(
-                    rel_t,
-                    med_xj,
-                    color="#8b008b",
-                    ls=":",
-                    lw=1.5 * lw_scale,
-                    label=r"$\tilde{x}_j(t)$ (der $\rightarrow$ izq: $+0.5 \to -0.5$)",
-                    zorder=4,
-                )
-
-            ax_hm.axhspan(-eta_ref, +eta_ref, color="#555555", alpha=0.14)
-            ax_hm.axhline(+eta_ref, color="#555555", lw=0.8, ls="--", alpha=0.65)
-            ax_hm.axhline(-eta_ref, color="#555555", lw=0.8, ls="--", alpha=0.65)
-            ax_hm.axhline(0.0, color="black", lw=1.1, ls="-.", alpha=0.85)
-            ax_hm.axvline(0.0, color="#2ca02c", lw=1.3, ls=":", alpha=0.95)
-            ax_hm.scatter([0.0], [0.0], color="#2ca02c", s=36, zorder=6, edgecolors="black", linewidths=0.7)
-            ax_hm.set_ylim(y_min, y_max)
-            ax_hm.set_xlim(-W, W)
-            ax_hm.legend(loc="upper left", fontsize=7.0 * f_scale, ncol=2, framealpha=0.88)
-        else:
-            ax_hm.text(
-                0.5,
-                0.5,
-                f"{m_name}: Sin eventos de flip registrados\n(Congelamiento topológico)",
-                ha="center",
-                va="center",
-                transform=ax_hm.transAxes,
-                fontsize=9.5 * f_scale,
-                weight="bold",
-                color="#aa2222",
-            )
-            ax_hm.set_ylim(-1.5, 1.5)
-            ax_hm.set_xlim(-15, 15)
-
-        ax_hm.set_ylabel(f"{m_name}\n$(x_i - x_j)/d_{{\\mathrm{{adj}}}}$", fontsize=8.8 * f_scale, weight="bold")
-        ax_hm.grid(True, alpha=0.22, linestyle="--")
-        if idx_m == 0:
-            ax_hm.set_title(
-                "(c) Mapa de Calor del Stream-Flow Normalizado ($x_i$ izq $\\rightarrow$ der, Cruce en $t=0, y=0$)",
-                fontsize=10.5 * f_scale,
-                weight="bold",
-            )
-        if idx_m < len(records_sorted) - 1:
-            ax_hm.set_xticklabels([])
-        else:
-            ax_hm.set_xlabel("Pasos relativos al cruce exacto $t - t_{\\mathrm{flip}}$", fontsize=9.5 * f_scale)
-
-    # --------------------------------------------------------------------------
-    # Panel D (abajo derecha): Distribución de Pasos de Tránsito (1 paso vs multi-paso)
-    # --------------------------------------------------------------------------
-    ax_tr_hist = fig.add_subplot(gs[1, 1])
-    bins = np.arange(1, 12) - 0.5
-    width = 0.36
-    x_centers = np.arange(1, 11)
-    has_hist_data = False
-
-    for idx_m, r in enumerate(records_sorted):
-        m_name = r["method"]
-        col = METHOD_COLORS.get(m_name, "#333333")
-        ts = r["stats"]["transit_steps_samples"]
-        if len(ts) > 0:
-            ts_clipped = np.clip(ts, 1, 10)
-            counts, _ = np.histogram(ts_clipped, bins=bins, density=True)
-            offset = (idx_m - 0.5 * (len(records_sorted) - 1)) * width
-            f1 = r["stats"]["one_step_fraction"] * 100.0
-            jmp = r["stats"]["jump_at_flip_mean"]
-            ax_tr_hist.bar(
-                x_centers + offset,
-                counts * 100.0,
-                width=width,
-                color=col,
-                alpha=0.82,
-                edgecolor="black",
-                linewidth=0.7,
-                label=f"{m_name}: {f1:.1f}% en 1 paso ($\\langle |\\Delta x_{{ij}}|\\rangle={jmp:.2f}$ Bohr)",
-            )
-            has_hist_data = True
-
-    if not has_hist_data:
-        ax_tr_hist.text(
-            0.5,
-            0.5,
-            "No hubo cruces de barrera con histéresis ($|x_i - x_j| > \\delta$)\npara construir el histograma de tránsito",
-            ha="center",
-            va="center",
-            transform=ax_tr_hist.transAxes,
-            fontsize=10.0 * f_scale,
-            color="#666666",
-        )
-
-    ax_tr_hist.set_xticks(x_centers)
-    ax_tr_hist.set_xticklabels([str(k) if k < 10 else "10+" for k in x_centers])
-    ax_tr_hist.set_title(
-        "(d) Pasos de Markov Empleados en Cruzar la Barrera ($[-\\delta, +\\delta]$)",
-        fontsize=11.0 * f_scale,
-        weight="bold",
-    )
-    ax_tr_hist.set_xlabel("Duración del tránsito de barrera $\\Delta t_{\\mathrm{transit}}$ [pasos MCMC]", fontsize=9.8 * f_scale)
-    ax_tr_hist.set_ylabel("Porcentaje de eventos de flip [%]", fontsize=9.8 * f_scale)
-    ax_tr_hist.grid(True, alpha=0.28, linestyle="--", axis="y")
-    if has_hist_data:
-        ax_tr_hist.legend(loc="upper right", fontsize=8.4 * f_scale, framealpha=0.92)
-
-    fig.suptitle(
-        f"Caracterización de Flips y Cruce Nodal ({pipe}) — $N={N}, \\omega={omega:g}, g={g_val:g}$ "
-        f"(Separación media $d_{{\\mathrm{{adj}}}}={rec0['stats']['d_adj']:.2f}$ Bohr)",
-        fontsize=13.0 * f_scale,
-        weight="bold",
-        y=0.995,
+    from scripts.plot_flips_system_detailed import (
+        export_system_flips_csvs,
+        generate_all_system_flip_figures,
     )
 
-    stem = f"fig_flips_system_{pipe}_N{N}_w{omega:g}_g{g_val:g}"
-    return _save_figure_bundle(fig, out_dir, stem, args)
+    if csv_collect_dir:
+        try:
+            export_system_flips_csvs(records_ng, csv_dir=csv_collect_dir, prod_root=prod_root)
+        except Exception as exc:
+            print(f"  [WARN] No se pudieron exportar CSVs detallados de flips: {exc}", file=sys.stderr)
+
+    return generate_all_system_flip_figures(records_ng, out_dir, args, prod_root=prod_root)
 
 
 def _shade_physical_regimes(ax: Any, g_min: float, g_max: float, f_scale: float = 1.0, annotate: bool = False) -> None:
@@ -1802,7 +1610,15 @@ def build_arg_parser() -> argparse.ArgumentParser:
     p.add_argument("--line_width_scale", type=float, default=1.0, help="Factor de escala para grosores de línea.")
     p.add_argument("--title_prefix", type=str, default="", help="Prefijo opcional para títulos.")
     p.add_argument("--custom_suptitle", type=str, default="", help="Supertítulo personalizado opcional.")
+    p.add_argument("--custom_subtitle", type=str, default="", help="Subtítulo personalizado opcional.")
     p.add_argument("--no_titles", action="store_true", help="Ocultar títulos en las figuras (útil para insertar en LaTeX).")
+    p.add_argument("--no_suptitle", action="store_true", help="Ocultar sólo el supertítulo general.")
+    p.add_argument("--no_panel_titles", action="store_true", help="Ocultar los títulos/subtítulos individuales de cada panel.")
+    p.add_argument("--no_legends", action="store_true", help="Ocultar todas las leyendas.")
+    p.add_argument("--save_panels", action=argparse.BooleanOptionalAction, default=True, help="Guardar cada panel individual por separado en <out_dir>/per_system/panels/.")
+    p.add_argument("--heatmap_ymax", type=float, default=2.5, help="Rango vertical [-ymax, +ymax] en los mapas de calor de transición.")
+    p.add_argument("--before_after_dt", type=int, default=5, help="Pasos relativos antes y después del flip para el diagrama de estado 1D.")
+    p.add_argument("--show_actor_on_heatmap", action=argparse.BooleanOptionalAction, default=True, help="Superponer promedio de |mu| y sigma en el mapa de calor de RL-MALA.")
     p.add_argument("--transparent_bg", action="store_true", help="Exportar figuras con fondo transparente.")
     return p
 
@@ -1933,6 +1749,13 @@ def main(argv: Optional[List[str]] = None) -> int:
                     n_up=bundle_info["n_up"],
                     hysteresis_frac=args.hysteresis_frac,
                     fixed_delta=args.fixed_delta,
+                    omega=bundle_info["omega"],
+                    g_val=bundle_info["g"],
+                    tau=bundle_info["tau"],
+                    actor_amp=bundle_info["actor_amplitude"],
+                    sigma_scale=bundle_info["sigma_action_scale"],
+                    actor_params=bundle_info.get("actor_params"),
+                    is_neural=(bundle_info["method"] == "RL-MALA"),
                 )
                 # Liberar tensor pesado de caminantes tras extraer estadísticas y trazas
                 del bundle_info["walkers"]
@@ -2075,8 +1898,16 @@ def main(argv: Optional[List[str]] = None) -> int:
             key_ng = (str(r["pipeline"]), int(r["N"]), round(float(r["g"]), 6))
             grouped_ng.setdefault(key_ng, []).append(r)
 
+        csv_sys_collect_dir = os.path.join(root_dir, "results_csv")
+        os.makedirs(csv_sys_collect_dir, exist_ok=True)
         for (pipe, n_val, g_val), recs_ng in sorted(grouped_ng.items()):
-            saved_sys_figs = plot_per_system_flip_anatomy(recs_ng, per_sys_dir, args)
+            saved_sys_figs = plot_per_system_flip_anatomy(
+                recs_ng,
+                per_sys_dir,
+                args,
+                prod_root=root_dir,
+                csv_collect_dir=csv_sys_collect_dir,
+            )
             # Si existe la carpeta de figuras del sistema en <root_dir>/figures/pipeline2_systems/N{N}_w{w}_g{g}, copiar ahí también
             omega_val = float(recs_ng[0]["omega"])
             sys_tag = f"N{n_val}_w{omega_val:g}_g{g_val:g}"

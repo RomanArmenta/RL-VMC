@@ -836,6 +836,14 @@ run_advisor_p2_worker() {
             --csv_collect_dir "$CSV_COLLECT_DIR" \
             "${PLOT_STYLE_ARGS[@]}" || return 1
 
+        env CUDA_VISIBLE_DEVICES="" JAX_PLATFORMS=cpu python3 -u scripts/analyze_flips_vs_g.py \
+            --root_dir "$BASE_OUT_DIR" \
+            --out_dir "${FIG_ROOT_DIR}/flips_analysis" \
+            --systems "N${N}:${G}" \
+            --skip_summary_plots \
+            --merge_summary_csv \
+            "${PLOT_STYLE_ARGS[@]}" || true
+
         for f_out in "$COMP_DIR"/*.png "$COMP_DIR"/*.pdf "$COMP_DIR"/*.csv "$COMP_DIR"/*.json; do
             [ -e "$f_out" ] && cp -f "$f_out" "$FIG_SYS_P2/"
         done
