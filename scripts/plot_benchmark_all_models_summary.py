@@ -124,7 +124,11 @@ def load_and_clean_data(csv_path: str) -> pd.DataFrame:
 
     def classify_row(label: str) -> str:
         l = str(label)
-        if "P3_VMC_MALA" in l or "VMC_MALA" in l or "VMC + MALA" in l:
+        if "P4_Online_Coupled_RL" in l or "Online_Coupled" in l or "online_coupled" in l or "P4_RL" in l:
+            return "P4: Online Coupled VMC + RL-MALA (SJB)"
+        elif "P4_VMC_MALA" in l:
+            return "P4: VMC + MALA (SJB)"
+        elif "P3_VMC_MALA" in l or "VMC_MALA" in l or "VMC + MALA" in l:
             return "P3: VMC + MALA (SJB)"
         elif "P3_Coupled_RL" in l or "Coupled_RL" in l or "Coupled VMC" in l:
             return "P3: Coupled VMC + RL-MALA (SJB)"
@@ -228,10 +232,31 @@ def _legend_if_nonempty(ax: plt.Axes, **kwargs) -> None:
         ax.legend(**kwargs)
 
 
-def plot_evolution_vs_g(df: pd.DataFrame, out_dir: str, args: argparse.Namespace) -> None:
-    """Figura 1: Dashboard de 6 paneles de evolución de métricas vs g para cada N."""
+def _select_primary_and_secondary_groups(df: pd.DataFrame):
+    """
+    Selecciona el par principal (RL, MALA) y secundario (RL, MALA) de manera que:
+    - Si existen datos de P2, P2 es primario y P4 (o P3) es secundario.
+    - Si solo se corrió P4 (o P3+P4), P4 es primario y P3 es secundario.
+    """
     p2_rl = df[df["pipeline_category"] == "P2: RL-MALA TD3 (CASSCF Fijo)"]
     p2_mala = df[df["pipeline_category"] == "P2: MALA (CASSCF Fijo)"]
+    p3_rl = df[df["pipeline_category"] == "P3: Coupled VMC + RL-MALA (SJB)"]
+    p3_mala = df[df["pipeline_category"] == "P3: VMC + MALA (SJB)"]
+    p4_rl = df[df["pipeline_category"] == "P4: Online Coupled VMC + RL-MALA (SJB)"]
+    p4_mala = df[df["pipeline_category"].isin(["P4: VMC + MALA (SJB)", "P3: VMC + MALA (SJB)"])]
+
+    if not p2_rl.empty or not p2_mala.empty:
+        sec_rl = p4_rl if not p4_rl.empty else p3_rl
+        sec_mala = p4_mala if not p4_rl.empty else p3_mala
+        return p2_rl, p2_mala, sec_rl, sec_mala
+    if not p4_rl.empty:
+        return p4_rl, p4_mala, p3_rl, p3_mala
+    return p3_rl, p3_mala, p4_rl, p4_mala
+
+
+def plot_evolution_vs_g(df: pd.DataFrame, out_dir: str, args: argparse.Namespace) -> None:
+    """Figura 1: Dashboard de 6 paneles de evolución de métricas vs g para cada N."""
+    p2_rl, p2_mala, _, _ = _select_primary_and_secondary_groups(df)
     if p2_rl.empty and p2_mala.empty:
         return
 
@@ -301,8 +326,7 @@ def plot_evolution_vs_g(df: pd.DataFrame, out_dir: str, args: argparse.Namespace
 
 def plot_evolution_vs_N(df: pd.DataFrame, out_dir: str, args: argparse.Namespace) -> None:
     """Figura 2: Dashboard de 6 paneles de evolución de métricas vs N para cada g."""
-    p2_rl = df[df["pipeline_category"] == "P2: RL-MALA TD3 (CASSCF Fijo)"]
-    p2_mala = df[df["pipeline_category"] == "P2: MALA (CASSCF Fijo)"]
+    p2_rl, p2_mala, _, _ = _select_primary_and_secondary_groups(df)
     if p2_rl.empty and p2_mala.empty:
         return
 
@@ -373,13 +397,10 @@ def plot_evolution_vs_N(df: pd.DataFrame, out_dir: str, args: argparse.Namespace
 
 
 def plot_speedup_and_ess(df: pd.DataFrame, out_dir: str, args: argparse.Namespace) -> None:
-    """Figura 3: Speedup G_RL y Eficiencia ESS/seg vs g y vs N (o P2 vs P3)."""
+    """Figura 3: Speedup G_RL y Eficiencia ESS/seg vs g y vs N (o P2 vs P3/P4)."""
     fig, axes = plt.subplots(2, 2, figsize=(15, 11))
 
-    p2_rl = df[df["pipeline_category"] == "P2: RL-MALA TD3 (CASSCF Fijo)"]
-    p2_mala = df[df["pipeline_category"] == "P2: MALA (CASSCF Fijo)"]
-    p3_rl = df[df["pipeline_category"] == "P3: Coupled VMC + RL-MALA (SJB)"]
-    p3_mala = df[df["pipeline_category"] == "P3: VMC + MALA (SJB)"]
+    p2_rl, p2_mala, p3_rl, p3_mala = _select_primary_and_secondary_groups(df)
     has_p3 = (not p3_rl.empty) or (not p3_mala.empty)
 
     n_values = sorted(df["N"].dropna().unique())
@@ -523,10 +544,7 @@ def plot_acceptance_and_esjd(df: pd.DataFrame, out_dir: str, args: argparse.Name
     """Figura 4: Tasa de Aceptación MCMC y Distancia de Salto ESJD vs g y vs N."""
     fig, axes = plt.subplots(2, 2, figsize=(15, 11))
 
-    p2_rl = df[df["pipeline_category"] == "P2: RL-MALA TD3 (CASSCF Fijo)"]
-    p2_mala = df[df["pipeline_category"] == "P2: MALA (CASSCF Fijo)"]
-    p3_rl = df[df["pipeline_category"] == "P3: Coupled VMC + RL-MALA (SJB)"]
-    p3_mala = df[df["pipeline_category"] == "P3: VMC + MALA (SJB)"]
+    p2_rl, p2_mala, p3_rl, p3_mala = _select_primary_and_secondary_groups(df)
     has_p3 = (not p3_rl.empty) or (not p3_mala.empty)
 
     n_values = sorted(df["N"].dropna().unique())
@@ -645,8 +663,7 @@ def plot_fidelity_and_energy(df: pd.DataFrame, out_dir: str, args: argparse.Name
     """Figura 5: Fidelidad respecto a CASSCF (D_KL^spin, D_KL^tot y Energía <E> +/- SE vs E_CASSCF)."""
     fig, axes = plt.subplots(1, 3, figsize=(19, 6))
 
-    p2_rl = df[df["pipeline_category"] == "P2: RL-MALA TD3 (CASSCF Fijo)"]
-    p2_mala = df[df["pipeline_category"] == "P2: MALA (CASSCF Fijo)"]
+    p2_rl, p2_mala, _, _ = _select_primary_and_secondary_groups(df)
     n_values = sorted(df["N"].dropna().unique())
 
     # Panel 0: Divergencia KL de Espín (Cruce Nodal) vs g
@@ -752,6 +769,8 @@ def plot_executive_dashboard(df: pd.DataFrame, out_dir: str, args: argparse.Name
         ("P2: RL-MALA TD3 (CASSCF Fijo)", "P2 RL-MALA"),
         ("P3: VMC + MALA (SJB)", "P3 VMC+MALA"),
         ("P3: Coupled VMC + RL-MALA (SJB)", "P3 Coupled RL"),
+        ("P4: VMC + MALA (SJB)", "P4 VMC+MALA"),
+        ("P4: Online Coupled VMC + RL-MALA (SJB)", "P4 Online RL"),
     ]
 
     # Panel 0: Distribución de Tiempos de Autocorrelación tau_int por Método
@@ -858,6 +877,8 @@ def plot_executive_dashboard(df: pd.DataFrame, out_dir: str, args: argparse.Name
             ("P2: RL-MALA TD3 (CASSCF Fijo)", "#c0392b", "*"),
             ("P3: VMC + MALA (SJB)", "#2980b9", "s"),
             ("P3: Coupled VMC + RL-MALA (SJB)", "#8e44ad", "^"),
+            ("P4: VMC + MALA (SJB)", "#16a085", "D"),
+            ("P4: Online Coupled VMC + RL-MALA (SJB)", "#27ae60", "P"),
         ]:
             sub = df[df["pipeline_category"] == cat]
             if not sub.empty:
@@ -951,6 +972,10 @@ def main() -> None:
 
     os.makedirs(args.out_dir, exist_ok=True)
     df = load_and_clean_data(args.csv)
+    try:
+        df.to_csv(os.path.join(args.out_dir, "figure_data_all_models_summary.csv"), index=False)
+    except Exception:
+        pass
 
     print("=" * 80)
     print("    GENERACIÓN DE FIGURAS GLOBALES DE TODOS LOS MODELOS (VS N Y G)")

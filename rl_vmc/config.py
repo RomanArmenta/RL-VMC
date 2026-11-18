@@ -110,6 +110,8 @@ class RL1DConfig:
     reward_epsilon: float = 1e-3
     max_phys_jump_factor: float = 5.0
     staggered_critic_reset: bool = False
+    use_reward_centering: bool = True
+    reward_centering_lr: float = 0.01
     use_lr_scheduler: bool = True
     lr_scheduler_type: Literal["cosine", "exponential", "linear", "constant"] = "cosine"
     lr_warmup_steps: int = 100
@@ -118,8 +120,8 @@ class RL1DConfig:
 
 @dataclass
 class Train1DConfig:
-    """Configuración del régimen de entrenamiento (VMC, RL, Acoplado o Solo Evaluación)."""
-    mode: Literal["vmc_only", "rl_only", "coupled", "eval_only"] = "vmc_only"
+    """Configuración del régimen de entrenamiento (VMC, RL, Acoplado por bloques, Acoplado Online P4 o Solo Evaluación)."""
+    mode: Literal["vmc_only", "rl_only", "coupled", "online_coupled", "eval_only"] = "vmc_only"
     seed: int = 42
     lr_ansatz: float = 5e-4
     use_lr_scheduler: bool = True
@@ -131,6 +133,14 @@ class Train1DConfig:
     coupled_training_cycles: int = 8
     vmc_iterations_per_cycle: int = 1250
     rl_sweeps_per_cycle: int = 100
+    online_nodal_warmup_steps: int = 250
+    online_critic_warmup_steps: int = 250
+    online_rl_freeze_tail_steps: int = 500
+    online_rl_update_every: int = 1
+    online_rl_updates_per_step: int = 1
+    online_walkers_to_store: int = 64
+    online_exp_noise: float = 0.0
+    online_reset_critic_period: int = 0
     steps_for_best: int = 500
     energy_clip_min: float = -500.0
     energy_clip_max: float = 500.0
@@ -373,10 +383,12 @@ def build_experiment_argparser() -> argparse.ArgumentParser:
     g_rl.add_argument("--kappa", type=float, default=0.5, help="Coeficiente del término alpha*(1-alpha) en recompensa kappa_jump.")
     g_rl.add_argument("--max_phys_jump_factor", type=float, default=5.0, help="Múltiplo de sqrt(tau) para acotar la distancia máxima premiada.")
     g_rl.add_argument("--staggered_critic_reset", action=argparse.BooleanOptionalAction, default=False, help="Reinicia alternadamente uno de los dos críticos TD3 en cada ciclo acoplado.")
+    g_rl.add_argument("--use_reward_centering", action=argparse.BooleanOptionalAction, default=True, help="Activa centrado adaptativo de recompensa (Reward Centering, Alg. 2 de Wang et al. 2025) en TD3.")
+    g_rl.add_argument("--reward_centering_lr", type=float, default=0.01, help="Tasa de aprendizaje (EMA) para la media móvil de recompensa en Reward Centering.")
 
     # 6. Entrenamiento
     g_trn = parser.add_argument_group("6. Régimen y Planificación de Entrenamiento")
-    g_trn.add_argument("--train_mode", type=str, default="vmc_only", choices=["vmc_only", "rl_only", "coupled", "eval_only"], help="Modo de entrenamiento a ejecutar.")
+    g_trn.add_argument("--train_mode", type=str, default="vmc_only", choices=["vmc_only", "rl_only", "coupled", "online_coupled", "eval_only"], help="Modo de entrenamiento a ejecutar.")
     g_trn.add_argument("--seed", type=int, default=42, help="Semilla pseudoaleatoria global.")
     g_trn.add_argument("--lr_ansatz", type=float, default=5e-4, help="Tasa de aprendizaje (Adam) para los parámetros del Ansatz.")
     g_trn.add_argument("--use_lr_scheduler", action=argparse.BooleanOptionalAction, default=True, help="Habilita o deshabilita el learning rate scheduler para todos los modelos entrenables (Ansatz VMC, Actor RL y Críticos).")
@@ -384,11 +396,19 @@ def build_experiment_argparser() -> argparse.ArgumentParser:
     g_trn.add_argument("--lr_warmup_steps", type=int, default=100, help="Pasos de calentamiento (warmup) del learning rate scheduler.")
     g_trn.add_argument("--lr_min_ratio", type=float, default=0.05, help="Cociente mínimo entre el learning rate final y el inicial (default: 0.05).")
     g_trn.add_argument("--grad_clip_norm", type=float, default=1.0, help="Norma global máxima para recorte de gradientes del Ansatz.")
-    g_trn.add_argument("--train_steps", type=int, default=5000, help="Pasos totales de optimización si train_mode='vmc_only'.")
+    g_trn.add_argument("--train_steps", type=int, default=5000, help="Pasos totales de optimización si train_mode='vmc_only' o 'online_coupled'.")
     g_trn.add_argument("--rl_steps", "--vmc_steps", "--coupled_steps", dest="train_steps", type=int, help="Alias de --train_steps.")
     g_trn.add_argument("--coupled_training_cycles", type=int, default=8, help="Número de macro-ciclos alternando VMC y RL si train_mode='coupled'.")
     g_trn.add_argument("--vmc_iterations_per_cycle", type=int, default=1250, help="Pasos de optimización VMC por cada macro-ciclo acoplado.")
     g_trn.add_argument("--rl_sweeps_per_cycle", type=int, default=100, help="Barridos de entrenamiento RL por cada macro-ciclo acoplado (o totales en rl_only).")
+    g_trn.add_argument("--online_nodal_warmup_steps", type=int, default=250, help="Fase 1 (Pipeline 4 online_coupled): pasos iniciales VMC con MALA sin guardar en Replay Buffer.")
+    g_trn.add_argument("--online_critic_warmup_steps", type=int, default=250, help="Fase 2 (Pipeline 4 online_coupled): pasos VMC con MALA pre-llenando Replay Buffer (a=0) y entrenando solo Críticos TD3.")
+    g_trn.add_argument("--online_rl_freeze_tail_steps", type=int, default=500, help="Fase 4 (Pipeline 4 online_coupled): pasos finales con Actor congelado (Diminishing Adaptation) para pulido variacional.")
+    g_trn.add_argument("--online_rl_update_every", type=int, default=1, help="Frecuencia de pasos VMC entre actualizaciones de gradiente TD3 en modo online_coupled.")
+    g_trn.add_argument("--online_rl_updates_per_step", type=int, default=1, help="Número de actualizaciones de gradiente TD3 por cada activación RL (ratio UTD) en modo online_coupled.")
+    g_trn.add_argument("--online_walkers_to_store", type=int, default=64, help="Número de caminantes aleatorios por paso cuyas transiciones se guardan en el Replay Buffer en modo online_coupled (<=0 guarda todos).")
+    g_trn.add_argument("--online_exp_noise", type=float, default=0.0, help="Ruido de exploración gaussiano en acciones durante la Fase 3 de online_coupled (0.0 preserva balance detallado exacto).")
+    g_trn.add_argument("--online_reset_critic_period", type=int, default=0, help="Si > 0, reinicia alternadamente uno de los dos críticos TD3 cada N pasos durante la Fase 3 de online_coupled.")
     g_trn.add_argument("--steps_for_best", type=int, default=500, help="Pasos iniciales ignorados antes de registrar el mejor ansatz (menor energía).")
     g_trn.add_argument("--energy_clip_min", type=float, default=-500.0, help="Cota inferior dura para la energía local durante VMC.")
     g_trn.add_argument("--energy_clip_max", type=float, default=500.0, help="Cota superior dura para la energía local durante VMC.")
@@ -446,6 +466,7 @@ def _sanitize_cli_tokens(tokens: list[str]) -> list[str]:
         "use_spatial_gating",
         "legacy_drift_factor",
         "staggered_critic_reset",
+        "use_reward_centering",
         "use_lr_scheduler",
         "run_evaluation",
         "use_actor_in_eval",
@@ -649,6 +670,8 @@ def parse_experiment_args(argv: Optional[list[str]] = None) -> Experiment1DConfi
             kappa=args.kappa,
             max_phys_jump_factor=args.max_phys_jump_factor,
             staggered_critic_reset=args.staggered_critic_reset,
+            use_reward_centering=args.use_reward_centering,
+            reward_centering_lr=args.reward_centering_lr,
             use_lr_scheduler=args.use_lr_scheduler,
             lr_scheduler_type=args.lr_scheduler_type,
             lr_warmup_steps=args.lr_warmup_steps,
@@ -667,6 +690,14 @@ def parse_experiment_args(argv: Optional[list[str]] = None) -> Experiment1DConfi
             coupled_training_cycles=args.coupled_training_cycles,
             vmc_iterations_per_cycle=args.vmc_iterations_per_cycle,
             rl_sweeps_per_cycle=args.rl_sweeps_per_cycle,
+            online_nodal_warmup_steps=args.online_nodal_warmup_steps,
+            online_critic_warmup_steps=args.online_critic_warmup_steps,
+            online_rl_freeze_tail_steps=args.online_rl_freeze_tail_steps,
+            online_rl_update_every=args.online_rl_update_every,
+            online_rl_updates_per_step=args.online_rl_updates_per_step,
+            online_walkers_to_store=args.online_walkers_to_store,
+            online_exp_noise=args.online_exp_noise,
+            online_reset_critic_period=args.online_reset_critic_period,
             steps_for_best=args.steps_for_best,
             energy_clip_min=args.energy_clip_min,
             energy_clip_max=args.energy_clip_max,

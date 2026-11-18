@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+import datetime
+import json
 import os
 from pathlib import Path
 import pickle
+import time
+from typing import Any
 import numpy as np
 import jax
 import jax.numpy as jnp
@@ -17,6 +21,7 @@ from rl_vmc.proposals.proposals_1d import build_proposal_1d, DeepSetNeuralPropos
 from rl_vmc.samplers.mh_sampler_1d import MHSampler1D
 from rl_vmc.rl.rewards import compute_rl_reward
 from rl_vmc.rl.learners_1d import TD3Learner1D, REINFORCELearner1D
+from rl_vmc.trainers.online_coupled_trainer_1d import OnlineCoupledTrainer1D
 from rl_vmc.core.io_bundle import (
     save_run_bundle_h5,
     load_run_bundle_h5,
@@ -111,8 +116,10 @@ def run_experiment_1d(cfg: Experiment1DConfig) -> str:
             except Exception as _exc:
                 print(f"  [Aviso] No se pudieron sincronizar metadatos desde {cfg.ansatz.casscf_npz_path}: {_exc}")
 
+    t_run_start = time.perf_counter()
+    ts_run_start = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     print("=" * 76)
-    print(f"[RL-VMC 1D] Iniciando Experimento -> {h5_path}")
+    print(f"[{ts_run_start}] [RL-VMC 1D] Iniciando Experimento -> {h5_path}")
     print(
         f"  Sistema   : N={cfg.system.n_elec} (up={cfg.system.n_up}, dn={cfg.system.n_dn}), "
         f"omega={cfg.system.omega}, g={cfg.system.interaction_strength}, soft={cfg.system.softening}"
@@ -123,9 +130,30 @@ def run_experiment_1d(cfg: Experiment1DConfig) -> str:
     )
     print(
         f"  Propuesta : {cfg.proposal.proposal_type} (modo={cfg.proposal.proposal_mode}, "
-        f"tau={cfg.proposal.tau}, update={cfg.sampler.update_mode})"
+        f"tau={cfg.proposal.tau}, amp={cfg.proposal.actor_amplitude}, sig_scale={cfg.proposal.sigma_action_scale}, update={cfg.sampler.update_mode})"
     )
-    print(f"  Régimen   : {cfg.train.mode}")
+    print(
+        f"  Muestreo  : batch_size={cfg.sampler.batch_size}, sweeps_per_step={cfg.sampler.sweeps_per_step}, "
+        f"n_burn_in={cfg.sampler.n_burn_in}, init_mode={cfg.sampler.init_mode}"
+    )
+    print(
+        f"  RL Config : alg={cfg.rl.algorithm}, reward={cfg.rl.reward_type}, pen={cfg.rl.penalty_factor}, "
+        f"lr_act={cfg.rl.lr_actor}, lr_crit={cfg.rl.lr_critic}, replay_cap={cfg.rl.rl_replay_capacity}, "
+        f"reward_centering={cfg.rl.use_reward_centering}"
+    )
+    print(
+        f"  Régimen   : {cfg.train.mode} (train_steps={cfg.train.train_steps}, lr_ansatz={cfg.train.lr_ansatz}, seed={cfg.train.seed})"
+    )
+    if cfg.train.mode == "online_coupled":
+        print(
+            f"  Pipeline 4: nodal_warmup={cfg.train.online_nodal_warmup_steps}, "
+            f"critic_warmup={cfg.train.online_critic_warmup_steps}, "
+            f"freeze_tail={cfg.train.online_rl_freeze_tail_steps}, "
+            f"update_every={cfg.train.online_rl_update_every}, "
+            f"UTD={cfg.train.online_rl_updates_per_step}, "
+            f"walkers_to_store={cfg.train.online_walkers_to_store}"
+        )
+    print(f"  Full Config JSON:\n{cfg.to_json(indent=2)}")
     print("=" * 76)
 
     key = jax.random.PRNGKey(cfg.train.seed)
@@ -206,8 +234,12 @@ def run_experiment_1d(cfg: Experiment1DConfig) -> str:
 
     # Inicializar caminantes y termalización previa al entrenamiento
     state = sampler.init_state(k_sampler, params_psi)
+    t_burn_in_sec = 0.0
     if cfg.sampler.n_burn_in > 0 and cfg.train.mode != "eval_only":
-        print(f"[MCMC] Termalizando caminantes iniciales ({cfg.sampler.n_burn_in} pasos)...")
+        t0_burn = time.perf_counter()
+        print(
+            f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [MCMC] Termalizando caminantes iniciales ({cfg.sampler.n_burn_in} pasos)..."
+        )
         key, state = sampler.run_burn_in(
             key,
             state,
@@ -215,6 +247,10 @@ def run_experiment_1d(cfg: Experiment1DConfig) -> str:
             params_actor,
             cfg.sampler.n_burn_in,
             use_actor=(proposal.is_neural and loaded_actor),
+        )
+        t_burn_in_sec = time.perf_counter() - t0_burn
+        print(
+            f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [MCMC] Burn-in inicial completado en {t_burn_in_sec:.2f}s."
         )
 
     # Optimizador del Ansatz para VMC con soporte para Learning Rate Scheduler
@@ -225,7 +261,7 @@ def run_experiment_1d(cfg: Experiment1DConfig) -> str:
 
     total_vmc_steps = (
         cfg.train.train_steps
-        if cfg.train.mode == "vmc_only"
+        if cfg.train.mode in ("vmc_only", "online_coupled")
         else (n_coupled_cycles * coupled_vmc_per_cyc)
     )
     ansatz_lr = build_lr_schedule(
@@ -466,8 +502,11 @@ def run_experiment_1d(cfg: Experiment1DConfig) -> str:
     # =========================================================================
     # EJECUCIÓN SEGÚN cfg.train.mode
     # =========================================================================
+    t0_train_stage = time.perf_counter()
+    phase_wall_times_sec = {}
+
     if cfg.train.mode == "vmc_only":
-        print(f"[Train] Modo vmc_only ({cfg.train.train_steps} pasos)...")
+        print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [Train] Modo vmc_only ({cfg.train.train_steps} pasos)...")
         _run_vmc_block(
             cfg.train.train_steps,
             use_actor_flag=(proposal.is_neural and loaded_actor),
@@ -476,17 +515,17 @@ def run_experiment_1d(cfg: Experiment1DConfig) -> str:
 
     elif cfg.train.mode == "rl_only":
         rl_steps = max(cfg.train.train_steps, cfg.train.rl_sweeps_per_cycle)
-        print(f"[Train] Modo rl_only ({rl_steps} barridos RL)...")
+        print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [Train] Modo rl_only ({rl_steps} barridos RL)...")
         _run_rl_block(rl_steps, phase_label="RL")
 
     elif cfg.train.mode == "coupled":
         n_cycles = n_coupled_cycles
         vmc_per_cyc = coupled_vmc_per_cyc
         print(
-            f"[Train] Modo acoplado VMC + RL ({n_cycles} ciclos, {vmc_per_cyc} VMC y {cfg.train.rl_sweeps_per_cycle} RL por ciclo)..."
+            f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [Train] Modo acoplado VMC + RL ({n_cycles} ciclos, {vmc_per_cyc} VMC y {cfg.train.rl_sweeps_per_cycle} RL por ciclo)..."
         )
         for cyc in range(1, n_cycles + 1):
-            print(f"\n--- Ciclo Acoplado {cyc}/{n_cycles} ---")
+            print(f"\n--- [{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Ciclo Acoplado {cyc}/{n_cycles} ---")
             # En el Ciclo 1 relajamos primero el ansatz con MALA (salvo que haya actor precargado)
             # para evitar que el Actor TD3 se entrene sobre una función de onda inicial sin relajar.
             use_actor_in_vmc = proposal.is_neural and (cyc > 1 or loaded_actor)
@@ -522,11 +561,47 @@ def run_experiment_1d(cfg: Experiment1DConfig) -> str:
                 walkers=state.walkers, log_psi=lp_best, grad_log_psi=grad_best
             )
             polish_steps = max(200, int(cfg.train.rl_sweeps_per_cycle))
-            print(f"\n--- Pulido Final del Actor RL sobre best_params_psi ({polish_steps} barridos) ---")
+            print(f"\n--- [{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Pulido Final del Actor RL sobre best_params_psi ({polish_steps} barridos) ---")
             _run_rl_block(polish_steps, phase_label="Final-RL")
 
+    elif cfg.train.mode == "online_coupled":
+        online_trainer = OnlineCoupledTrainer1D(
+            cfg=cfg,
+            ansatz=ansatz,
+            proposal=proposal,
+            sampler=sampler,
+            learner=learner,
+            vmc_update_fn=vmc_update_step,
+            loaded_actor=loaded_actor,
+        )
+        online_res = online_trainer.run(
+            key=key,
+            state=state,
+            params_psi=params_psi,
+            vmc_opt_state=vmc_opt_state,
+            params_actor=params_actor,
+            best_params_psi=best_params_psi,
+            best_energy=best_energy,
+        )
+        key = online_res["key"]
+        state = online_res["state"]
+        params_psi = online_res["params_psi"]
+        vmc_opt_state = online_res["vmc_opt_state"]
+        params_actor = online_res["params_actor"]
+        params_critic1 = online_res["params_critic1"]
+        params_critic2 = online_res["params_critic2"]
+        best_params_psi = online_res["best_params_psi"]
+        best_energy = online_res["best_energy"]
+        training_history = online_res["training_history"]
+        phase_wall_times_sec = online_res.get("phase_wall_times_sec", {})
+
     elif cfg.train.mode == "eval_only":
-        print("[Train] Modo eval_only: omitiendo entrenamiento.")
+        print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [Train] Modo eval_only: omitiendo entrenamiento.")
+
+    train_wall_time_sec = time.perf_counter() - t0_train_stage
+    print(
+        f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [Timing] Etapa de entrenamiento ({cfg.train.mode}) completada en {train_wall_time_sec:.2f}s (burn_in={t_burn_in_sec:.2f}s)."
+    )
 
     if best_energy == float("inf"):
         best_params_psi = params_psi
@@ -823,6 +898,10 @@ def run_experiment_1d(cfg: Experiment1DConfig) -> str:
                     "ESS": _safe_float(d_sum.get("ESS")),
                     "ESS_per_sec": _safe_float(d_sum.get("ESS_per_sec")),
                     "wall_time_sec": _safe_float(d_sum.get("wall_time_sec")),
+                    "train_wall_time_sec": float(train_wall_time_sec),
+                    "burn_in_wall_time_sec": float(t_burn_in_sec),
+                    "total_run_wall_time_sec": float(time.perf_counter() - t_run_start),
+                    "phase_wall_times_sec": phase_wall_times_sec,
                     "time_to_solution_sec": _safe_float(d_sum.get("time_to_solution_sec")),
                     "n_wigner_peaks": _safe_int(obs["n_wigner_peaks"], -1) if obs else -1,
                     "rms_radius": _safe_float(obs["rms_radius"]) if obs else float("nan"),
@@ -881,7 +960,13 @@ def run_experiment_1d(cfg: Experiment1DConfig) -> str:
                 "ESS": _safe_float(d_sum.get("ESS")),
                 "ESS_per_sec": _safe_float(d_sum.get("ESS_per_sec")),
                 "wall_time_sec": _safe_float(d_sum.get("wall_time_sec")),
+                "train_wall_time_sec": float(train_wall_time_sec),
+                "total_run_wall_time_sec": float(time.perf_counter() - t_run_start),
                 "time_to_solution_sec": _safe_float(d_sum.get("time_to_solution_sec")),
+                "online_nodal_warmup_steps": cfg.train.online_nodal_warmup_steps if cfg.train.mode == "online_coupled" else 0,
+                "online_critic_warmup_steps": cfg.train.online_critic_warmup_steps if cfg.train.mode == "online_coupled" else 0,
+                "online_rl_freeze_tail_steps": cfg.train.online_rl_freeze_tail_steps if cfg.train.mode == "online_coupled" else 0,
+                "online_walkers_to_store": cfg.train.online_walkers_to_store if cfg.train.mode == "online_coupled" else 0,
                 "n_wigner_peaks": _safe_int(obs["n_wigner_peaks"], -1) if obs else -1,
                 "rms_radius": _safe_float(obs["rms_radius"]) if obs else float("nan"),
                 "mean_pair_dist": _safe_float(obs["mean_pair_dist"]) if obs else float("nan"),
@@ -921,4 +1006,14 @@ def run_experiment_1d(cfg: Experiment1DConfig) -> str:
         except Exception as exc:
             print(f"[Aviso IO] No se pudo completar exportación de summary.json / master_csv: {exc}")
 
+    ts_run_end = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    total_run_sec = time.perf_counter() - t_run_start
+    eval_sec = float(production_data.get("wall_time_sec", 0.0)) if production_data else 0.0
+    print("=" * 76)
+    print(f"[{ts_run_end}] [RL-VMC 1D] Experimento Finalizado -> {saved_path}")
+    print(
+        f"  Tiempo Cómputo Raw : Total={total_run_sec:.2f}s | "
+        f"Burn-in={t_burn_in_sec:.2f}s | Train={train_wall_time_sec:.2f}s | Eval={eval_sec:.2f}s"
+    )
+    print("=" * 76)
     return str(saved_path)

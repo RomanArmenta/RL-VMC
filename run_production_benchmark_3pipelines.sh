@@ -111,7 +111,7 @@ CRITICAL_MIN_DISK_MB="${CRITICAL_MIN_DISK_MB:-96}"
 TOP_K_MODELS="${TOP_K_MODELS:-2}"
 WALKER_TRACE_TOP_K="${WALKER_TRACE_TOP_K:-1}"
 
-# Hiperparámetros calibrados de convergencia para Pipeline 3 (RL-VMC Variacional Acoplado)
+# Hiperparámetros calibrados de convergencia para Pipeline 3 (RL-VMC Variacional Acoplado por Bloques)
 P3_ANSATZ_TYPE="${P3_ANSATZ_TYPE:-slater_jastrow_1d}"
 P3_ORBITAL_MODEL="${P3_ORBITAL_MODEL:-backflow_ho}"
 P3_CORRELATION_MODEL="${P3_CORRELATION_MODEL:-spin_rbf_jastrow}"
@@ -125,6 +125,26 @@ P3_RL_SWEEPS_PER_CYCLE="${P3_RL_SWEEPS_PER_CYCLE:-400}"
 P3_STEPS_FOR_BEST="${P3_STEPS_FOR_BEST:-3000}"
 P3_LR_WARMUP_STEPS="${P3_LR_WARMUP_STEPS:-200}"
 P3_LR_MIN_RATIO="${P3_LR_MIN_RATIO:-0.05}"
+
+# Hiperparámetros para Pipeline 4 (RL-VMC Acoplado Online Paso a Paso en 4 Regímenes)
+P4_ANSATZ_TYPE="${P4_ANSATZ_TYPE:-$P3_ANSATZ_TYPE}"
+P4_ORBITAL_MODEL="${P4_ORBITAL_MODEL:-$P3_ORBITAL_MODEL}"
+P4_CORRELATION_MODEL="${P4_CORRELATION_MODEL:-$P3_CORRELATION_MODEL}"
+P4_BATCH_SIZE="${P4_BATCH_SIZE:-512}"
+P4_SWEEPS_PER_STEP="${P4_SWEEPS_PER_STEP:-5}"
+P4_LR_ANSATZ="${P4_LR_ANSATZ:-1e-3}"
+P4_GRAD_CLIP_NORM="${P4_GRAD_CLIP_NORM:-0.5}"
+P4_TOTAL_STEPS="${P4_TOTAL_STEPS:-12000}"
+P4_NODAL_WARMUP_STEPS="${P4_NODAL_WARMUP_STEPS:-500}"
+P4_CRITIC_WARMUP_STEPS="${P4_CRITIC_WARMUP_STEPS:-500}"
+P4_FREEZE_TAIL_STEPS="${P4_FREEZE_TAIL_STEPS:-1500}"
+P4_RL_UPDATE_EVERY="${P4_RL_UPDATE_EVERY:-1}"
+P4_RL_UPDATES_PER_STEP="${P4_RL_UPDATES_PER_STEP:-1}"
+P4_WALKERS_TO_STORE="${P4_WALKERS_TO_STORE:-64}"
+P4_REPLAY_CAPACITY="${P4_REPLAY_CAPACITY:-25000}"
+P4_REWARD_CENTERING="${P4_REWARD_CENTERING:-1}"
+P4_REWARD_CENTERING_LR="${P4_REWARD_CENTERING_LR:-0.01}"
+P4_STEPS_FOR_BEST="${P4_STEPS_FOR_BEST:-3000}"
 
 # Formato y estilo de figuras (por defecto solo PNG para ahorrar espacio)
 FIGURE_FORMAT="${FIGURE_FORMAT:-png}"
@@ -142,6 +162,12 @@ while [[ $# -gt 0 ]]; do
         --pipelines) PIPELINES_TO_RUN="$2"; shift 2 ;;
         --run-pipeline3|--with-pipeline3) PIPELINES_TO_RUN="1 2 3"; shift ;;
         --only-pipeline3|--pipeline3-only) PIPELINES_TO_RUN="3"; shift ;;
+        --run-pipeline4|--with-pipeline4) PIPELINES_TO_RUN="1 2 4"; shift ;;
+        --only-pipeline4|--pipeline4-only) PIPELINES_TO_RUN="4"; shift ;;
+        --run-all-pipelines|--all-pipelines) PIPELINES_TO_RUN="1 2 3 4"; shift ;;
+        --gpu|--gpus|--gpu-list) GPU_LIST="$2"; shift 2 ;;
+        --jobs-per-gpu|-j) JOBS_PER_GPU="$2"; shift 2 ;;
+        --max-parallel-jobs) MAX_PARALLEL_JOBS="$2"; shift 2 ;;
         --p3-ansatz) P3_ANSATZ_TYPE="$2"; shift 2 ;;
         --p3-orbital) P3_ORBITAL_MODEL="$2"; shift 2 ;;
         --p3-corr) P3_CORRELATION_MODEL="$2"; shift 2 ;;
@@ -151,6 +177,20 @@ while [[ $# -gt 0 ]]; do
         --p3-cycles) P3_COUPLED_CYCLES="$2"; shift 2 ;;
         --p3-vmc-per-cycle) P3_VMC_ITERS_PER_CYCLE="$2"; shift 2 ;;
         --p3-rl-per-cycle) P3_RL_SWEEPS_PER_CYCLE="$2"; shift 2 ;;
+        --p4-ansatz) P4_ANSATZ_TYPE="$2"; shift 2 ;;
+        --p4-orbital) P4_ORBITAL_MODEL="$2"; shift 2 ;;
+        --p4-corr) P4_CORRELATION_MODEL="$2"; shift 2 ;;
+        --p4-batch-size) P4_BATCH_SIZE="$2"; shift 2 ;;
+        --p4-sweeps) P4_SWEEPS_PER_STEP="$2"; shift 2 ;;
+        --p4-lr-ansatz) P4_LR_ANSATZ="$2"; shift 2 ;;
+        --p4-total-steps|--p4-steps) P4_TOTAL_STEPS="$2"; shift 2 ;;
+        --p4-nodal-warmup) P4_NODAL_WARMUP_STEPS="$2"; shift 2 ;;
+        --p4-critic-warmup) P4_CRITIC_WARMUP_STEPS="$2"; shift 2 ;;
+        --p4-freeze-tail) P4_FREEZE_TAIL_STEPS="$2"; shift 2 ;;
+        --p4-update-every) P4_RL_UPDATE_EVERY="$2"; shift 2 ;;
+        --p4-utd|--p4-updates-per-step) P4_RL_UPDATES_PER_STEP="$2"; shift 2 ;;
+        --p4-walkers-store) P4_WALKERS_TO_STORE="$2"; shift 2 ;;
+        --p4-replay-cap) P4_REPLAY_CAPACITY="$2"; shift 2 ;;
         --n-list|--n_list|--n-filter) N_LIST="$2"; shift 2 ;;
         --g-list|--g_list|--g-filter) G_LIST="$2"; shift 2 ;;
         --systems|--system-filter) SYSTEMS_FILTER="$2"; shift 2 ;;
@@ -162,15 +202,18 @@ while [[ $# -gt 0 ]]; do
 Uso: ./run_production_benchmark_3pipelines.sh [carpeta_salida] [opciones]
 
 Opciones principales:
-  --systems "N4:2.0"                     Selección no-cartesiana exacta por (N, g)
+  --systems "N4:2.0 N6:1.0"              Selección no-cartesiana exacta por (N, g)
   --n-list "4 6"                         Lista de N (espacios)
   --g-list "0.1 0.5 1.0 2.0 3.0 5.0 8.0" Lista de g (espacios)
+  --gpus "0 1 2" --jobs-per-gpu 2        Selección de GPUs y trabajos concurrentes por GPU
   --skip-global-plots                    Omitir gráficas globales vs N y g
-  --pipelines "1 2" | --run-pipeline3 | --only-pipeline3
+  --pipelines "1 2" | --only-pipeline3 | --only-pipeline4 | --run-all-pipelines
   --p3-ansatz slater_jastrow_1d|multi_sjb  Ansatz variacional de Pipeline 3
-  --p3-batch-size 512 --p3-sweeps 5        Caminantes y barridos MCMC por paso VMC
-  --p3-lr-ansatz 1e-3 --p3-cycles 10       Tasa de aprendizaje y ciclos acoplados P3
-  --p3-vmc-per-cycle 1200 --p3-rl-per-cycle 400
+  --p4-total-steps 12000                 Pasos VMC totales para Pipeline 4 (online_coupled)
+  --p4-nodal-warmup 500                  Régimen 1 (Nodal Warmup MALA) en Pipeline 4
+  --p4-critic-warmup 500                 Régimen 2 (Off-Policy Buffer + Critic Warmup) en Pipeline 4
+  --p4-freeze-tail 1500                  Régimen 4 (Diminishing Adaptation Tail Freeze) en Pipeline 4
+  --p4-walkers-store 64 --p4-replay-cap 25000
   --postprocess-only                     Regenerar sólo figuras/CSVs
   --force-rerun                          Forzar recálculo completo
   --init-mode <modo>                     Init entrenamiento (default: randomized_wigner)
@@ -251,10 +294,12 @@ PLOT_STYLE_ARGS=(
 P1_DIR="${BASE_OUT_DIR}/pipeline1_casscf"
 P2_DIR="${BASE_OUT_DIR}/pipeline2_pure_sampling"
 P3_DIR="${BASE_OUT_DIR}/pipeline3_variational_training"
+P4_DIR="${BASE_OUT_DIR}/pipeline4_online_coupled"
 FIG_ROOT_DIR="${BASE_OUT_DIR}/figures"
 FIG_P1_DIR="${FIG_ROOT_DIR}/pipeline1_casscf"
 FIG_P2_DIR="${FIG_ROOT_DIR}/pipeline2_systems"
 FIG_P3_DIR="${FIG_ROOT_DIR}/pipeline3_systems"
+FIG_P4_DIR="${FIG_ROOT_DIR}/pipeline4_systems"
 FIG_ALL_MODELS_DIR="${FIG_ROOT_DIR}/all_models_vs_N_and_g"
 LOG_DIR="${BASE_OUT_DIR}/logs"
 
@@ -263,9 +308,11 @@ LIVE_CSV_P2_RUNS="${BASE_OUT_DIR}/live_pipeline2_sampling_runs.csv"
 LIVE_CSV_P2_COMP="${BASE_OUT_DIR}/live_pipeline2_sampling_comparison.csv"
 LIVE_CSV_P3_RUNS="${BASE_OUT_DIR}/live_pipeline3_training_runs.csv"
 LIVE_CSV_P3_COMP="${BASE_OUT_DIR}/live_pipeline3_training_comparison.csv"
+LIVE_CSV_P4_RUNS="${BASE_OUT_DIR}/live_pipeline4_online_runs.csv"
+LIVE_CSV_P4_COMP="${BASE_OUT_DIR}/live_pipeline4_online_comparison.csv"
 LIVE_CSV_ALL="${BASE_OUT_DIR}/live_all_models_master.csv"
 
-mkdir -p "$P1_DIR" "$P2_DIR" "$P3_DIR" "$FIG_P1_DIR" "$FIG_P2_DIR" "$FIG_P3_DIR" "$FIG_ALL_MODELS_DIR" "$LOG_DIR" "$CSV_COLLECT_DIR"
+mkdir -p "$P1_DIR" "$P2_DIR" "$P3_DIR" "$P4_DIR" "$FIG_P1_DIR" "$FIG_P2_DIR" "$FIG_P3_DIR" "$FIG_P4_DIR" "$FIG_ALL_MODELS_DIR" "$LOG_DIR" "$CSV_COLLECT_DIR"
 
 MASTER_START_EPOCH=$(date +%s)
 MASTER_START_TIME=$(date "+%Y-%m-%d %H:%M:%S")
@@ -328,6 +375,16 @@ discover_gpus() {
     if [ "$MAX_TOTAL_JOBS" -lt 1 ]; then
         MAX_TOTAL_JOBS=1
     fi
+
+    # Ajustar fracción de VRAM automáticamente según JOBS_PER_GPU para permitir >1 trabajo por GPU sin OOM
+    if [ "$JOBS_PER_GPU" -ge 3 ]; then
+        export XLA_PYTHON_CLIENT_MEM_FRACTION="0.28"
+    elif [ "$JOBS_PER_GPU" -eq 2 ]; then
+        export XLA_PYTHON_CLIENT_MEM_FRACTION="0.42"
+    else
+        export XLA_PYTHON_CLIENT_MEM_FRACTION="${XLA_PYTHON_CLIENT_MEM_FRACTION:-0.75}"
+    fi
+    export XLA_PYTHON_CLIENT_ALLOCATOR=platform
 }
 
 discover_gpus
@@ -492,7 +549,7 @@ import os
 import sys
 import pandas as pd
 
-io_path, p2_csv, p3_csv, out_csv, collect_dir = sys.argv[1:6]
+io_path, p2_csv, p3_csv, p4_csv, out_csv, collect_dir = sys.argv[1:7]
 spec = importlib.util.spec_from_file_location("io_bundle", io_path)
 if spec is None or spec.loader is None:
     sys.exit(2)
@@ -500,7 +557,7 @@ io_mod = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(io_mod)
 
 frames = []
-for src in (p2_csv, p3_csv):
+for src in (p2_csv, p3_csv, p4_csv):
     if os.path.isfile(src) and os.path.getsize(src) > 0:
         try:
             df_part = pd.read_csv(src)
@@ -520,7 +577,7 @@ io_mod.atomic_write_csv(df_all, out_csv, index=False)
 if collect_dir:
     os.makedirs(collect_dir, exist_ok=True)
     io_mod.atomic_copy_file(out_csv, os.path.join(collect_dir, "live_all_models_master.csv"))
-' "${SCRIPT_DIR}/rl_vmc/core/io_bundle.py" "$LIVE_CSV_P2_COMP" "$LIVE_CSV_P3_COMP" "$LIVE_CSV_ALL" "$CSV_COLLECT_DIR"
+' "${SCRIPT_DIR}/rl_vmc/core/io_bundle.py" "$LIVE_CSV_P2_COMP" "$LIVE_CSV_P3_COMP" "$LIVE_CSV_P4_COMP" "$LIVE_CSV_ALL" "$CSV_COLLECT_DIR"
     local rc=$?
     release_global_plot_lock
     return "$rc"
@@ -1704,6 +1761,413 @@ EOF
 }
 
 # ==============================================================================
+# PIPELINE 4: ENTRENAMIENTO VARIACIONAL ACOPLADO ONLINE PASO A PASO (4 REGÍMENES)
+# ==============================================================================
+run_sistema_pipeline_4() {
+    trap - EXIT INT TERM
+    local GPU_ID=$1
+    local N=$2
+    local G=$3
+    local N_UP=$((N / 2))
+    local N_DN=$((N - N_UP))
+    read -r NCORE NACT NBASIS QUAD SOFT <<< "$(get_system_casscf_params "$N" "$G")"
+    read -r TAU ACTOR_AMP PENALTY SIG_SCALE <<< "$(get_system_p2_params "$N" "$G")"
+    read -r INIT_OFFSET_BASE INIT_OFFSET_STEP <<< "$(get_system_wigner_init_offset "$N" "$G")"
+
+    local SYS_TAG="N${N}_w${OMEGA}_g${G}"
+    local CASSCF_NPZ="${P1_DIR}/${SYS_TAG}/casscf_state.npz"
+    local SYS_OUT="${P4_DIR}/${SYS_TAG}"
+    local VMC_MALA_DIR="${SYS_OUT}/VMC_MALA_SJB"
+    local ONLINE_RL_DIR="${SYS_OUT}/Online_Coupled_RL_TD3_SJB"
+    local COMP_DIR="${SYS_OUT}/postprocess_comparison"
+    local FIG_SYS_P4="${FIG_P4_DIR}/${SYS_TAG}"
+    local VMC_MALA_H5="${VMC_MALA_DIR}/run_bundle.h5"
+    local ONLINE_RL_H5="${ONLINE_RL_DIR}/run_bundle.h5"
+
+    mkdir -p "$VMC_MALA_DIR" "$ONLINE_RL_DIR" "$COMP_DIR" "$FIG_SYS_P4" "${P1_DIR}/${SYS_TAG}"
+
+    # Localizar automáticamente el estado CASSCF del asesor en CASSCF_csv/ si no se corrió Pipeline 1
+    if [ ! -f "$CASSCF_NPZ" ]; then
+        local ADVISOR_NPZ
+        ADVISOR_NPZ=$(python3 - "$SCRIPT_DIR/CASSCF_csv" "$N" "$G" << 'PYEOF'
+import glob, os, re, sys
+root, n_req, g_req = sys.argv[1], int(sys.argv[2]), float(sys.argv[3])
+if not os.path.isdir(root):
+    sys.exit(0)
+for p in sorted(glob.glob(os.path.join(root, "*.npz"))):
+    b = os.path.basename(p).lower()
+    m = re.search(r"n(\d+)_g([0-9]+(?:\.[0-9]+)?)", b)
+    if m and int(m.group(1)) == n_req and abs(float(m.group(2)) - g_req) <= 1e-4:
+        print(p)
+        sys.exit(0)
+PYEOF
+)
+        if [ -n "$ADVISOR_NPZ" ] && [ -f "$ADVISOR_NPZ" ]; then
+            cp -f "$ADVISOR_NPZ" "$CASSCF_NPZ"
+            echo "  [Pipeline 4 | Ref CASSCF] Copiado estado convergido del asesor: $(basename "$ADVISOR_NPZ") -> $CASSCF_NPZ"
+        fi
+    fi
+
+    # Reutilizar baseline VMC+MALA de Pipeline 3 si ya fue calculado con el mismo número de pasos
+    if [ "$FORCE_RERUN" -eq 0 ] && ! is_h5_completed "$VMC_MALA_H5" && is_h5_completed "${P3_DIR}/${SYS_TAG}/VMC_MALA_SJB/run_bundle.h5"; then
+        cp -f "${P3_DIR}/${SYS_TAG}/VMC_MALA_SJB/run_bundle.h5" "$VMC_MALA_H5"
+        echo "  [Pipeline 4 | Reuse] Reutilizado VMC_MALA_SJB de Pipeline 3 para ${SYS_TAG}."
+    fi
+
+    local P4_EXTRA_ANSATZ_FLAGS=()
+    if [[ "$P4_ANSATZ_TYPE" == "multi_sjb" || "$P4_ANSATZ_TYPE" == "multi_slater_jastrow" ]]; then
+        if [ -f "$CASSCF_NPZ" ]; then
+            P4_EXTRA_ANSATZ_FLAGS=(--casscf_npz_path "$CASSCF_NPZ")
+        fi
+    fi
+
+    local P4_RC_FLAG="--use_reward_centering"
+    if [ "$P4_REWARD_CENTERING" = "0" ] || [ "$P4_REWARD_CENTERING" = "false" ]; then
+        P4_RC_FLAG="--no-use_reward_centering"
+    fi
+
+    local sys_failed=0
+
+    if [ "$POSTPROCESS_ONLY" -eq 0 ]; then
+        # 4A. Baseline VMC + MALA
+        if [ "$FORCE_RERUN" -eq 1 ] || ! is_h5_completed "$VMC_MALA_H5"; then
+            if ! quarantine_corrupt_h5 "$VMC_MALA_H5"; then
+                record_failure "PIPELINE 4 (VMC-MALA)" "$SYS_TAG" "No se pudo respaldar HDF5 inválido ${VMC_MALA_H5}"
+                sys_failed=1
+            elif ! check_disk_before_run "$VMC_MALA_DIR" "PIPELINE 4 (VMC-MALA)" "$SYS_TAG" "VMC-MALA"; then
+                sys_failed=1
+            else
+                run_logged_step "[Pipeline 4 | VMC-MALA (${P4_ANSATZ_TYPE}, B=${P4_BATCH_SIZE}, sweeps=${P4_SWEEPS_PER_STEP}, steps=${P4_TOTAL_STEPS}) | ${SYS_TAG} | GPU ${GPU_ID}]" \
+                    env CUDA_VISIBLE_DEVICES="$GPU_ID" python3 -u cli/run_1d.py \
+                        --run_name "P4_VMC_MALA_SJB_${SYS_TAG}" \
+                        --pipeline_stage "pipeline4_online_coupled" \
+                        --train_mode vmc_only \
+                        --n_elec "$N" --n_up "$N_UP" --n_dn "$N_DN" \
+                        --omega "$OMEGA" --g "$G" --softening "$SOFT" \
+                        --ansatz_type "$P4_ANSATZ_TYPE" \
+                        --orbital_model "$P4_ORBITAL_MODEL" \
+                        --correlation_model "$P4_CORRELATION_MODEL" \
+                        "${P4_EXTRA_ANSATZ_FLAGS[@]}" \
+                        --proposal_type mala \
+                        --train_steps "$P4_TOTAL_STEPS" \
+                        --steps_for_best "$P4_STEPS_FOR_BEST" \
+                        --lr_ansatz "$P4_LR_ANSATZ" \
+                        --use_lr_scheduler \
+                        --lr_scheduler_type cosine \
+                        --lr_warmup_steps "$P3_LR_WARMUP_STEPS" \
+                        --lr_min_ratio "$P3_LR_MIN_RATIO" \
+                        --grad_clip_norm "$P4_GRAD_CLIP_NORM" \
+                        --sweeps_per_step "$P4_SWEEPS_PER_STEP" \
+                        --n_ter "$N_BURN_IN" \
+                        --tau "$TAU" \
+                        --batch_size "$P4_BATCH_SIZE" \
+                        --init_mode "$INIT_MODE" \
+                        --init_std "$INIT_STD" \
+                        --eval_init_mode "$EVAL_INIT_MODE" \
+                        --init_offset_base "$INIT_OFFSET_BASE" \
+                        --init_offset_step "$INIT_OFFSET_STEP" \
+                        --n_eval_chains "$N_EVAL_CHAINS" \
+                        --eval_burn_in "$EVAL_BURN_IN" \
+                        --measure_steps "$MEASURE_STEPS" \
+                        --eloc_chunk_size "$ELOC_CHUNK_SIZE" \
+                        --save_walkers_max_batch "$SAVE_WALKERS_MAX_BATCH" \
+                        --save_production_energy_mode "$SAVE_ENERGY_MODE" \
+                        --save_production_walkers_dtype "$SAVE_WALKERS_DTYPE" \
+                        --save_production_stats_dtype "$SAVE_STATS_DTYPE" \
+                        --output_h5 "$VMC_MALA_H5" \
+                        --reference_casscf_npz "$CASSCF_NPZ" \
+                        --master_csv "$LIVE_CSV_P4_RUNS" \
+                        --csv_collect_dir "$CSV_COLLECT_DIR" \
+                        "$LEGACY_EXPORT_FLAG"
+                local vmc_rc=$?
+                if [ "$vmc_rc" -ne 0 ] || ! is_h5_completed "$VMC_MALA_H5"; then
+                    echo "  [Error Pipeline 4] Falló VMC-MALA para ${SYS_TAG} (exit=${vmc_rc})." >&2
+                    record_failure "PIPELINE 4 (VMC-MALA)" "$SYS_TAG" "cli/run_1d.py VMC-MALA falló (exit=${vmc_rc}) o bundle inválido en ${VMC_MALA_H5}"
+                    sys_failed=1
+                fi
+            fi
+        else
+            cleanup_run_dir_artifacts "$VMC_MALA_DIR"
+            echo "  [SKIP] VMC-MALA ya completado para ${SYS_TAG}: $VMC_MALA_H5"
+        fi
+
+        # 4B. Pipeline 4: Entrenamiento Acoplado Online Paso a Paso en 4 Regímenes (`online_coupled`)
+        if [ "$FORCE_RERUN" -eq 1 ] || ! is_h5_completed "$ONLINE_RL_H5"; then
+            if ! quarantine_corrupt_h5 "$ONLINE_RL_H5"; then
+                record_failure "PIPELINE 4 (ONLINE_COUPLED)" "$SYS_TAG" "No se pudo respaldar HDF5 inválido ${ONLINE_RL_H5}"
+                sys_failed=1
+            elif ! check_disk_before_run "$ONLINE_RL_DIR" "PIPELINE 4 (ONLINE_COUPLED)" "$SYS_TAG" "Online Coupled VMC+RL"; then
+                sys_failed=1
+            else
+                run_logged_step "[Pipeline 4 | Online Coupled 4-Regimes (${P4_ANSATZ_TYPE}, steps=${P4_TOTAL_STEPS}, R1=${P4_NODAL_WARMUP_STEPS}, R2=${P4_CRITIC_WARMUP_STEPS}, R4=${P4_FREEZE_TAIL_STEPS}) | ${SYS_TAG} | GPU ${GPU_ID}]" \
+                    env CUDA_VISIBLE_DEVICES="$GPU_ID" python3 -u cli/run_1d.py \
+                        --run_name "P4_Online_Coupled_RL_TD3_SJB_${SYS_TAG}" \
+                        --pipeline_stage "pipeline4_online_coupled" \
+                        --train_mode online_coupled \
+                        --n_elec "$N" --n_up "$N_UP" --n_dn "$N_DN" \
+                        --omega "$OMEGA" --g "$G" --softening "$SOFT" \
+                        --ansatz_type "$P4_ANSATZ_TYPE" \
+                        --orbital_model "$P4_ORBITAL_MODEL" \
+                        --correlation_model "$P4_CORRELATION_MODEL" \
+                        "${P4_EXTRA_ANSATZ_FLAGS[@]}" \
+                        --proposal_type neural_deepset \
+                        --proposal_mode residual_mala \
+                        --rl_algorithm td3 \
+                        --reward_type "$REWARD_TYPE" \
+                        --actor_amplitude "$ACTOR_AMP" \
+                        --penalty_factor "$PENALTY" \
+                        --sigma_action_scale "$SIG_SCALE" \
+                        --max_phys_jump_factor "$MAX_PHYS_JUMP_FACTOR" \
+                        "$P4_RC_FLAG" \
+                        --reward_centering_lr "$P4_REWARD_CENTERING_LR" \
+                        --rl_replay_capacity "$P4_REPLAY_CAPACITY" \
+                        --lr_actor "$LR_ACTOR" \
+                        --lr_critic "$LR_CRITIC" \
+                        --lr_ansatz "$P4_LR_ANSATZ" \
+                        --use_lr_scheduler \
+                        --lr_scheduler_type cosine \
+                        --lr_warmup_steps "$P3_LR_WARMUP_STEPS" \
+                        --lr_min_ratio "$P3_LR_MIN_RATIO" \
+                        --grad_clip_norm "$P4_GRAD_CLIP_NORM" \
+                        --train_steps "$P4_TOTAL_STEPS" \
+                        --online_nodal_warmup_steps "$P4_NODAL_WARMUP_STEPS" \
+                        --online_critic_warmup_steps "$P4_CRITIC_WARMUP_STEPS" \
+                        --online_rl_freeze_tail_steps "$P4_FREEZE_TAIL_STEPS" \
+                        --online_rl_update_every "$P4_RL_UPDATE_EVERY" \
+                        --online_rl_updates_per_step "$P4_RL_UPDATES_PER_STEP" \
+                        --online_walkers_to_store "$P4_WALKERS_TO_STORE" \
+                        --steps_for_best "$P4_STEPS_FOR_BEST" \
+                        --sweeps_per_step "$P4_SWEEPS_PER_STEP" \
+                        --n_ter "$N_BURN_IN" \
+                        --tau "$TAU" \
+                        --batch_size "$P4_BATCH_SIZE" \
+                        --init_mode "$INIT_MODE" \
+                        --init_std "$INIT_STD" \
+                        --eval_init_mode "$EVAL_INIT_MODE" \
+                        --init_offset_base "$INIT_OFFSET_BASE" \
+                        --init_offset_step "$INIT_OFFSET_STEP" \
+                        --n_eval_chains "$N_EVAL_CHAINS" \
+                        --eval_burn_in "$EVAL_BURN_IN" \
+                        --measure_steps "$MEASURE_STEPS" \
+                        --eloc_chunk_size "$ELOC_CHUNK_SIZE" \
+                        --save_walkers_max_batch "$SAVE_WALKERS_MAX_BATCH" \
+                        --save_production_energy_mode "$SAVE_ENERGY_MODE" \
+                        --save_production_walkers_dtype "$SAVE_WALKERS_DTYPE" \
+                        --save_production_stats_dtype "$SAVE_STATS_DTYPE" \
+                        --output_h5 "$ONLINE_RL_H5" \
+                        --reference_casscf_npz "$CASSCF_NPZ" \
+                        --master_csv "$LIVE_CSV_P4_RUNS" \
+                        --csv_collect_dir "$CSV_COLLECT_DIR" \
+                        "$LEGACY_EXPORT_FLAG"
+                local online_rc=$?
+                if [ "$online_rc" -ne 0 ] || ! is_h5_completed "$ONLINE_RL_H5"; then
+                    echo "  [Error Pipeline 4] Falló Online Coupled VMC+RL para ${SYS_TAG} (exit=${online_rc})." >&2
+                    record_failure "PIPELINE 4 (ONLINE_COUPLED)" "$SYS_TAG" "cli/run_1d.py Online Coupled VMC+RL falló (exit=${online_rc}) o bundle inválido en ${ONLINE_RL_H5}"
+                    sys_failed=1
+                fi
+            fi
+        else
+            cleanup_run_dir_artifacts "$ONLINE_RL_DIR"
+            echo "  [SKIP] Online Coupled VMC+RL ya completado para ${SYS_TAG}: $ONLINE_RL_H5"
+        fi
+    fi
+
+    if [ "$sys_failed" -eq 0 ] && is_h5_completed "$VMC_MALA_H5" && is_h5_completed "$ONLINE_RL_H5"; then
+        local EXTRA_CASSCF_FLAG=()
+        if [ -f "$CASSCF_NPZ" ]; then
+            EXTRA_CASSCF_FLAG=(--casscf_npz_path "$CASSCF_NPZ")
+        fi
+
+        local P4_INPUTS=("$VMC_MALA_H5" "$ONLINE_RL_H5")
+        local P4_LABELS=("P4_VMC_MALA_SJB_${SYS_TAG}" "P4_Online_Coupled_RL_TD3_SJB_${SYS_TAG}")
+        if is_h5_completed "${P3_DIR}/${SYS_TAG}/Coupled_RL_TD3_SJB/run_bundle.h5"; then
+            P4_INPUTS+=("${P3_DIR}/${SYS_TAG}/Coupled_RL_TD3_SJB/run_bundle.h5")
+            P4_LABELS+=("P3_Coupled_RL_TD3_SJB_${SYS_TAG}")
+        fi
+
+        # 4C. Las 8 figuras estándar de entrenamiento, convergencia de energía, densidades, ACF, ESJD y KL
+        run_logged_step "[Pipeline 4 | Postprocess 8 Figuras | ${SYS_TAG}]" \
+            env CUDA_VISIBLE_DEVICES="" JAX_PLATFORMS=cpu python3 -u cli/postprocess.py \
+                --inputs "${P4_INPUTS[@]}" \
+                --labels "${P4_LABELS[@]}" \
+                "${EXTRA_CASSCF_FLAG[@]}" \
+                --out_dir "$COMP_DIR" \
+                --system_tag "P4_${SYS_TAG}" \
+                --top_k_models "$TOP_K_MODELS" \
+                --walker_trace_top_k "$WALKER_TRACE_TOP_K" \
+                --master_comparison_csv "$LIVE_CSV_P4_COMP" \
+                --csv_collect_dir "$CSV_COLLECT_DIR" \
+                "${PLOT_STYLE_ARGS[@]}"
+        local pp_rc=$?
+        if [ "$pp_rc" -ne 0 ]; then
+            echo "  [Error Pipeline 4] Falló cli/postprocess.py para ${SYS_TAG} (exit=${pp_rc})." >&2
+            record_failure "PIPELINE 4 (POSTPROCESS)" "$SYS_TAG" "cli/postprocess.py falló (exit=${pp_rc})"
+            sys_failed=1
+        fi
+
+        if [ "$pp_rc" -eq 0 ]; then
+            if ! sync_live_all_models_csv; then
+                echo "  [Error Pipeline 4] Falló sincronización de live_all_models_master.csv tras ${SYS_TAG}." >&2
+                record_failure "PIPELINE 4 (CSV_SYNC)" "$SYS_TAG" "sync_live_all_models_csv falló"
+                sys_failed=1
+            fi
+        fi
+
+        # 4D. Las 4 figuras de Cruce Nodal y Trazas de 1 Caminante
+        run_logged_step "[Pipeline 4 | Nodal Crossing & Walker Traces | ${SYS_TAG}]" \
+            env CUDA_VISIBLE_DEVICES="" JAX_PLATFORMS=cpu python3 -u cli/evaluate_nodal_crossing_1d.py \
+                --inputs "${P4_INPUTS[@]}" \
+                --labels "${P4_LABELS[@]}" \
+                "${EXTRA_CASSCF_FLAG[@]}" \
+                --system_tag "P4_${SYS_TAG}" \
+                --out_dir "$FIG_SYS_P4" \
+                --csv_collect_dir "$CSV_COLLECT_DIR" \
+                --top_k_models "$TOP_K_MODELS" \
+                --walker_trace_top_k "$WALKER_TRACE_TOP_K" \
+                "${PLOT_STYLE_ARGS[@]}"
+        local nc_rc=$?
+        if [ "$nc_rc" -ne 0 ]; then
+            echo "  [Error Pipeline 4] Falló cli/evaluate_nodal_crossing_1d.py para ${SYS_TAG} (exit=${nc_rc})." >&2
+            record_failure "PIPELINE 4 (NODAL_CROSSING)" "$SYS_TAG" "cli/evaluate_nodal_crossing_1d.py falló (exit=${nc_rc})"
+            sys_failed=1
+        fi
+
+        # 4E. Las 4 figuras detalladas de flips en pasos discretos exactos + acción del Actor + magnitud de paso
+        if [ -f "${SCRIPT_DIR}/scripts/plot_flips_system_detailed.py" ]; then
+            run_logged_step "[Pipeline 4 | Flips Discretos, Actor y Magnitud de Paso | ${SYS_TAG}]" \
+                env CUDA_VISIBLE_DEVICES="" JAX_PLATFORMS=cpu python3 -u "${SCRIPT_DIR}/scripts/plot_flips_system_detailed.py" \
+                    --prod_dir "$BASE_OUT_DIR" \
+                    --pipeline P4 \
+                    --n "$N" --g "$G" \
+                    --out_dir "${FIG_SYS_P4}/flips_detailed" \
+                    --save_panels \
+                    "${PLOT_STYLE_ARGS[@]}"
+            local fl_rc=$?
+            if [ "$fl_rc" -ne 0 ]; then
+                echo "  [Aviso Pipeline 4] scripts/plot_flips_system_detailed.py terminó con código ${fl_rc} para ${SYS_TAG}." >&2
+            fi
+        fi
+
+        for f_out in "$COMP_DIR"/*.png "$COMP_DIR"/*.pdf "$COMP_DIR"/*.csv "$COMP_DIR"/*.json; do
+            if [ -e "$f_out" ]; then
+                if ! atomic_copy_to_dir "$f_out" "$FIG_SYS_P4"; then
+                    echo "  [Error Pipeline 4] No se pudo copiar $(basename "$f_out") a ${FIG_SYS_P4}" >&2
+                    record_failure "PIPELINE 4 (COPY)" "$SYS_TAG" "No se pudo copiar $(basename "$f_out") a ${FIG_SYS_P4}"
+                    sys_failed=1
+                fi
+            fi
+        done
+
+        if ! update_global_all_models_figures "P4_${SYS_TAG}"; then
+            record_failure "PIPELINE 4 (GLOBAL_PLOTS)" "$SYS_TAG" "plot_benchmark_all_models_summary.py falló tras P4_${SYS_TAG}"
+            sys_failed=1
+        fi
+
+        if [ "$sys_failed" -eq 0 ]; then
+            echo "  <- [Pipeline 4 | GPU ${GPU_ID}] Finalizado ${SYS_TAG}. Gráficas en: ${FIG_SYS_P4}"
+        fi
+    else
+        if [ "$POSTPROCESS_ONLY" -eq 1 ] && [ "$sys_failed" -eq 0 ]; then
+            echo "  [Aviso Pipeline 4] Modo --postprocess-only: no hay ambos run_bundle.h5 para ${SYS_TAG}. Post-procesamiento omitido."
+            return 0
+        fi
+        if [ "$sys_failed" -eq 0 ]; then
+            record_failure "PIPELINE 4" "$SYS_TAG" "Falta o es inválido run_bundle.h5 (${VMC_MALA_H5} / ${ONLINE_RL_H5})"
+        fi
+        echo "  [Error Pipeline 4] No se encontraron ambos run_bundle.h5 para ${SYS_TAG}. Post-procesamiento omitido." >&2
+        return 1
+    fi
+
+    if [ "$sys_failed" -ne 0 ]; then
+        return 1
+    fi
+    return 0
+}
+
+run_pipeline_4() {
+    echo ""
+    echo "=============================================================================="
+    echo " [PIPELINE 4] Entrenamiento Variacional Acoplado Online Paso a Paso (4 Regímenes)"
+    echo " Despacho dinámico de GPUs: ${AVAILABLE_GPUS[*]} (Límite: $MAX_TOTAL_JOBS trabajos paralelos, ${JOBS_PER_GPU}/GPU)"
+    echo " Regímenes Online         : R1_Nodal=${P4_NODAL_WARMUP_STEPS}, R2_Critic=${P4_CRITIC_WARMUP_STEPS}, R4_Freeze=${P4_FREEZE_TAIL_STEPS}, Total=${P4_TOTAL_STEPS}"
+    echo " Tablas CSV en vivo       : $LIVE_CSV_P4_RUNS | $LIVE_CSV_P4_COMP"
+    echo "=============================================================================="
+
+    for N in $N_LIST; do
+        for G in $G_LIST; do
+            should_run_system_pair "$N" "$G" || continue
+            local SYS_TAG="N${N}_w${OMEGA}_g${G}"
+            local SYS_LOG="p4_online_coupled_${SYS_TAG}.log"
+            wait_for_free_gpu_slot "PIPELINE 4"
+            local GPU_ID="$SELECTED_GPU"
+
+            local start_epoch
+            start_epoch=$(date +%s)
+            local start_time
+            start_time=$(date "+%Y-%m-%d %H:%M:%S")
+
+            run_sistema_pipeline_4 "$GPU_ID" "$N" "$G" > "${LOG_DIR}/${SYS_LOG}" 2>&1 &
+            local worker_pid=$!
+
+            cat << EOF > "$TRACKER_DIR/job_${worker_pid}_gpu_${GPU_ID}.meta"
+gpu="$GPU_ID"
+sys="$SYS_TAG"
+start_epoch="$start_epoch"
+start_time="$start_time"
+script_name="run_sistema_pipeline_4 GPU=$GPU_ID N=$N G=$G"
+sys_log_file="$SYS_LOG"
+EOF
+
+            echo "=============================================================================="
+            echo ">> [PIPELINE 4 | TRABAJO ASIGNADO] Sistema: ${SYS_TAG}"
+            echo "   PID del Worker     : $worker_pid"
+            echo "   GPU Asignada       : $GPU_ID"
+            echo "   Hora de Inicio     : $start_time"
+            echo "   Script / Tarea     : run_sistema_pipeline_4 GPU=$GPU_ID N=$N G=$G"
+            echo "   Log del Sistema    : ${LOG_DIR}/${SYS_LOG}"
+            echo "=============================================================================="
+        done
+    done
+
+    wait_all_stage_jobs "PIPELINE 4"
+    if ! update_global_all_models_figures "FINAL_PIPELINE_4"; then
+        record_failure "PIPELINE 4 (GLOBAL_PLOTS)" "FINAL_PIPELINE_4" "plot_benchmark_all_models_summary.py falló al cierre de Pipeline 4"
+    fi
+    echo ""
+    echo " [PIPELINE 4] Etapa variacional acoplada online completada."
+}
+
+print_master_log_summary_table() {
+    echo ""
+    echo "=============================================================================="
+    echo " RESUMEN CONSOLIDADO DE CORRIDAS EN EL LOG MAESTRO"
+    echo "=============================================================================="
+    env CUDA_VISIBLE_DEVICES="" JAX_PLATFORMS=cpu python3 - "$LIVE_CSV_ALL" "$LIVE_CSV_P4_RUNS" "$LIVE_CSV_P3_RUNS" "$LIVE_CSV_P2_RUNS" << 'PYEOF'
+import os, sys
+import pandas as pd
+
+for p in sys.argv[1:]:
+    if os.path.isfile(p) and os.path.getsize(p) > 0:
+        try:
+            df = pd.read_csv(p)
+            if df.empty:
+                continue
+            print(f"\n--- Tabla: {os.path.basename(p)} ({len(df)} filas) ---")
+            cols = [c for c in [
+                "label", "run_name", "N", "g", "train_mode",
+                "E_mean", "SE_E", "E_var", "delta_E_vs_CASSCF",
+                "kl_casscf_spin_mean", "kl_casscf_total_mean",
+                "acceptance", "ESJD", "tau_int_E", "G_RL_speedup", "ESS_per_sec",
+                "train_wall_time_sec", "wall_time_sec", "total_run_wall_time_sec"
+            ] if c in df.columns]
+            print(df[cols].to_string(index=False))
+        except Exception as e:
+            print(f"  [Aviso] No se pudo imprimir resumen de {p}: {e}")
+PYEOF
+    echo "=============================================================================="
+}
+
+# ==============================================================================
 # EJECUCIÓN SECUENCIAL DE LOS PIPELINES SELECCIONADOS
 # ==============================================================================
 for P_STAGE in $PIPELINES_TO_RUN; do
@@ -1713,8 +2177,12 @@ for P_STAGE in $PIPELINES_TO_RUN; do
         run_pipeline_2
     elif [ "$P_STAGE" = "3" ]; then
         run_pipeline_3
+    elif [ "$P_STAGE" = "4" ]; then
+        run_pipeline_4
     fi
 done
+
+print_master_log_summary_table
 
 MASTER_END_EPOCH=$(date +%s)
 MASTER_END_TIME=$(date "+%Y-%m-%d %H:%M:%S")

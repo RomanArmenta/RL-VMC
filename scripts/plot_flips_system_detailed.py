@@ -2239,7 +2239,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     p.add_argument("--g", "--g_filter", dest="g_filter", type=float, nargs="+", default=None, help="Filtrar por acoplamiento g.")
     p.add_argument("--omega", type=float, default=0.1, help="Frecuencia de la trampa armónica omega.")
     p.add_argument("--system", "--systems", dest="systems_filter", nargs="+", default=None, help="Filtro por sistema (ej. N6_w0.1_g1.0 o N8:2.0).")
-    p.add_argument("--pipeline", default="P2", choices=["P2", "P3"], help="Etapa del pipeline.")
+    p.add_argument("--pipeline", default="P2", choices=["P2", "P3", "P4"], help="Etapa del pipeline.")
     p.add_argument("--regenerate_csv", action="store_true", help="Recalcular CSVs desde run_bundle.h5 antes de graficar.")
 
     g_fmt = p.add_argument_group("Opciones de Formato, Resolución y Paneles Individuales")
@@ -2314,7 +2314,11 @@ def main(argv: Optional[List[str]] = None) -> int:
     )
 
     systems_map = _parse_systems_filter(args.systems_filter)
-    h5_candidates = discover_h5_bundles(prod_root, include_pipeline3=(args.pipeline == "P3"))
+    h5_candidates = discover_h5_bundles(
+        prod_root,
+        include_pipeline3=(args.pipeline in ("P3", "P4")),
+        include_pipeline4=(args.pipeline == "P4"),
+    )
 
     # Agrupar bundles HDF5 legítimos por (N, g) eligiendo el mejor MALA y el mejor RL-MALA si hay múltiples hiperparámetros
     h5_by_ng_method: Dict[Tuple[int, float, str], Dict[str, Any]] = {}

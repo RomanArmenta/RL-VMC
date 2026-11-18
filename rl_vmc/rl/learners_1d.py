@@ -125,11 +125,24 @@ class TD3Learner1D:
             lambda x: x.copy(), self.critic2_params
         )
 
-        total_rl_steps = (
-            cfg.train.train_steps
-            if cfg.train.mode == "rl_only"
-            else (cfg.train.coupled_training_cycles * cfg.train.rl_sweeps_per_cycle)
-        )
+        if cfg.train.mode == "rl_only":
+            total_rl_steps = cfg.train.train_steps
+        elif cfg.train.mode == "online_coupled":
+            active_vmc_steps = max(
+                1,
+                cfg.train.train_steps
+                - cfg.train.online_nodal_warmup_steps
+                - cfg.train.online_rl_freeze_tail_steps,
+            )
+            total_rl_steps = max(
+                1,
+                (active_vmc_steps // max(1, cfg.train.online_rl_update_every))
+                * max(1, cfg.train.online_rl_updates_per_step),
+            )
+        else:
+            total_rl_steps = (
+                cfg.train.coupled_training_cycles * cfg.train.rl_sweeps_per_cycle
+            )
         actor_lr = build_lr_schedule(
             base_lr=cfg.rl.lr_actor,
             total_steps=total_rl_steps,
@@ -159,6 +172,10 @@ class TD3Learner1D:
             action_dim=2,
         )
         self.update_counter = 0
+        self.use_reward_centering = bool(getattr(cfg.rl, "use_reward_centering", True))
+        self.reward_centering_lr = float(getattr(cfg.rl, "reward_centering_lr", 0.01))
+        self.running_reward_mean = 0.0
+        self.reward_mean_initialized = False
 
     def get_actor_params(self) -> dict:
         return self.actor_params
@@ -201,11 +218,28 @@ class TD3Learner1D:
             )
             self.opt_c2_state = self.opt_c.init(self.critic2_params)
 
-    def push_transitions(self, rl_info: dict, rewards: jax.Array) -> None:
-        s = np.asarray(rl_info["state_feat"]).reshape(-1, self.state_dim)
-        a = np.asarray(rl_info["action"]).reshape(-1, 2)
-        ns = np.asarray(rl_info["next_state_feat"]).reshape(-1, self.state_dim)
+    def push_transitions(
+        self,
+        rl_info: dict,
+        rewards: jax.Array,
+        max_walkers: int | None = None,
+    ) -> None:
         r_w = np.asarray(rewards).reshape(-1)
+        n_walkers = len(r_w)
+        s_raw = np.asarray(rl_info["state_feat"]).reshape(n_walkers, self.n_elec, self.state_dim)
+        a_raw = np.asarray(rl_info["action"]).reshape(n_walkers, self.n_elec, 2)
+        ns_raw = np.asarray(rl_info["next_state_feat"]).reshape(n_walkers, self.n_elec, self.state_dim)
+
+        if max_walkers is not None and 0 < int(max_walkers) < n_walkers:
+            sel = np.random.choice(n_walkers, size=int(max_walkers), replace=False)
+            s_raw = s_raw[sel]
+            a_raw = a_raw[sel]
+            ns_raw = ns_raw[sel]
+            r_w = r_w[sel]
+
+        s = s_raw.reshape(-1, self.state_dim)
+        a = a_raw.reshape(-1, 2)
+        ns = ns_raw.reshape(-1, self.state_dim)
         r = np.repeat(r_w, self.n_elec)
         self.buffer.add_batch(s, a, r, ns)
 
@@ -224,6 +258,8 @@ class TD3Learner1D:
         opt_c2,
         batch,
         update_actor,
+        update_targets,
+        reward_offset,
     ):
         noise = jnp.clip(
             self.target_noise * jax.random.normal(key, batch["action"].shape),
@@ -248,7 +284,8 @@ class TD3Learner1D:
                 self.critic_module.apply(t_c2, batch["next_state"], next_action),
             )
 
-        y = jax.lax.stop_gradient(batch["reward"] + self.gamma_td3 * q_target)
+        centered_reward = batch["reward"] - reward_offset
+        y = jax.lax.stop_gradient(centered_reward + self.gamma_td3 * q_target)
 
         def critic_loss(p_crit, is_q1: bool):
             if self.is_flat:
@@ -288,24 +325,30 @@ class TD3Learner1D:
             return (
                 new_p_act,
                 optax.incremental_update(new_p_act, t_act, self.tau_polyak),
-                optax.incremental_update(p_c1, t_c1, self.tau_polyak),
-                optax.incremental_update(p_c2, t_c2, self.tau_polyak),
                 new_opt_act,
                 l_act.astype(jnp.float32),
             )
 
-        p_act, t_act, t_c1, t_c2, opt_act, l_act = jax.lax.cond(
+        p_act, t_act, opt_act, l_act = jax.lax.cond(
             update_actor,
             actor_update,
             lambda: (
                 p_act,
                 t_act,
-                t_c1,
-                t_c2,
                 opt_act,
                 jnp.array(0.0, dtype=jnp.float32),
             ),
         )
+
+        t_c1, t_c2 = jax.lax.cond(
+            update_targets,
+            lambda: (
+                optax.incremental_update(p_c1, t_c1, self.tau_polyak),
+                optax.incremental_update(p_c2, t_c2, self.tau_polyak),
+            ),
+            lambda: (t_c1, t_c2),
+        )
+
         return (
             p_act,
             p_c1,
@@ -321,13 +364,39 @@ class TD3Learner1D:
             jnp.mean(y),
         )
 
-    def update_step(self, key: jax.Array) -> dict[str, float]:
+    def update_step(
+        self,
+        key: jax.Array,
+        allow_actor_update: bool = True,
+    ) -> dict[str, float]:
         if self.buffer.size < self.batch_size:
-            return {"critic_loss": 0.0, "actor_loss": 0.0, "q_val": 0.0}
+            return {
+                "critic_loss": 0.0,
+                "actor_loss": 0.0,
+                "q_val": 0.0,
+                "reward_mean_ema": float(self.running_reward_mean),
+            }
 
         self.update_counter += 1
         batch = self.buffer.sample(self.batch_size)
-        update_actor = jnp.array(self.update_counter % self.policy_delay == 0)
+
+        if self.use_reward_centering:
+            batch_r_mean = float(jnp.mean(batch["reward"]))
+            if not self.reward_mean_initialized:
+                self.running_reward_mean = batch_r_mean
+                self.reward_mean_initialized = True
+            else:
+                self.running_reward_mean = (
+                    (1.0 - self.reward_centering_lr) * self.running_reward_mean
+                    + self.reward_centering_lr * batch_r_mean
+                )
+            reward_offset = jnp.array(self.running_reward_mean, dtype=jnp.float32)
+        else:
+            reward_offset = jnp.array(0.0, dtype=jnp.float32)
+
+        is_delay_step = (self.update_counter % self.policy_delay == 0)
+        update_actor = jnp.array(bool(allow_actor_update and is_delay_step))
+        update_targets = jnp.array(bool(is_delay_step))
 
         (
             self.actor_params,
@@ -355,11 +424,14 @@ class TD3Learner1D:
             self.opt_c2_state,
             batch,
             update_actor,
+            update_targets,
+            reward_offset,
         )
         return {
             "critic_loss": float(c_loss),
             "actor_loss": float(a_loss),
             "q_val": float(q_val),
+            "reward_mean_ema": float(self.running_reward_mean),
         }
 
 

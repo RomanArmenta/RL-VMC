@@ -127,6 +127,8 @@ def _classify_method(label: str, proposal_kind: str = "", h5_path: str = "") -> 
 
 def _classify_pipeline(label: str, h5_path: str = "") -> str:
     joined = f"{label} {h5_path}".lower()
+    if "pipeline4" in joined or "p4_" in joined or "online_coupled" in joined:
+        return "P4"
     if "pipeline3" in joined or "p3_" in joined or "vmc_mala_sjb" in joined or "coupled_rl" in joined:
         return "P3"
     return "P2"
@@ -167,6 +169,7 @@ def _load_csv_lookup_tables(root_dir: str) -> Dict[Tuple[str, int, float, str], 
         os.path.join(root_dir, "results_csv*", "live_*.csv"),
         os.path.join(root_dir, "pipeline2_pure_sampling", "*", "postprocess_comparison", "summary_metrics_*.csv"),
         os.path.join(root_dir, "pipeline3_variational_training", "*", "postprocess_comparison", "summary_metrics_*.csv"),
+        os.path.join(root_dir, "pipeline4_online_coupled", "*", "postprocess_comparison", "summary_metrics_*.csv"),
     ):
         candidate_csvs.extend(sorted(glob.glob(pat)))
 
@@ -221,7 +224,7 @@ def _load_csv_lookup_tables(root_dir: str) -> Dict[Tuple[str, int, float, str], 
     return lookup
 
 
-def discover_h5_bundles(root_dir: str, include_pipeline3: bool = False) -> List[str]:
+def discover_h5_bundles(root_dir: str, include_pipeline3: bool = False, include_pipeline4: bool = False) -> List[str]:
     """
     Descubre todos los archivos `run_bundle*.h5` siguiendo la organización de
     `run_production_benchmark_3pipelines.sh`, con respaldo automático a búsqueda
@@ -246,12 +249,15 @@ def discover_h5_bundles(root_dir: str, include_pipeline3: bool = False) -> List[
 
     p2_dir = os.path.join(root_abs, "pipeline2_pure_sampling")
     p3_dir = os.path.join(root_abs, "pipeline3_variational_training")
+    p4_dir = os.path.join(root_abs, "pipeline4_online_coupled")
 
     stage_dirs: List[str] = []
     if os.path.isdir(p2_dir):
         stage_dirs.append(p2_dir)
     if include_pipeline3 and os.path.isdir(p3_dir):
         stage_dirs.append(p3_dir)
+    if (include_pipeline4 or include_pipeline3) and os.path.isdir(p4_dir):
+        stage_dirs.append(p4_dir)
 
     if stage_dirs:
         for sdir in stage_dirs:

@@ -1964,6 +1964,8 @@ def run_postprocessing_pipeline(cfg: PostProcessConfig) -> pd.DataFrame:
                 prefix = "P2_"
             elif "pipeline3" in cfg.out_dir:
                 prefix = "P3_"
+            elif "pipeline4" in cfg.out_dir:
+                prefix = "P4_"
             cfg.system_tag = f"{prefix}N{n_up + n_dn}_w{omega}_g{g_val}"
         sys_tag = cfg.system_tag
 
@@ -2264,6 +2266,72 @@ def run_postprocessing_pipeline(cfg: PostProcessConfig) -> pd.DataFrame:
             os.makedirs(cfg.csv_collect_dir, exist_ok=True)
             atomic_copy_file(csv_path, os.path.join(cfg.csv_collect_dir, csv_fname))
         print(f"[PostProcess] Tabla resumen guardada en: {csv_path}")
+
+        # Exportar tablas CSV de datos crudos de cada figura (ACF, convergencia KL, trazas de 1 caminante y curvas de entrenamiento)
+        try:
+            suffix_tag = f"_{sys_tag}" if sys_tag else ""
+            # 1. CSV de curvas ACF de energía (fig2_production_summary)
+            acf_rows = []
+            for b in bundles_info:
+                lbl_b = b["label"]
+                s_b = b.get("diagnostics", {}).get("summary", {})
+                acf_e = s_b.get("acf_E", None)
+                if acf_e is not None:
+                    acf_arr = np.asarray(acf_e, dtype=float).reshape(-1)
+                    for lag_i, val_a in enumerate(acf_arr):
+                        acf_rows.append({"label": lbl_b, "lag": int(lag_i), "acf_E": float(val_a)})
+            if acf_rows:
+                acf_fname = f"figure_data_acf_energy{suffix_tag}.csv"
+                acf_p = os.path.join(cfg.out_dir, acf_fname)
+                atomic_write_csv(pd.DataFrame(acf_rows), acf_p, index=False)
+                if getattr(cfg, "csv_collect_dir", ""):
+                    atomic_copy_file(acf_p, os.path.join(cfg.csv_collect_dir, acf_fname))
+
+            # 2. CSV de curvas de convergencia D_KL vs paso (fig3b_article_kl_divergence)
+            kl_rows = []
+            for b in bundles_info:
+                lbl_b = b["label"]
+                kl_c = b.get("kl_curve_data")
+                if kl_c is not None and "steps" in kl_c:
+                    steps_k = np.asarray(kl_c["steps"], dtype=int)
+                    k_tot = np.asarray(kl_c.get("kl_total_mean", np.full_like(steps_k, np.nan, dtype=float)))
+                    k_sp = np.asarray(kl_c.get("kl_spin_mean", np.full_like(steps_k, np.nan, dtype=float)))
+                    for s_i, kt_i, ks_i in zip(steps_k, k_tot, k_sp):
+                        kl_rows.append({
+                            "label": lbl_b,
+                            "step": int(s_i),
+                            "kl_total_mean": float(kt_i),
+                            "kl_spin_mean": float(ks_i),
+                        })
+            if kl_rows:
+                kl_fname = f"figure_data_kl_convergence{suffix_tag}.csv"
+                kl_p = os.path.join(cfg.out_dir, kl_fname)
+                atomic_write_csv(pd.DataFrame(kl_rows), kl_p, index=False)
+                if getattr(cfg, "csv_collect_dir", ""):
+                    atomic_copy_file(kl_p, os.path.join(cfg.csv_collect_dir, kl_fname))
+
+            # 3. CSV de trazas de 1 caminante (fig6_walker_traces)
+            wt_rows = []
+            for b in bundles_info:
+                lbl_b = b["label"]
+                wd = b.get("walker_trace_data")
+                if wd is not None and "steps_sub" in wd and "w_single_sub" in wd:
+                    st_w = np.asarray(wd["steps_sub"], dtype=int)
+                    pos_w = np.asarray(wd["w_single_sub"], dtype=float)
+                    n_el_w = pos_w.shape[1] if pos_w.ndim == 2 else 0
+                    for idx_t, step_t in enumerate(st_w):
+                        row_w = {"label": lbl_b, "step": int(step_t)}
+                        for e_idx in range(n_el_w):
+                            row_w[f"x_elec_{e_idx}"] = float(pos_w[idx_t, e_idx])
+                        wt_rows.append(row_w)
+            if wt_rows:
+                wt_fname = f"figure_data_walker_traces{suffix_tag}.csv"
+                wt_p = os.path.join(cfg.out_dir, wt_fname)
+                atomic_write_csv(pd.DataFrame(wt_rows), wt_p, index=False)
+                if getattr(cfg, "csv_collect_dir", ""):
+                    atomic_copy_file(wt_p, os.path.join(cfg.csv_collect_dir, wt_fname))
+        except Exception as exc_fig_csv:
+            print(f"  [Aviso] No se pudieron exportar todos los CSVs auxiliares de figuras: {exc_fig_csv}")
 
     if getattr(cfg, "master_comparison_csv", None):
         try:
