@@ -101,7 +101,7 @@ MAX_PHYS_JUMP_FACTOR="${MAX_PHYS_JUMP_FACTOR:-2.0}"
 LR_ACTOR="${LR_ACTOR:-1e-4}"
 LR_CRITIC="${LR_CRITIC:-3e-4}"
 ELOC_CHUNK_SIZE="${ELOC_CHUNK_SIZE:-2048}"
-SAVE_WALKERS_MAX_BATCH="${SAVE_WALKERS_MAX_BATCH:-16}"
+SAVE_WALKERS_MAX_BATCH="${SAVE_WALKERS_MAX_BATCH:-32}"
 SAVE_ENERGY_MODE="${SAVE_ENERGY_MODE:-step_mean}"
 SAVE_WALKERS_DTYPE="${SAVE_WALKERS_DTYPE:-float32}"
 SAVE_STATS_DTYPE="${SAVE_STATS_DTYPE:-float32}"
@@ -110,6 +110,21 @@ MIN_FREE_DISK_MB="${MIN_FREE_DISK_MB:-512}"
 CRITICAL_MIN_DISK_MB="${CRITICAL_MIN_DISK_MB:-96}"
 TOP_K_MODELS="${TOP_K_MODELS:-2}"
 WALKER_TRACE_TOP_K="${WALKER_TRACE_TOP_K:-1}"
+
+# Hiperparámetros calibrados de convergencia para Pipeline 3 (RL-VMC Variacional Acoplado)
+P3_ANSATZ_TYPE="${P3_ANSATZ_TYPE:-slater_jastrow_1d}"
+P3_ORBITAL_MODEL="${P3_ORBITAL_MODEL:-backflow_ho}"
+P3_CORRELATION_MODEL="${P3_CORRELATION_MODEL:-spin_rbf_jastrow}"
+P3_BATCH_SIZE="${P3_BATCH_SIZE:-512}"
+P3_SWEEPS_PER_STEP="${P3_SWEEPS_PER_STEP:-5}"
+P3_LR_ANSATZ="${P3_LR_ANSATZ:-1e-3}"
+P3_GRAD_CLIP_NORM="${P3_GRAD_CLIP_NORM:-0.5}"
+P3_COUPLED_CYCLES="${P3_COUPLED_CYCLES:-10}"
+P3_VMC_ITERS_PER_CYCLE="${P3_VMC_ITERS_PER_CYCLE:-1200}"
+P3_RL_SWEEPS_PER_CYCLE="${P3_RL_SWEEPS_PER_CYCLE:-400}"
+P3_STEPS_FOR_BEST="${P3_STEPS_FOR_BEST:-3000}"
+P3_LR_WARMUP_STEPS="${P3_LR_WARMUP_STEPS:-200}"
+P3_LR_MIN_RATIO="${P3_LR_MIN_RATIO:-0.05}"
 
 # Formato y estilo de figuras (por defecto solo PNG para ahorrar espacio)
 FIGURE_FORMAT="${FIGURE_FORMAT:-png}"
@@ -126,6 +141,16 @@ while [[ $# -gt 0 ]]; do
         --postprocess-only|--postprocess_only|--plots-only) POSTPROCESS_ONLY=1; shift ;;
         --pipelines) PIPELINES_TO_RUN="$2"; shift 2 ;;
         --run-pipeline3|--with-pipeline3) PIPELINES_TO_RUN="1 2 3"; shift ;;
+        --only-pipeline3|--pipeline3-only) PIPELINES_TO_RUN="3"; shift ;;
+        --p3-ansatz) P3_ANSATZ_TYPE="$2"; shift 2 ;;
+        --p3-orbital) P3_ORBITAL_MODEL="$2"; shift 2 ;;
+        --p3-corr) P3_CORRELATION_MODEL="$2"; shift 2 ;;
+        --p3-batch-size) P3_BATCH_SIZE="$2"; shift 2 ;;
+        --p3-sweeps) P3_SWEEPS_PER_STEP="$2"; shift 2 ;;
+        --p3-lr-ansatz) P3_LR_ANSATZ="$2"; shift 2 ;;
+        --p3-cycles) P3_COUPLED_CYCLES="$2"; shift 2 ;;
+        --p3-vmc-per-cycle) P3_VMC_ITERS_PER_CYCLE="$2"; shift 2 ;;
+        --p3-rl-per-cycle) P3_RL_SWEEPS_PER_CYCLE="$2"; shift 2 ;;
         --n-list|--n_list|--n-filter) N_LIST="$2"; shift 2 ;;
         --g-list|--g_list|--g-filter) G_LIST="$2"; shift 2 ;;
         --systems|--system-filter) SYSTEMS_FILTER="$2"; shift 2 ;;
@@ -137,11 +162,15 @@ while [[ $# -gt 0 ]]; do
 Uso: ./run_production_benchmark_3pipelines.sh [carpeta_salida] [opciones]
 
 Opciones principales:
-  --systems "N2:all N8:3.0,5.0 N10:all"  Selección no-cartesiana exacta por (N, g)
-  --n-list "2 8 10"                      Lista de N (espacios)
+  --systems "N4:2.0"                     Selección no-cartesiana exacta por (N, g)
+  --n-list "4 6"                         Lista de N (espacios)
   --g-list "0.1 0.5 1.0 2.0 3.0 5.0 8.0" Lista de g (espacios)
   --skip-global-plots                    Omitir gráficas globales vs N y g
-  --pipelines "1 2" | --run-pipeline3    Pipelines a ejecutar
+  --pipelines "1 2" | --run-pipeline3 | --only-pipeline3
+  --p3-ansatz slater_jastrow_1d|multi_sjb  Ansatz variacional de Pipeline 3
+  --p3-batch-size 512 --p3-sweeps 5        Caminantes y barridos MCMC por paso VMC
+  --p3-lr-ansatz 1e-3 --p3-cycles 10       Tasa de aprendizaje y ciclos acoplados P3
+  --p3-vmc-per-cycle 1200 --p3-rl-per-cycle 400
   --postprocess-only                     Regenerar sólo figuras/CSVs
   --force-rerun                          Forzar recálculo completo
   --init-mode <modo>                     Init entrenamiento (default: randomized_wigner)
@@ -1346,7 +1375,37 @@ run_sistema_pipeline_3() {
     local VMC_MALA_H5="${VMC_MALA_DIR}/run_bundle.h5"
     local COUPLED_RL_H5="${COUPLED_RL_DIR}/run_bundle.h5"
 
-    mkdir -p "$VMC_MALA_DIR" "$COUPLED_RL_DIR" "$COMP_DIR" "$FIG_SYS_P3"
+    mkdir -p "$VMC_MALA_DIR" "$COUPLED_RL_DIR" "$COMP_DIR" "$FIG_SYS_P3" "${P1_DIR}/${SYS_TAG}"
+
+    # Si se corre --only-pipeline3 sin correr Pipeline 1 antes, localizar automáticamente el estado CASSCF del asesor en CASSCF_csv/
+    if [ ! -f "$CASSCF_NPZ" ]; then
+        local ADVISOR_NPZ
+        ADVISOR_NPZ=$(python3 - "$SCRIPT_DIR/CASSCF_csv" "$N" "$G" << 'PYEOF'
+import glob, os, re, sys
+root, n_req, g_req = sys.argv[1], int(sys.argv[2]), float(sys.argv[3])
+if not os.path.isdir(root):
+    sys.exit(0)
+for p in sorted(glob.glob(os.path.join(root, "*.npz"))):
+    b = os.path.basename(p).lower()
+    m = re.search(r"n(\d+)_g([0-9]+(?:\.[0-9]+)?)", b)
+    if m and int(m.group(1)) == n_req and abs(float(m.group(2)) - g_req) <= 1e-4:
+        print(p)
+        sys.exit(0)
+PYEOF
+)
+        if [ -n "$ADVISOR_NPZ" ] && [ -f "$ADVISOR_NPZ" ]; then
+            cp -f "$ADVISOR_NPZ" "$CASSCF_NPZ"
+            echo "  [Pipeline 3 | Ref CASSCF] Copiado estado convergido del asesor: $(basename "$ADVISOR_NPZ") -> $CASSCF_NPZ"
+        fi
+    fi
+
+    local P3_TOTAL_VMC_STEPS=$((P3_COUPLED_CYCLES * P3_VMC_ITERS_PER_CYCLE))
+    local P3_EXTRA_ANSATZ_FLAGS=()
+    if [[ "$P3_ANSATZ_TYPE" == "multi_sjb" || "$P3_ANSATZ_TYPE" == "multi_slater_jastrow" ]]; then
+        if [ -f "$CASSCF_NPZ" ]; then
+            P3_EXTRA_ANSATZ_FLAGS=(--casscf_npz_path "$CASSCF_NPZ")
+        fi
+    fi
 
     local sys_failed=0
 
@@ -1358,20 +1417,30 @@ run_sistema_pipeline_3() {
             elif ! check_disk_before_run "$VMC_MALA_DIR" "PIPELINE 3 (VMC-MALA)" "$SYS_TAG" "VMC-MALA"; then
                 sys_failed=1
             else
-                run_logged_step "[Pipeline 3 | VMC-MALA | ${SYS_TAG} | GPU ${GPU_ID}]" \
+                run_logged_step "[Pipeline 3 | VMC-MALA (${P3_ANSATZ_TYPE}, B=${P3_BATCH_SIZE}, sweeps=${P3_SWEEPS_PER_STEP}, steps=${P3_TOTAL_VMC_STEPS}) | ${SYS_TAG} | GPU ${GPU_ID}]" \
                     env CUDA_VISIBLE_DEVICES="$GPU_ID" python3 -u cli/run_1d.py \
                         --run_name "P3_VMC_MALA_SJB_${SYS_TAG}" \
                         --pipeline_stage "pipeline3_variational_training" \
                         --train_mode vmc_only \
                         --n_elec "$N" --n_up "$N_UP" --n_dn "$N_DN" \
                         --omega "$OMEGA" --g "$G" --softening "$SOFT" \
-                        --ansatz_type slater_jastrow_1d \
-                        --orbital_model backflow_ho \
-                        --correlation_model spin_rbf_jastrow \
+                        --ansatz_type "$P3_ANSATZ_TYPE" \
+                        --orbital_model "$P3_ORBITAL_MODEL" \
+                        --correlation_model "$P3_CORRELATION_MODEL" \
+                        "${P3_EXTRA_ANSATZ_FLAGS[@]}" \
                         --proposal_type mala \
-                        --train_steps "$VMC_COUPLED_STEPS" \
+                        --train_steps "$P3_TOTAL_VMC_STEPS" \
+                        --steps_for_best "$P3_STEPS_FOR_BEST" \
+                        --lr_ansatz "$P3_LR_ANSATZ" \
+                        --use_lr_scheduler \
+                        --lr_scheduler_type cosine \
+                        --lr_warmup_steps "$P3_LR_WARMUP_STEPS" \
+                        --lr_min_ratio "$P3_LR_MIN_RATIO" \
+                        --grad_clip_norm "$P3_GRAD_CLIP_NORM" \
+                        --sweeps_per_step "$P3_SWEEPS_PER_STEP" \
+                        --n_ter "$N_BURN_IN" \
                         --tau "$TAU" \
-                        --batch_size "$N_WALKERS" \
+                        --batch_size "$P3_BATCH_SIZE" \
                         --init_mode "$INIT_MODE" \
                         --init_std "$INIT_STD" \
                         --eval_init_mode "$EVAL_INIT_MODE" \
@@ -1409,16 +1478,17 @@ run_sistema_pipeline_3() {
             elif ! check_disk_before_run "$COUPLED_RL_DIR" "PIPELINE 3 (COUPLED)" "$SYS_TAG" "Coupled VMC+RL"; then
                 sys_failed=1
             else
-                run_logged_step "[Pipeline 3 | Coupled VMC+RL | ${SYS_TAG} | GPU ${GPU_ID}]" \
+                run_logged_step "[Pipeline 3 | Coupled VMC+RL (${P3_ANSATZ_TYPE}, cyc=${P3_COUPLED_CYCLES}x${P3_VMC_ITERS_PER_CYCLE} VMC + ${P3_RL_SWEEPS_PER_CYCLE} RL) | ${SYS_TAG} | GPU ${GPU_ID}]" \
                     env CUDA_VISIBLE_DEVICES="$GPU_ID" python3 -u cli/run_1d.py \
                         --run_name "P3_Coupled_RL_TD3_SJB_${SYS_TAG}" \
                         --pipeline_stage "pipeline3_variational_training" \
                         --train_mode coupled \
                         --n_elec "$N" --n_up "$N_UP" --n_dn "$N_DN" \
                         --omega "$OMEGA" --g "$G" --softening "$SOFT" \
-                        --ansatz_type slater_jastrow_1d \
-                        --orbital_model backflow_ho \
-                        --correlation_model spin_rbf_jastrow \
+                        --ansatz_type "$P3_ANSATZ_TYPE" \
+                        --orbital_model "$P3_ORBITAL_MODEL" \
+                        --correlation_model "$P3_CORRELATION_MODEL" \
+                        "${P3_EXTRA_ANSATZ_FLAGS[@]}" \
                         --proposal_type neural_deepset \
                         --proposal_mode residual_mala \
                         --rl_algorithm td3 \
@@ -1427,11 +1497,24 @@ run_sistema_pipeline_3() {
                         --penalty_factor "$PENALTY" \
                         --sigma_action_scale "$SIG_SCALE" \
                         --max_phys_jump_factor "$MAX_PHYS_JUMP_FACTOR" \
+                        --staggered_critic_reset \
                         --lr_actor "$LR_ACTOR" \
                         --lr_critic "$LR_CRITIC" \
-                        --train_steps "$VMC_COUPLED_STEPS" \
+                        --lr_ansatz "$P3_LR_ANSATZ" \
+                        --use_lr_scheduler \
+                        --lr_scheduler_type cosine \
+                        --lr_warmup_steps "$P3_LR_WARMUP_STEPS" \
+                        --lr_min_ratio "$P3_LR_MIN_RATIO" \
+                        --grad_clip_norm "$P3_GRAD_CLIP_NORM" \
+                        --coupled_training_cycles "$P3_COUPLED_CYCLES" \
+                        --vmc_iterations_per_cycle "$P3_VMC_ITERS_PER_CYCLE" \
+                        --rl_sweeps_per_cycle "$P3_RL_SWEEPS_PER_CYCLE" \
+                        --train_steps "$P3_TOTAL_VMC_STEPS" \
+                        --steps_for_best "$P3_STEPS_FOR_BEST" \
+                        --sweeps_per_step "$P3_SWEEPS_PER_STEP" \
+                        --n_ter "$N_BURN_IN" \
                         --tau "$TAU" \
-                        --batch_size "$N_WALKERS" \
+                        --batch_size "$P3_BATCH_SIZE" \
                         --init_mode "$INIT_MODE" \
                         --init_std "$INIT_STD" \
                         --eval_init_mode "$EVAL_INIT_MODE" \
@@ -1469,13 +1552,16 @@ run_sistema_pipeline_3() {
             EXTRA_CASSCF_FLAG=(--casscf_npz_path "$CASSCF_NPZ")
         fi
 
-        run_logged_step "[Pipeline 3 | Postprocess | ${SYS_TAG}]" \
+        # 3A. Las 8 figuras estándar de entrenamiento, convergencia de energía, densidades, ACF, ESJD y KL
+        run_logged_step "[Pipeline 3 | Postprocess 8 Figuras | ${SYS_TAG}]" \
             env CUDA_VISIBLE_DEVICES="" JAX_PLATFORMS=cpu python3 -u cli/postprocess.py \
                 --inputs "$VMC_MALA_H5" "$COUPLED_RL_H5" \
                 --labels "P3_VMC_MALA_SJB_${SYS_TAG}" "P3_Coupled_RL_TD3_SJB_${SYS_TAG}" \
                 "${EXTRA_CASSCF_FLAG[@]}" \
                 --out_dir "$COMP_DIR" \
                 --system_tag "P3_${SYS_TAG}" \
+                --top_k_models "$TOP_K_MODELS" \
+                --walker_trace_top_k "$WALKER_TRACE_TOP_K" \
                 --master_comparison_csv "$LIVE_CSV_P3_COMP" \
                 --csv_collect_dir "$CSV_COLLECT_DIR" \
                 "${PLOT_STYLE_ARGS[@]}"
@@ -1491,6 +1577,41 @@ run_sistema_pipeline_3() {
                 echo "  [Error Pipeline 3] Falló sincronización de live_all_models_master.csv tras ${SYS_TAG}." >&2
                 record_failure "PIPELINE 3 (CSV_SYNC)" "$SYS_TAG" "sync_live_all_models_csv falló"
                 sys_failed=1
+            fi
+        fi
+
+        # 3B. Las 4 figuras de Cruce Nodal y Trazas de 1 Caminante
+        run_logged_step "[Pipeline 3 | Nodal Crossing & Walker Traces | ${SYS_TAG}]" \
+            env CUDA_VISIBLE_DEVICES="" JAX_PLATFORMS=cpu python3 -u cli/evaluate_nodal_crossing_1d.py \
+                --inputs "$VMC_MALA_H5" "$COUPLED_RL_H5" \
+                --labels "P3_VMC_MALA_SJB_${SYS_TAG}" "P3_Coupled_RL_TD3_SJB_${SYS_TAG}" \
+                "${EXTRA_CASSCF_FLAG[@]}" \
+                --system_tag "P3_${SYS_TAG}" \
+                --out_dir "$FIG_SYS_P3" \
+                --csv_collect_dir "$CSV_COLLECT_DIR" \
+                --top_k_models "$TOP_K_MODELS" \
+                --walker_trace_top_k "$WALKER_TRACE_TOP_K" \
+                "${PLOT_STYLE_ARGS[@]}"
+        local nc_rc=$?
+        if [ "$nc_rc" -ne 0 ]; then
+            echo "  [Error Pipeline 3] Falló cli/evaluate_nodal_crossing_1d.py para ${SYS_TAG} (exit=${nc_rc})." >&2
+            record_failure "PIPELINE 3 (NODAL_CROSSING)" "$SYS_TAG" "cli/evaluate_nodal_crossing_1d.py falló (exit=${nc_rc})"
+            sys_failed=1
+        fi
+
+        # 3C. Las 4 figuras detalladas de flips en pasos discretos exactos + acción del Actor + magnitud de paso + paneles individuales
+        if [ -f "${SCRIPT_DIR}/scripts/plot_flips_system_detailed.py" ]; then
+            run_logged_step "[Pipeline 3 | Flips Discretos, Actor y Magnitud de Paso | ${SYS_TAG}]" \
+                env CUDA_VISIBLE_DEVICES="" JAX_PLATFORMS=cpu python3 -u "${SCRIPT_DIR}/scripts/plot_flips_system_detailed.py" \
+                    --prod_dir "$BASE_OUT_DIR" \
+                    --pipeline P3 \
+                    --n "$N" --g "$G" \
+                    --out_dir "${FIG_SYS_P3}/flips_detailed" \
+                    --save_panels \
+                    "${PLOT_STYLE_ARGS[@]}"
+            local fl_rc=$?
+            if [ "$fl_rc" -ne 0 ]; then
+                echo "  [Aviso Pipeline 3] scripts/plot_flips_system_detailed.py terminó con código ${fl_rc} para ${SYS_TAG}." >&2
             fi
         fi
 

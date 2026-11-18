@@ -2321,6 +2321,9 @@ def main(argv: Optional[List[str]] = None) -> int:
     for h5p in h5_candidates:
         try:
             binfo = load_bundle_walkers_and_meta(h5p)
+            if str(binfo.get("pipeline", "P2")) != str(args.pipeline):
+                del binfo["walkers"]
+                continue
             n_b = int(binfo["N"])
             g_b = round(float(binfo["g"]), 4)
             if not _matches_ng_filter(n_b, g_b, args.n_filter, args.g_filter, systems_map):

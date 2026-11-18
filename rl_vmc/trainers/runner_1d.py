@@ -218,10 +218,15 @@ def run_experiment_1d(cfg: Experiment1DConfig) -> str:
         )
 
     # Optimizador del Ansatz para VMC con soporte para Learning Rate Scheduler
+    n_coupled_cycles = max(1, cfg.train.coupled_training_cycles)
+    coupled_vmc_per_cyc = cfg.train.vmc_iterations_per_cycle
+    if cfg.train.mode == "coupled" and cfg.train.train_steps > 0 and cfg.train.train_steps != 5000:
+        coupled_vmc_per_cyc = max(1, cfg.train.train_steps // n_coupled_cycles)
+
     total_vmc_steps = (
         cfg.train.train_steps
         if cfg.train.mode == "vmc_only"
-        else (cfg.train.coupled_training_cycles * cfg.train.vmc_iterations_per_cycle)
+        else (n_coupled_cycles * coupled_vmc_per_cyc)
     )
     ansatz_lr = build_lr_schedule(
         base_lr=cfg.train.lr_ansatz,
@@ -256,7 +261,9 @@ def run_experiment_1d(cfg: Experiment1DConfig) -> str:
             med - cfg.train.sigma_energy_clip * mad,
             med + cfg.train.sigma_energy_clip * mad,
         )
-        centered = jax.lax.stop_gradient(e_clipped - jnp.mean(e_clipped))
+        e_clip_mean = jnp.mean(e_clipped)
+        e_clip_var = jnp.var(e_clipped)
+        centered = jax.lax.stop_gradient(e_clipped - e_clip_mean)
 
         def surrogate_loss(p):
             lp = ansatz.apply(p, walkers)
@@ -274,6 +281,8 @@ def run_experiment_1d(cfg: Experiment1DConfig) -> str:
             new_opt_st,
             e_mean,
             e_var,
+            e_clip_mean,
+            e_clip_var,
             jnp.mean(t_loc),
             jnp.mean(v_loc),
             grad_norm,
@@ -281,11 +290,16 @@ def run_experiment_1d(cfg: Experiment1DConfig) -> str:
 
     training_history: list[dict] = []
     global_step = 0
+    vmc_step_counter = 0
+    ema_energy: float | None = None
+    ema_var: float | None = None
 
     def _run_vmc_block(n_iters: int, use_actor_flag: bool, phase_label: str):
         nonlocal key, state, params_psi, vmc_opt_state, best_energy, best_params_psi, global_step
+        nonlocal vmc_step_counter, ema_energy, ema_var
         for it in range(1, n_iters + 1):
             global_step += 1
+            vmc_step_counter += 1
             for _ in range(cfg.sampler.sweeps_per_step):
                 key, k_s = jax.random.split(key)
                 state, stats, _ = sampler.step(
@@ -302,6 +316,8 @@ def run_experiment_1d(cfg: Experiment1DConfig) -> str:
                 vmc_opt_state,
                 e_m,
                 e_v,
+                e_cm,
+                e_cv,
                 t_m,
                 v_m,
                 g_norm,
@@ -318,17 +334,29 @@ def run_experiment_1d(cfg: Experiment1DConfig) -> str:
             )
 
             e_val = float(e_m)
-            if global_step >= cfg.train.steps_for_best and e_val < best_energy:
-                best_energy = e_val
-                best_params_psi = jax.tree_util.tree_map(lambda x: x.copy(), params_psi)
+            e_clip_val = float(e_cm)
+            e_clip_v = float(e_cv)
+            # Selección robusta de best_params_psi usando EMA de energía recortada MAD y filtro de varianza.
+            # Para el Hamiltoniano armónico + Coulomb repulsivo 1D (H > 0), cualquier E <= 0 es un pico nodal espurio.
+            if np.isfinite(e_clip_val) and np.isfinite(e_clip_v) and e_clip_val > 0.0:
+                if ema_energy is None:
+                    ema_energy = e_clip_val
+                    ema_var = e_clip_v
+                else:
+                    ema_energy = 0.95 * ema_energy + 0.05 * e_clip_val
+                    ema_var = 0.95 * ema_var + 0.05 * e_clip_v
+                var_ok = (e_clip_v <= max(2.5 * ema_var, 5.0)) and (float(e_v) <= max(25.0 * max(ema_var, 1.0), 50.0))
+                if vmc_step_counter >= cfg.train.steps_for_best and var_ok and ema_energy < best_energy:
+                    best_energy = ema_energy
+                    best_params_psi = jax.tree_util.tree_map(lambda x: x.copy(), params_psi)
 
             if it % cfg.train.n_log == 0 or it == 1 or it == n_iters:
                 training_history.append(
                     {
                         "Step": global_step,
                         "Phase": 0.0,
-                        "Energy_Mean": e_val,
-                        "Energy_Var": float(e_v),
+                        "Energy_Mean": e_clip_val if np.isfinite(e_clip_val) else e_val,
+                        "Energy_Var": e_clip_v if np.isfinite(e_clip_v) else float(e_v),
                         "Kinetic_Mean": float(t_m),
                         "Potential_Mean": float(v_m),
                         "Grad_Norm": float(g_norm),
@@ -345,9 +373,10 @@ def run_experiment_1d(cfg: Experiment1DConfig) -> str:
                 )
 
             if it % cfg.train.n_print == 0 or it == 1 or it == n_iters:
+                ema_str = f"{ema_energy:.6f}" if ema_energy is not None else "n/a"
                 print(
                     f"  [{phase_label} {it:4d}/{n_iters}] "
-                    f"E={e_val:.6f} (Var={float(e_v):.4f}) | "
+                    f"E={e_clip_val:.6f} (EMA={ema_str}, Var={e_clip_v:.4f}) | "
                     f"Acc={float(jnp.mean(stats.acceptance)):.2%} | "
                     f"ESJD={float(jnp.mean(stats.esjd)):.5f}"
                 )
@@ -451,15 +480,21 @@ def run_experiment_1d(cfg: Experiment1DConfig) -> str:
         _run_rl_block(rl_steps, phase_label="RL")
 
     elif cfg.train.mode == "coupled":
-        n_cycles = max(1, cfg.train.coupled_training_cycles)
-        vmc_per_cyc = cfg.train.vmc_iterations_per_cycle
-        if cfg.train.train_steps > 0 and cfg.train.train_steps != 5000:
-            vmc_per_cyc = max(1, cfg.train.train_steps // n_cycles)
+        n_cycles = n_coupled_cycles
+        vmc_per_cyc = coupled_vmc_per_cyc
         print(
             f"[Train] Modo acoplado VMC + RL ({n_cycles} ciclos, {vmc_per_cyc} VMC y {cfg.train.rl_sweeps_per_cycle} RL por ciclo)..."
         )
         for cyc in range(1, n_cycles + 1):
             print(f"\n--- Ciclo Acoplado {cyc}/{n_cycles} ---")
+            # En el Ciclo 1 relajamos primero el ansatz con MALA (salvo que haya actor precargado)
+            # para evitar que el Actor TD3 se entrene sobre una función de onda inicial sin relajar.
+            use_actor_in_vmc = proposal.is_neural and (cyc > 1 or loaded_actor)
+            _run_vmc_block(
+                vmc_per_cyc,
+                use_actor_flag=use_actor_in_vmc,
+                phase_label=f"C{cyc}-VMC",
+            )
             if (
                 cfg.rl.staggered_critic_reset
                 and cyc > 1
@@ -473,11 +508,22 @@ def run_experiment_1d(cfg: Experiment1DConfig) -> str:
             _run_rl_block(
                 cfg.train.rl_sweeps_per_cycle, phase_label=f"C{cyc}-RL"
             )
-            _run_vmc_block(
-                vmc_per_cyc,
-                use_actor_flag=proposal.is_neural,
-                phase_label=f"C{cyc}-VMC",
+
+        # Congelar best_params_psi y sincronizar el Actor TD3 con ese checkpoint óptimo antes de evaluar
+        if best_energy < float("inf") and learner is not None:
+            params_psi = best_params_psi
+            lp_best, grad_best = ansatz.value_and_grad(
+                params_psi,
+                state.walkers,
+                min_clip=cfg.sampler.min_clip_grads_ansatz,
+                max_clip=cfg.sampler.max_clip_grads_ansatz,
             )
+            state = SamplerState(
+                walkers=state.walkers, log_psi=lp_best, grad_log_psi=grad_best
+            )
+            polish_steps = max(200, int(cfg.train.rl_sweeps_per_cycle))
+            print(f"\n--- Pulido Final del Actor RL sobre best_params_psi ({polish_steps} barridos) ---")
+            _run_rl_block(polish_steps, phase_label="Final-RL")
 
     elif cfg.train.mode == "eval_only":
         print("[Train] Modo eval_only: omitiendo entrenamiento.")
