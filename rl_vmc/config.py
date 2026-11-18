@@ -58,6 +58,8 @@ class Proposal1DConfig:
     use_spatial_gating: bool = False
     spatial_gating_radius: float = 10.0
     legacy_drift_factor: bool = True
+    parity_equivariant: bool = False
+    unclip_sigma_action: bool = False
 
 
 @dataclass
@@ -112,6 +114,7 @@ class RL1DConfig:
     staggered_critic_reset: bool = False
     use_reward_centering: bool = True
     reward_centering_lr: float = 0.01
+    cdlb_exact_entropy: bool = False
     use_lr_scheduler: bool = True
     lr_scheduler_type: Literal["cosine", "exponential", "linear", "constant"] = "cosine"
     lr_warmup_steps: int = 100
@@ -340,6 +343,8 @@ def build_experiment_argparser() -> argparse.ArgumentParser:
     g_prop.add_argument("--use_spatial_gating", action=argparse.BooleanOptionalAction, default=False, help="Activa la máscara espacial suave para atenuar la deriva del actor lejos del centro.")
     g_prop.add_argument("--spatial_gating_radius", type=float, default=10.0, help="Radio característico (Bohr) para el spatial gating.")
     g_prop.add_argument("--legacy_drift_factor", action=argparse.BooleanOptionalAction, default=True, help="Si es True usa drift=tau*grad_log_psi (compatible con pesos previos); si es False usa drift=2*tau*grad_log_psi.")
+    g_prop.add_argument("--parity_equivariant", action=argparse.BooleanOptionalAction, default=False, help="Si es True impone equivarianza exacta de paridad en FlaxTD3Actor: mu(-x,-F)=-mu(x,F) y sigma(-x,-F)=+sigma(x,F). Si es False usa el actor original.")
+    g_prop.add_argument("--unclip_sigma_action", action=argparse.BooleanOptionalAction, default=False, help="Si es True desbloquea el techo duro [-1,1] sobre el canal a_sigma (usando [scale_clip_min, scale_clip_max]) en forward_action y TD3 target smoothing. Si es False usa el recorte legado [-1,1].")
 
     # 4. Motor MCMC y Estabilidad
     g_samp = parser.add_argument_group("4. Motor Metropolis-Hastings y Estabilidad Numérica")
@@ -385,6 +390,7 @@ def build_experiment_argparser() -> argparse.ArgumentParser:
     g_rl.add_argument("--staggered_critic_reset", action=argparse.BooleanOptionalAction, default=False, help="Reinicia alternadamente uno de los dos críticos TD3 en cada ciclo acoplado.")
     g_rl.add_argument("--use_reward_centering", action=argparse.BooleanOptionalAction, default=True, help="Activa centrado adaptativo de recompensa (Reward Centering, Alg. 2 de Wang et al. 2025) en TD3.")
     g_rl.add_argument("--reward_centering_lr", type=float, default=0.01, help="Tasa de aprendizaje (EMA) para la media móvil de recompensa en Reward Centering.")
+    g_rl.add_argument("--cdlb_exact_entropy", action=argparse.BooleanOptionalAction, default=False, help="Si es True incluye la constante exacta +(N/2)*log(2*pi) en r_explore=-alpha*log_q_fwd de CDLB, eliminando recompensas negativas para sigma<0.606 Bohr y el colapso alpha->0.")
 
     # 6. Entrenamiento
     g_trn = parser.add_argument_group("6. Régimen y Planificación de Entrenamiento")
@@ -465,8 +471,11 @@ def _sanitize_cli_tokens(tokens: list[str]) -> list[str]:
         "casscf_trainable",
         "use_spatial_gating",
         "legacy_drift_factor",
+        "parity_equivariant",
+        "unclip_sigma_action",
         "staggered_critic_reset",
         "use_reward_centering",
+        "cdlb_exact_entropy",
         "use_lr_scheduler",
         "run_evaluation",
         "use_actor_in_eval",
@@ -631,6 +640,8 @@ def parse_experiment_args(argv: Optional[list[str]] = None) -> Experiment1DConfi
             use_spatial_gating=args.use_spatial_gating,
             spatial_gating_radius=args.spatial_gating_radius,
             legacy_drift_factor=args.legacy_drift_factor,
+            parity_equivariant=args.parity_equivariant,
+            unclip_sigma_action=args.unclip_sigma_action,
         ),
         sampler=Sampler1DConfig(
             batch_size=args.batch_size,
@@ -672,6 +683,7 @@ def parse_experiment_args(argv: Optional[list[str]] = None) -> Experiment1DConfi
             staggered_critic_reset=args.staggered_critic_reset,
             use_reward_centering=args.use_reward_centering,
             reward_centering_lr=args.reward_centering_lr,
+            cdlb_exact_entropy=args.cdlb_exact_entropy,
             use_lr_scheduler=args.use_lr_scheduler,
             lr_scheduler_type=args.lr_scheduler_type,
             lr_warmup_steps=args.lr_warmup_steps,

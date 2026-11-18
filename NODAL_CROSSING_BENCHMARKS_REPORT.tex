@@ -1438,4 +1438,238 @@ python3 scripts/analyze_flips_vs_g.py \
   --figure_format both --dpi 300
 \end{verbatim}
 
+\newpage
+\section{Diagnóstico Espacial del Actor, Propuestas Gaussianas y Benchmarks de Ablación (B1 y B2)}
+
+\subsection{Auditoría de la Sensibilidad Local del Actor Legado: Sonda Espacial y Visualización de Gaussianas}
+
+Al analizar el Panel (a) de las figuras \texttt{fig\_flips\_actor\_and\_step\_size\_*} (Sección 12.3), surgió una cuestión central: \textit{¿por qué las curvas promedio $\langle \sigma(k) \rangle$ y $\langle |\mu_{\mathrm{actor}}(k)| \rangle$ aparecen casi planas alrededor de la transición, pese a que la red DeepSet recibe posiciones relativas, vecinos por espín y la fuerza cuántica exacta $F_Q = \nabla \ln |\Psi|$?}
+
+Para responder con precisión numérica exacta (verificando coincidencia JAX/NumPy $< 2.2\times 10^{-16}$ sobre los pesos entrenados en \texttt{checkpoints/actor\_final}), se implementaron dos herramientas diagnósticas nuevas:
+\begin{enumerate}
+\item \textbf{Sonda espacial del actor (\texttt{scripts/probe\_actor\_spatial\_response.py}):} fija $N-1$ electrones en los pozos de equilibrio de la molécula de Wigner (alternando espines $\uparrow/\downarrow$) y barre el $N$-ésimo electrón de prueba sobre $x_{\mathrm{probe}} \in [-x_{\max}, +x_{\max}]$, evaluando $\ln|\Psi_{\mathrm{CASSCF}}|$, $F_Q(x)$, las salidas crudas y recortadas $(a_\mu, a_\sigma)$ de \texttt{FlaxTD3Actor}, la ablación sin fuerza cuántica ($F_Q \equiv 0$) y la simetría exacta de paridad espacial $(x, F_Q) \mapsto (-x, -F_Q)$.
+\item \textbf{Propuestas Gaussianas en un caminante individual (\texttt{scripts/plot\_walker\_flip\_proposal.py}):} rastrea un caminante real durante un intercambio de espín opuesto ($\uparrow\downarrow$, barrera de Wigner) y de mismo espín ($\uparrow\uparrow/\downarrow\downarrow$, nodo exacto de Pauli $\Psi=0$), graficando $q_{\mathrm{RL}}(x'\mid x(t_0)) = \mathcal{N}(\mu_{\mathrm{RL}}, \sigma_{\mathrm{RL}}^2)$ frente al contrafactual $q_{\mathrm{MALA}}(x'\mid x(t_0))$.
+\end{enumerate}
+
+La Tabla~\ref{tab:spatial_probe_legacy} resume la respuesta cuantitativa medida sobre los cuatro modelos locales íntegros (barrido de electrón $\downarrow$).
+
+\begin{table}[H]
+\centering
+\caption{Resumen cuantitativo de la sonda espacial sobre cuatro actores legados entrenados (\texttt{actor\_spatial\_probe\_summary.csv}, electrón de prueba $\downarrow$).}
+\label{tab:spatial_probe_legacy}
+\begin{adjustbox}{max width=\textwidth}
+\begin{tabular}{lcccccc}
+\toprule
+\textbf{Modelo Legado Entrenado} & \textbf{$a_\mu \in [\min,\max]$ ($\mathrm{std}$)} & \textbf{$\Delta \mu_{\mathrm{actor}}$ [Bohr]} & \textbf{$\sigma_{\mathrm{RL}} \in [\min,\max]$ [Bohr]} & \textbf{Pegado a \texttt{clip=1.0}} & \textbf{Asimetría Paridad $\mu$} & \textbf{Sensib. $F_Q$ ($\max|\Delta a_\mu|$)} \\
+\midrule
+\texttt{wigner\_N4\_g4\_td3} ($N=4, g=4, s_\sigma=0.2$) & $[-0.720, -0.114]$ ($0.174$) & $0.091$ & $[0.396, 0.438]$ & $0.0\%$ & $0.734$ & $0.007$ \\
+\texttt{MultiDet\_N6\_g1.0} ($\tau=0.08, A=0.15, \mathrm{pen}=0.15$) & $[-0.979, +1.000]$ ($0.820$) & $0.297$ & $[0.916, 1.087]$ & \textbf{81.4\%} & $0.276$ & $0.013$ \\
+\texttt{MultiDet\_N6\_g1.0} ($\tau=0.10, A=0.15, \mathrm{pen}=0.25$) & $[+0.824, +1.000]$ ($0.050$) & $0.026$ & $[1.148, 1.216]$ & \textbf{89.0\%} & \textbf{1.942} & $0.021$ \\
+\texttt{N6\_w0.1\_g0.1} ($\tau=0.10, A=0.14$) & $[-1.000, +0.911]$ ($0.713$) & $0.268$ & $[1.216, 1.216]$ & \textbf{100.0\%} & $0.910$ & $0.065$ \\
+\bottomrule
+\end{tabular}
+\end{adjustbox}
+\end{table}
+
+El diagnóstico identifica \textbf{cuatro causas estructurales acopladas}:
+\begin{enumerate}
+\item \textbf{Techo duro \texttt{clip=1.0} sobre $a_\sigma$:} En \texttt{DeepSetNeuralProposal1D.forward\_action} y \texttt{TD3Learner1D.\_train\_networks}, ambos canales de acción se recortaban a $[-1, 1]$. Al ser $\sigma_{\mathrm{MALA}} = \sqrt{2\tau} = 0.40\text{--}0.45\ \mathrm{Bohr}$ diez veces menor que la distancia entre pozos ($d_{\mathrm{adj}} = 4.29\ \mathrm{Bohr}$), CDLB empuja $a_\sigma^{\mathrm{raw}} > 1$ en $81.4\%\text{--}100\%$ de la caja, aplanando $\sigma_{\mathrm{RL}}(x)$ contra $\sqrt{2\tau}\,e^{1.0} = 1.087\text{--}1.216\ \mathrm{Bohr}$.
+\item \textbf{Ruptura de paridad y ocultamiento por $|\mu|$:} En \texttt{pen=0.25}, la deriva colapsó a un sesgo positivo unilateral $[+0.824, +1.000]$ (asimetría de paridad $1.942/2.0$). En \texttt{pen=0.15}, el actor sí aprendió una deriva radial anti-confinante ($a_\mu \in [-0.979, +1.000]$, $\mathrm{corr}(x) = +0.944$) y un valle central en $\sigma_{\mathrm{RL}}$ ($1.087 \to 0.916\ \mathrm{Bohr}$), pero el Panel (a) lo enmascaraba al graficar $|\mu_{\mathrm{actor}}|$ y su cero permanecía desplazado a $x \approx -3.0\ \mathrm{Bohr}$.
+\item \textbf{Amplitud física diminuta ($A_{\mathrm{actor}} = 0.15\ \mathrm{Bohr}$):} Representa apenas $3.5\%$ de $d_{\mathrm{adj}}$, haciendo casi despreciable la contribución de deriva frente a $\sigma_{\mathrm{RL}} \approx 1.22\ \mathrm{Bohr}$.
+\item \textbf{Insensibilidad efectiva a $F_Q$:} Al fijar $F_Q \equiv 0$, $a_\mu$ cambia en $\le 0.021$, indicando que el actor legado prácticamente ignora la divergencia de $F_Q$ en los nodos de Pauli.
+\end{enumerate}
+
+Aun con $\sigma_{\mathrm{RL}}$ casi saturado, las visualizaciones de 1 caminante (Figuras~\ref{fig:walker_prop_opp}--\ref{fig:walker_prop_same}) explican físicamente la aceleración de $\sim 30\times$ sobre MALA base: al desacoplar $\sigma_{\mathrm{RL}} = 1.22\ \mathrm{Bohr}$ de una deriva de Langevin moderada ($\tau = 0.10$), las colas Gaussianas alcanzan directamente el pozo vecino ($z_{\mathrm{RL}} = 2.1\text{--}3.1\sigma$ vs $z_{\mathrm{MALA}} = 6.0\text{--}8.2\sigma$), incrementando la densidad de propuesta conjunta del par en un factor de \textbf{$10^{+18.5}\times$ a $10^{+20.9}\times$}.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.96\textwidth]{figures/actor_spatial_probe/fig_actor_spatial_probe_MultiDet_N6_g1.0_RL_MALA_tau0.10_amp0.15_pen0.25_sig1.1_spin_down.png}
+\caption{\textbf{Sonda espacial del actor legado \texttt{MultiDet\_N6\_g1.0} ($\tau=0.10, A=0.15, \mathrm{pen}=0.25$):} Panel (b) evidencia el colapso de $\mu_{\mathrm{actor}}(x)$ hacia un sesgo positivo constante ($+0.13\text{ a }+0.15\ \mathrm{Bohr}$, asimetría de paridad $1.942$) y su solapamiento casi idéntico con la ablación $F_Q \equiv 0$. Panel (c) muestra cómo la salida cruda $\sqrt{2\tau}\,e^{a_\sigma^{\mathrm{raw}}}$ (naranja) rebasa el techo duro \texttt{clip=1.0} y queda recortada plana en $1.216\ \mathrm{Bohr}$ sobre el $89.0\%$ de la caja.}
+\label{fig:spatial_probe_pen025}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.96\textwidth]{figures/actor_spatial_probe/fig_actor_spatial_probe_MultiDet_N6_g1.0_RL_MALA_tau0.08_amp0.15_pen0.15_sig1.1_spin_down.png}
+\caption{\textbf{Sonda espacial del actor legado \texttt{MultiDet\_N6\_g1.0} ($\tau=0.08, A=0.15, \mathrm{pen}=0.15$):} A diferencia de \texttt{pen=0.25}, aquí la red sí aprende una deriva espacial anti-confinante ($a_\mu \in [-0.979, +1.000]$, $\mathrm{corr}(x) = +0.944$) y una contracción central de $\sigma_{\mathrm{RL}}$ ($1.087 \to 0.916\ \mathrm{Bohr}$ en $x \in [-4,+2]$), pero conserva asimetría de paridad ($0.276$), insensibilidad a $F_Q$ ($\max|\Delta a_\mu| = 0.013$) y $81.4\%$ de saturación en el techo \texttt{clip=1.0}.}
+\label{fig:spatial_probe_pen015}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.96\textwidth]{figures/walker_flip_proposals/fig_walker_flip_proposal_MultiDet_N6_g1.0_RL_MALA_tau0.10_amp0.15_pen0.25_sig1.1_opp_w100_t18403.png}
+\caption{\textbf{Propuestas Gaussianas exactas $q_{\mathrm{RL}}(x'\mid x(t_0))$ vs MALA contrafactual en un intercambio de espín opuesto ($\uparrow\downarrow$, Caminante \#100, $t_0=18403$):} Las Gaussianas de RL-MALA ($\sigma=1.22\ \mathrm{Bohr}$) cubren directamente los pozos vecinos (estrellas de aterrizaje a $2.70\sigma$ y $2.91\sigma$), frente a $7.66\sigma$ y $7.58\sigma$ en MALA ($\sigma=0.45\ \mathrm{Bohr}$), produciendo un cociente conjunto $q_{\mathrm{RL}}/q_{\mathrm{MALA}} = 10^{+20.9}$.}
+\label{fig:walker_prop_opp}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.96\textwidth]{figures/walker_flip_proposals/fig_walker_flip_proposal_MultiDet_N6_g1.0_RL_MALA_tau0.10_amp0.15_pen0.25_sig1.1_same_w42_t27854.png}
+\caption{\textbf{Propuestas Gaussianas exactas en un cruce nodal de Pauli ($\downarrow\downarrow$, Caminante \#42, $t_0=27854$):} Los electrones $e_5\downarrow$ y $e_6\downarrow$ intercambian pozos en 1 paso ($|\Delta d_{ij}|=6.39\ \mathrm{Bohr}$) saltando sobre el nodo $\Psi=0$ con $z_{\mathrm{RL}} = 2.10\sigma, 3.13\sigma$ frente a $z_{\mathrm{MALA}} = 6.05\sigma, 8.16\sigma$ ($q_{\mathrm{RL}}/q_{\mathrm{MALA}} = 10^{+18.5}$).}
+\label{fig:walker_prop_same}
+\end{figure}
+
+\subsection{Modificaciones Retrocompatibles con Banderas en \texttt{FlaxTD3Actor} y \texttt{TD3Learner1D}}
+
+Para eliminar las tres limitaciones estructurales \textbf{sin alterar el comportamiento por defecto ni requerir rollback para reproducir el actor legado}, se incorporaron dos banderas booleanas opcionales (\texttt{default=False}) en \texttt{rl\_vmc/config.py}, \texttt{rl\_vmc/proposals/proposals\_1d.py} y \texttt{rl\_vmc/rl/learners\_1d.py}:
+
+\begin{enumerate}
+\item \textbf{Equivarianza exacta de paridad (\texttt{--parity\_equivariant} / \texttt{--no-parity\_equivariant}):} Bajo la reflexión espacial $\mathcal{P}: (x, F_Q) \mapsto (-x, -F_Q)$, la función \texttt{reflect\_td3\_state} invierte exactamente los signos de las componentes impares de \texttt{build\_td3\_state}: $[x_i, x_i-\bar{x}, \tanh(g_i/F_{\mathrm{norm}})]$ y $\mathrm{sign}(x_i - x_j)$ en cada slot vecino, dejando invariantes $s_i$, \texttt{global\_feat}, $r_{ij}/r_{\mathrm{scale}}$ y las máscaras. Al activar \texttt{parity\_equivariant=True}, \texttt{FlaxTD3Actor} evalúa $[s, \mathcal{P}(s)]$ en una sola pasada sobre las mismas capas \texttt{Dense\_0..Dense\_10} y proyecta los logits $(m_\theta, u_\theta)$ mediante simetrización exacta de Reynolds:
+\begin{equation}
+a_\mu^{\mathrm{eq}}(s) = \tanh\!\left(\frac{m_\theta(s) - m_\theta(\mathcal{P}(s))}{2}\right), \qquad
+a_\sigma^{\mathrm{eq}}(s) = s_\sigma\,\tanh\!\left(\frac{u_\theta(s) + u_\theta(\mathcal{P}(s))}{2}\right).
+\label{eq:parity_reynolds}
+\end{equation}
+Esta construcción garantiza $a_\mu^{\mathrm{eq}}(\mathcal{P}(s)) = -a_\mu^{\mathrm{eq}}(s)$ y $a_\sigma^{\mathrm{eq}}(\mathcal{P}(s)) = +a_\sigma^{\mathrm{eq}}(s)$ con error exactamente nulo (\texttt{0.00e+00} en \texttt{float64}), cancela algebraicamente el sesgo DC $b_\mu$ de la capa de salida, y conserva un árbol de parámetros \texttt{Dense\_0..Dense\_10} 100\% compatible con todos los checkpoints legados.
+
+\item \textbf{Desbloqueo del canal de varianza (\texttt{--unclip\_sigma\_action} / \texttt{--no-unclip\_sigma\_action}):} Separa el recorte por canal en \texttt{DeepSetNeuralProposal1D.forward\_action} y en el suavizado objetivo de \texttt{TD3Learner1D.\_train\_networks}: $a_\mu \in [-1, 1]$ mientras que $a_\sigma \in [\texttt{scale\_clip\_min}, \texttt{scale\_clip\_max}]$. Combinada con \texttt{--sigma\_action\_scale} igual a \texttt{--scale\_clip\_max} ($1.8$ o $2.0$), \texttt{--scale\_clip\_min -0.5} y mayor \texttt{--actor\_amplitude} ($0.80\text{--}1.20\ \mathrm{Bohr}$), permite que $\sigma_{\mathrm{RL}}(x)$ alcance hasta $2.705\text{--}3.304\ \mathrm{Bohr}$ sin recortes abruptos y que $\mu_{\mathrm{actor}}(x)$ tenga escala física comparable a la separación entre pozos de Wigner.
+
+\item \textbf{Entropía diferencial exacta en CDLB (\texttt{--cdlb\_exact\_entropy} / \texttt{--no-cdlb\_exact\_entropy}):} Al probar el desbloqueo de $a_\sigma$ localmente se descubrió un defecto sutil en la recompensa legada: \texttt{gaussian\_log\_prob} omitía la constante $-\frac{N}{2}\ln(2\pi)$ (que se cancela en Metropolis-Hastings $\log q_{\mathrm{rev}}-\log q_{\mathrm{fwd}}$, pero \emph{no} en $r_{\mathrm{explore}} = -\alpha \log q_{\mathrm{fwd}}$ al multiplicar por $\alpha$). Para $\sigma < e^{-1/2} = 0.606\ \mathrm{Bohr}$, esto volvía negativa la recompensa CDLB en pasos aceptados, induciendo a TD3 a colapsar $\sigma \to 0.06\ \mathrm{Bohr}$ y $\alpha \to 0\%$ para obtener $R = 0 > R_{\mathrm{aceptado}}$. Activar \texttt{--cdlb\_exact\_entropy} restaura $+\alpha\,\frac{N}{2}\ln(2\pi)$ en \texttt{compute\_rl\_reward}, garantizando entropía diferencial positiva $N(\ln\sigma + \frac{1}{2}\ln(2\pi e)) > 0$ para $\sigma > 0.242\ \mathrm{Bohr}$ y eliminando el colapso $\alpha \to 0$.
+\end{enumerate}
+
+\begin{table}[H]
+\centering
+\caption{Banderas CLI para alternar sin rollback entre el actor legado y el actor equivariante desbloqueado.}
+\label{tab:actor_flags}
+\begin{adjustbox}{max width=\textwidth}
+\begin{tabular}{llll}
+\toprule
+\textbf{Bandera CLI} & \textbf{Modo Legado (Default)} & \textbf{Modo Desbloqueado (Benchmark 2)} & \textbf{Módulos} \\
+\midrule
+\texttt{--parity\_equivariant} & \texttt{--no-parity\_equivariant} (\texttt{False}) & \texttt{--parity\_equivariant} (\texttt{True}) & \texttt{FlaxTD3Actor} \\
+\texttt{--unclip\_sigma\_action} & \texttt{--no-unclip\_sigma\_action} (\texttt{False}) & \texttt{--unclip\_sigma\_action} (\texttt{True}) & \texttt{DeepSetNeuralProposal1D}, \texttt{TD3Learner1D} \\
+\texttt{--cdlb\_exact\_entropy} & \texttt{--no-cdlb\_exact\_entropy} (\texttt{False}) & \texttt{--cdlb\_exact\_entropy} (\texttt{True}) & \texttt{compute\_rl\_reward} (\texttt{rewards.py}) \\
+\texttt{--actor\_amplitude} & \texttt{0.15} Bohr & \texttt{0.80} -- \texttt{1.20} Bohr & \texttt{DeepSetNeuralProposal1D} \\
+\texttt{--sigma\_action\_scale} / \texttt{--scale\_clip\_min,max} & \texttt{1.1} / \texttt{[-5.0, 1.0]} ($\sigma_{\max}=1.216$) & \texttt{1.8}/\texttt{[-0.5, 1.8]} ($2.705$) o \texttt{2.0}/\texttt{[-0.5, 2.0]} ($3.304$) & \texttt{FlaxTD3Actor}, \texttt{TD3Learner1D} \\
+\bottomrule
+\end{tabular}
+\end{adjustbox}
+\end{table}
+
+\subsection{Diseño Científico de los Dos Benchmarks de Ablación (B1 y B2)}
+
+Para probar de manera rigurosa si el actor aprende una ventaja genuina más allá de un ancho uniforme grande y si las nuevas banderas mejoran la sensibilidad local y la eficiencia de muestreo, se diseñaron dos experimentos automatizados en \texttt{run\_actor\_ablation\_benchmarks.sh} (todos sobre la misma función de onda CASSCF congelada y con inicialización polarizada \texttt{spin\_ordered\_offset} en evaluación):
+
+\begin{itemize}
+\item \textbf{Benchmark 1 — Control Justo vs MALA Grande y RWMH de Ancho Emparejado:} Aísla cuánto beneficio proviene de un $\sigma$ grande uniforme vs desacoplar $\sigma$ de la deriva de Langevin $\tau F_Q$ vs la política aprendida:
+  \begin{enumerate}
+  \item \texttt{B1\_MALA\_base\_tau0.10} ($\tau=0.10$, $\sigma=0.447\ \mathrm{Bohr}$): control clásico estándar.
+  \item \texttt{B1\_MALA\_large\_tau0.50} ($\tau=0.50$, $\sigma=1.000\ \mathrm{Bohr}$): MALA con paso $5\times$ mayor.
+  \item \texttt{B1\_MALA\_matched\_tau0.7389} ($\tau=0.10\,e^2=0.7389$, $\sigma=1.216\ \mathrm{Bohr}$): MALA con exactamente la misma $\sigma$ que el techo de RL-MALA legado, pero con deriva de Langevin $7.39\times$ mayor.
+  \item \texttt{B1\_RWMH\_matched\_sig1.2156} (\texttt{metropolis}, deriva $=0$, $\sigma=1.216\ \mathrm{Bohr}$): Random-Walk MH con deriva cuántica nula y exactamente la misma $\sigma=1.216\ \mathrm{Bohr}$.
+  \item \texttt{B1\_RL\_MALA\_legacy}: actor neuronal legado (\texttt{parity=OFF}, \texttt{unclip=OFF}, $A=0.15$, $s_\sigma=1.1$, \texttt{clip=1.0}).
+  \end{enumerate}
+
+\item \textbf{Benchmark 2 — Equivarianza Exacta de Paridad, Desbloqueo de $\sigma(x)$ y Amplitud Física:} Evalúa en escalera de ablación si eliminar los cuellos de botella desbloquea modulación espacial real y mejora $D_{\mathrm{KL}}^{\mathrm{spin}}$, flips y $\tau_{\mathrm{int}}(E)$:
+  \begin{enumerate}
+  \item \texttt{B1\_RL\_MALA\_legacy}: referencia legada.
+  \item \texttt{B2\_RL\_MALA\_parity\_only}: ablación de 1 factor (\texttt{--parity\_equivariant --no-unclip\_sigma\_action}, $A=0.15$).
+  \item \texttt{B2\_RL\_MALA\_eq\_unclip\_amp0.80\_sig1.8}: \texttt{--parity\_equivariant --unclip\_sigma\_action --cdlb\_exact\_entropy} con $A=0.80\ \mathrm{Bohr}$, $s_\sigma = \texttt{scale\_clip\_max} = 1.8$, \texttt{scale\_clip\_min=-0.5} ($\sigma \in [0.271, 2.705]\ \mathrm{Bohr}$).
+  \item \texttt{B2\_RL\_MALA\_eq\_unclip\_amp1.20\_sig2.0}: \texttt{--parity\_equivariant --unclip\_sigma\_action --cdlb\_exact\_entropy} con $A=1.20\ \mathrm{Bohr}$, $s_\sigma = \texttt{scale\_clip\_max} = 2.0$, \texttt{scale\_clip\_min=-0.5} ($\sigma \in [0.271, 3.304]\ \mathrm{Bohr}$).
+  \end{enumerate}
+\end{itemize}
+
+\subsection{Validación Empírica Local de B1 y B2 ($N=4, \omega=0.1, g=2.0$, CASSCF $b=256$)}
+
+Como prueba piloto completa antes de lanzar las corridas de producción en Ayler, se ejecutaron los \textbf{8 modelos de los Benchmarks B1 y B2} en CPU local sobre el estado CASSCF convergido del asesor \texttt{casscf\_statecas\_n4\_g2.0\_omega0.1\_soft0.1\_b256\_c0-a4\_det6.npz} ($E_{\mathrm{CASSCF}} = 2.802268\,E_h$, \texttt{batch=32}, \texttt{rl\_steps=1000}, evaluación $2\times 4{,}000$ pasos desde \texttt{spin\_ordered\_offset}). En paralelo, se reescribió la recurrencia de $256$ funciones base Hermite en \texttt{\_build\_ho\_basis\_jax} (\texttt{rl\_vmc/ansatze/ansatz\_1d.py}) mediante \texttt{jax.lax.scan}, reduciendo el tiempo de compilación XLA de \texttt{jax.hessian} de $>200\ \mathrm{s}$ a \textbf{$0.14\ \mathrm{s}$} ($>1{,}400\times$ más rápido, diferencia $\le 1.25\times 10^{-16}$).
+
+\begin{table}[H]
+\centering
+\caption{Resultados empíricos de los Benchmarks B1 y B2 en $N=4, \omega=0.1, g=2.0$ ($E_{\mathrm{CASSCF}} = 2.802268\,E_h$, $2\times 4{,}000$ pasos desde \texttt{spin\_ordered\_offset}).}
+\label{tab:ablation_b1_b2_local}
+\begin{adjustbox}{max width=\textwidth}
+\begin{tabular}{lcccccccccc}
+\toprule
+\textbf{Modelo} & $\langle\sigma\rangle$ & \textbf{Acc} & \textbf{ESJD} & $\tau_{\mathrm{int}}(E)$ & $D_{\mathrm{KL}}^{\mathrm{spin}}$ & \textbf{Flips $\uparrow\downarrow$/1k} & \textbf{Pauli/1k} & $\langle E_L\rangle \pm \mathrm{SE}$ [$E_h$] & \textbf{Asim. Par.} & $\mathrm{std}(\sigma)$ (\textbf{clip}) \\
+\midrule
+\texttt{B1\_MALA\_base} ($\tau=0.10$) & $0.45$ & $88.3\%$ & $0.69$ & $11.7$ & $0.5190$ & $0.008$ & $0.012$ & $2.7995 \pm 0.0018$ & --- & --- \\
+\texttt{B1\_MALA\_large} ($\tau=0.50$) & $1.00$ & $73.3\%$ & $2.76$ & $4.1$ & $0.2660$ & $0.219$ & $0.160$ & $2.8024 \pm 0.0012$ & --- & --- \\
+\texttt{B1\_MALA\_matched} ($\tau=0.74$) & $1.22$ & $67.0\%$ & $3.67$ & $2.3$ & $0.1623$ & $0.410$ & $0.234$ & $2.8018 \pm 0.0008$ & --- & --- \\
+\texttt{B1\_RWMH\_matched} (deriva$=0$) & $1.22$ & $45.1\%$ & $2.06$ & $6.0$ & $0.0162$ & $1.782$ & $0.824$ & $2.8026 \pm 0.0014$ & --- & --- \\
+\texttt{B1\_RL\_MALA\_legacy} (par=OFF) & $0.76$ & $12.9\%$ & $0.34$ & $1254$ & $0.3859$ & $0.551$ & $0.227$ & $3.1507 \pm 0.1740$ & $1.989$ & $0.500$ ($52.5\%$) \\
+\texttt{B2\_RL\_MALA\_parity\_only} & $1.22$ & $45.1\%$ & $2.08$ & $4.8$ & $0.0171$ & $1.289$ & $0.738$ & $2.8011 \pm 0.0012$ & \textbf{0.000} & $0.000$ ($100\%$) \\
+\texttt{B2\_RL\_MALA\_eq\_unclip} ($0.80, 1.8$) & $2.65$ & $14.0\%$ & $2.16$ & $5.8$ & \textbf{0.0046} & \textbf{9.178} & \textbf{4.423} & \textbf{2.8003 $\pm$ 0.0013} & \textbf{0.000} & \textbf{0.159} ($5.0\%$) \\
+\texttt{B2\_RL\_MALA\_eq\_unclip} ($1.20, 2.0$) & $3.21$ & $9.3\%$ & $1.94$ & $7.8$ & \textbf{0.0070} & \textbf{10.241} & \textbf{5.013} & \textbf{2.8020 $\pm$ 0.0015} & \textbf{0.000} & \textbf{0.258} ($0.8\%$) \\
+\bottomrule
+\end{tabular}
+\end{adjustbox}
+\end{table}
+
+Los resultados de la Tabla~\ref{tab:ablation_b1_b2_local} y las Figuras~\ref{fig:ablation_metrics}--\ref{fig:ablation_walker} establecen tres conclusiones claras:
+\begin{enumerate}
+\item \textbf{Desacoplar $\sigma$ de la deriva de Langevin es decisivo (Benchmark 1):} Emparejar $\sigma=1.22\ \mathrm{Bohr}$ subiendo $\tau=0.7389$ en MALA amplifica la deriva confinante $7.39\times$, atrapando a los caminantes en sus pozos ($D_{\mathrm{KL}}^{\mathrm{spin}} = 0.1623$, $0.41\ \mathrm{flips}/10^3$). Con el \emph{mismo} $\sigma=1.22\ \mathrm{Bohr}$ pero deriva nula (\texttt{RWMH\_matched}), $D_{\mathrm{KL}}^{\mathrm{spin}}$ cae \textbf{$10\times$ hasta $0.0162$} y los flips se cuadruplican.
+\item \textbf{La equivarianza de paridad rescata la estabilidad y expone el techo \texttt{clip=1.0}:} Activar solo \texttt{--parity\_equivariant} elimina el colapso del actor legado (asimetría $1.989 \to 0.000$, $D_{\mathrm{KL}}^{\mathrm{spin}}: 0.386 \to 0.0171$), pero al seguir saturado al $100\%$ en $\sigma=1.22\ \mathrm{Bohr}$ ($A=0.15$) replica prácticamente a \texttt{RWMH\_matched}.
+\item \textbf{Desbloquear $\sigma(x)$, amplitud física y entropía CDLB exacta supera a todos los controles (Benchmark 2):} Los actores \texttt{eq\_unclip} aprenden una deriva exactamente impar ($\mu_{\mathrm{actor}} \in [-0.73, +0.73]\ \mathrm{Bohr}$ con inflexiones en los electrones vecinos, asimetría $= 0.000$) y una modulación espacial genuina de $\sigma_{\mathrm{RL}}(x)$ (contracción central a $2.14\ \mathrm{Bohr}$ y expansión exterior a $2.71\ \mathrm{Bohr}$, solo $5.0\%$ en el techo; y $2.41\text{--}3.30\ \mathrm{Bohr}$ con $0.8\%$ en el techo para $s_\sigma=2.0$). Esto reduce $D_{\mathrm{KL}}^{\mathrm{spin}}$ a \textbf{$0.0046$} ($113\times$ mejor que MALA base, $35\times$ mejor que MALA $\sigma$-match y $3.5\times$ mejor que RWMH $\sigma$-match), eleva los flips $\uparrow\downarrow$ a \textbf{$9.18\text{--}10.24$/1k} y los cruces nodales de Pauli a \textbf{$4.42\text{--}5.01$/1k} ($84\%\text{--}88\%$ en 1 paso), manteniendo la energía exacta CASSCF sin sesgo ($|\Delta E| = 0.23\ \mathrm{mHa}$ en $A=1.20$).
+\end{enumerate}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.98\textwidth]{figures/actor_ablation_N4_g2.0/fig_ablation_b1_b2_metrics_N4_w0.1_g2.png}
+\caption{\textbf{Comparativa integral de métricas de los Benchmarks B1 y B2 en $N=4, \omega=0.1, g=2.0$:} Los actores equivariantes desbloqueados (verde) superan simultáneamente a MALA base, MALA grande, MALA $\sigma$-match, RWMH $\sigma$-match y RL-MALA legado en $D_{\mathrm{KL}}^{\mathrm{spin}}$ ($0.0046$), flips $\uparrow\downarrow$ ($9.18\text{--}10.24$/1k) y cruces de Pauli ($4.42\text{--}5.01$/1k), preservando la energía exacta $E_{\mathrm{CASSCF}} = 2.802268\,E_h$.}
+\label{fig:ablation_metrics}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.96\textwidth]{figures/actor_ablation_N4_g2.0/fig_ablation_b2_spatial_overlay_N4_w0.1_g2.png}
+\caption{\textbf{Superposición espacial directa de los 4 actores del Benchmark 2 ($N=4, g=2.0$):} (a) $\mu_{\mathrm{actor}}(x)$ muestra la eliminación exacta del sesgo unilateral (asimetría $1.989 \to 0.000$) y el escalado a amplitud física ($\pm 0.73$ y $\pm 1.09\ \mathrm{Bohr}$); (b) $\sigma_{\mathrm{RL}}(x)$ evidencia el desbloqueo del techo legado \texttt{clip=1.0} con un valle espacial genuino en el centro de la trampa ($\mathrm{std}(\sigma)=0.159\text{--}0.258\ \mathrm{Bohr}$, solo $0.8\%\text{--}5.0\%$ recortado).}
+\label{fig:ablation_overlay}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.95\textwidth]{figures/actor_ablation_N4_g2.0/fig_actor_spatial_probe_B2_RL_MALA_eq_unclip_amp0.80_sig1.8_spin_down.png}
+\caption{\textbf{Sonda espacial individual del actor equivariante desbloqueado \texttt{B2\_RL\_MALA\_eq\_unclip\_amp0.80\_sig1.8}:} Panel (b) confirma coincidencia exacta entre $\mu_{\mathrm{actor}}(x)$ y $-\mu_{\mathrm{actor}}(-x,-F_Q)$ (\texttt{asimet.=0.000, sat=0.0\%}); Panel (c) muestra modulación suave sin recorte abrupto ($\sigma_{\mathrm{RL}} \in [2.14, 2.71]\ \mathrm{Bohr}$, solo $5.0\%$ en el techo).}
+\label{fig:ablation_probe_unclip}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.95\textwidth]{figures/actor_ablation_N4_g2.0/fig_walker_flip_proposal_B2_RL_MALA_eq_unclip_amp0.80_sig1.8_opp_w6_t2117.png}
+\caption{\textbf{Propuesta Gaussiana en 1 caminante del actor equivariante desbloqueado (Caminante \#6, $t_0=2117$, $|\Delta d_{ij}|=14.66\ \mathrm{Bohr}$):} En Panel (d) se observa cómo las derivas con signo $\mu_{\mathrm{actor}}$ de ambos electrones intercambian dinámicamente de $+0.26$ a $+0.69\ \mathrm{Bohr}$ justo al cruzar de pozo en $t_0 \to t_0+1$, logrando un cociente conjunto $q_{\mathrm{RL}}/q_{\mathrm{MALA}} = 10^{+112.2}$.}
+\label{fig:ablation_walker}
+\end{figure}
+
+\subsection{Comandos Exactos para Ejecutar los Benchmarks B1 y B2 en Ayler}
+
+En \textbf{Ayler} (3 GPUs), actualiza el repositorio con \texttt{git pull origin main} y lanza los experimentos completos de producción (\texttt{batch=128}, \texttt{rl\_steps=6000}, $3\times 40{,}000$ pasos):
+
+\begin{lstlisting}[language=bash]
+git pull origin main
+chmod +x run_actor_ablation_benchmarks.sh
+
+# 1. Ejecutar Benchmarks B1 y B2 completos en N=4 (g=2.0) y N=6 (g=1.0, 2.0):
+nohup ./run_actor_ablation_benchmarks.sh \
+  --benchmark all \
+  --systems "4:2.0 6:1.0 6:2.0" \
+  --gpus "0 1 2" \
+  --batch-size 128 \
+  --rl-steps 6000 \
+  --eval-chains 3 \
+  --measure-steps 40000 \
+  --out-dir results_actor_ablation_ayler \
+  > actor_ablation_ayler.log 2>&1 &
+
+# 2. Ejecutar únicamente Benchmark 1 o únicamente Benchmark 2:
+nohup ./run_actor_ablation_benchmarks.sh --benchmark 1 \
+  --systems "4:2.0 6:1.0 6:2.0" --gpus "0 1 2" \
+  --out-dir results_actor_ablation_ayler > b1_ayler.log 2>&1 &
+
+nohup ./run_actor_ablation_benchmarks.sh --benchmark 2 \
+  --systems "4:2.0 6:1.0 6:2.0" --gpus "0 1 2" \
+  --out-dir results_actor_ablation_ayler > b2_ayler.log 2>&1 &
+
+# 3. Alternar en cli/run_1d.py entre actor legado y nuevo sin modificar código:
+# Legado (default):
+python3 cli/run_1d.py ... \
+  --no-parity_equivariant --no-unclip_sigma_action --no-cdlb_exact_entropy \
+  --actor_amplitude 0.15 --sigma_action_scale 1.1 --scale_clip_max 1.0
+
+# Nuevo (equivariante + desbloqueado + entropía CDLB exacta):
+python3 cli/run_1d.py ... \
+  --parity_equivariant --unclip_sigma_action --cdlb_exact_entropy \
+  --actor_amplitude 0.80 --sigma_action_scale 1.8 \
+  --scale_clip_min -0.5 --scale_clip_max 1.8
+\end{lstlisting}
+
 \end{document}

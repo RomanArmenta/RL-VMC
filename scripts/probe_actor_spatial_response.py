@@ -248,6 +248,8 @@ def run_spatial_actor_probe(
     sig_sc = float(cfg.proposal.sigma_action_scale)
     clip_min = float(cfg.proposal.scale_clip_min)
     clip_max = float(cfg.proposal.scale_clip_max)
+    parity_eq = bool(getattr(cfg.proposal, "parity_equivariant", False))
+    unclip_sig = bool(getattr(cfg.proposal, "unclip_sigma_action", False))
     max_drift_clip = float(cfg.proposal.max_drift_clip)
     drift_pref = 1.0 if cfg.proposal.legacy_drift_factor else 2.0
     base_sigma = math.sqrt(2.0 * tau)
@@ -339,7 +341,11 @@ def run_spatial_actor_probe(
         hidden_dim_global=int(cfg.proposal.hidden_dim_global),
         hidden_dim_messages=int(cfg.proposal.hidden_dim_messages),
         hidden_dim_actor=int(cfg.proposal.hidden_dim_actor),
+        parity_equivariant=parity_eq,
     )
+
+    eff_sig_hi = clip_max if unclip_sig else min(clip_max, 1.0)
+    eff_sig_lo = clip_min if unclip_sig else max(clip_min, -1.0)
 
     def _eval_actor_on(X_in: np.ndarray, G_in: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         st = build_td3_state(
@@ -361,7 +367,10 @@ def run_spatial_actor_probe(
         a_sig_raw = raw_out[:, 1]
         # Replicar exactamente el recorte de DeepSetNeuralProposal1D.forward_action + distribution_from_action
         a_mu_clip = np.clip(a_mu_raw, -1.0, 1.0)
-        a_sig_clip = np.clip(np.clip(a_sig_raw, -1.0, 1.0), clip_min, clip_max)
+        if unclip_sig:
+            a_sig_clip = np.clip(a_sig_raw, clip_min, clip_max)
+        else:
+            a_sig_clip = np.clip(np.clip(a_sig_raw, -1.0, 1.0), clip_min, clip_max)
         return a_mu_raw, a_sig_raw, a_mu_clip, a_sig_clip
 
     a_mu_raw, a_sig_raw, a_mu_clip, a_sig_clip = _eval_actor_on(X_sweep, grad_log_psi)
@@ -407,8 +416,12 @@ def run_spatial_actor_probe(
         "amp": amp,
         "sigma_action_scale": sig_sc,
         "scale_clip_max": clip_max,
+        "parity_equivariant": parity_eq,
+        "unclip_sigma_action": unclip_sig,
+        "eff_sig_hi": eff_sig_hi,
+        "eff_sig_lo": eff_sig_lo,
         "base_sigma_mala": base_sigma,
-        "sigma_ceiling": base_sigma * math.exp(min(clip_max, 1.0)),
+        "sigma_ceiling": base_sigma * math.exp(eff_sig_hi),
         "probe_spin": probe_spin,
         "probe_well": probe_well,
         "empty_well_x": float(well_centers[probe_well]),
@@ -424,7 +437,7 @@ def run_spatial_actor_probe(
         "sigma_applied_min": float(np.min(sigma_applied)),
         "sigma_applied_max": float(np.max(sigma_applied)),
         "sigma_applied_std": float(np.std(sigma_applied)),
-        "frac_sigma_clipped_pct": float(np.mean(a_sig_raw >= min(clip_max, 1.0) - 1e-6) * 100.0),
+        "frac_sigma_clipped_pct": float(np.mean(a_sig_raw >= eff_sig_hi - 1e-6) * 100.0),
         "max_fq_sensitivity_mu": float(np.max(np.abs(a_mu_clip - a_mu_nofq))),
         "max_fq_sensitivity_sig": float(np.max(np.abs(a_sig_raw - a_sig_nofq_raw))),
         "mean_parity_asymmetry_mu": float(np.mean(parity_err_mu)),
@@ -608,10 +621,18 @@ def plot_spatial_probe_figure(
     # --------------------------------------------------------------------------
     _draw_fixed_electron_markers(ax3, same_fx, opp_fx, empty_x, p_spin, add_labels=False)
     ax3.axhline(sm["base_sigma_mala"], color="#d62728", lw=1.6, ls=":", label=f"MALA fijo $\\sigma_{{\\mathrm{{MALA}}}} = \\sqrt{{2\\tau}} = {sm['base_sigma_mala']:.3f}$ Bohr")
-    ax3.axhline(sm["sigma_ceiling"], color="#222222", lw=1.3, ls="-.", alpha=0.80, label=f"Techo duro de recorte (`scale_clip_max={sm['scale_clip_max']:g}`): $\\sigma_{{\\max}} = {sm['sigma_ceiling']:.3f}$ Bohr")
+    clip_lbl = (
+        f"Techo desbloqueado (`scale_clip_max={sm['scale_clip_max']:g}`)"
+        if sm.get("unclip_sigma_action", False)
+        else f"Techo duro legado (`clip=1.0`, `scale_clip_max={sm['scale_clip_max']:g}`)"
+    )
+    ax3.axhline(sm["sigma_ceiling"], color="#222222", lw=1.3, ls="-.", alpha=0.80, label=f"{clip_lbl}: $\\sigma_{{\\max}} = {sm['sigma_ceiling']:.3f}$ Bohr")
 
     ax3.plot(xg, res["sigma_unclipped"], color="#ff7f0e", lw=1.9, ls="--", alpha=0.90, label=r"Salida red SIN recorte $\sqrt{2\tau}\,e^{a_\sigma^{\mathrm{raw}}(x)}$")
-    ax3.plot(xg, res["sigma_applied"], color="#c51b8a", lw=2.5, label=r"Ancho aplicado $\sigma_{\mathrm{RL}}(x) = \sqrt{2\tau}\,e^{\mathrm{clip}(a_\sigma, -1, 1)}$")
+    sig_clip_tex = (
+        rf"Ancho aplicado $\sigma_{{\mathrm{{RL}}}}(x) = \sqrt{{2\tau}}\,e^{{\mathrm{{clip}}(a_\sigma, {sm.get('eff_sig_lo', -5.0):g}, {sm.get('eff_sig_hi', 1.0):g})}}$"
+    )
+    ax3.plot(xg, res["sigma_applied"], color="#c51b8a", lw=2.5, label=sig_clip_tex)
     ax3.plot(xg, res["sigma_nofq"], color="#17becf", lw=1.4, ls=":", alpha=0.85, label=r"Ablación sin fuerza cuántica ($F_Q \equiv 0$)")
 
     y_lo = min(sm["base_sigma_mala"], float(np.min(res["sigma_applied"])), float(np.min(res["sigma_unclipped"]))) * 0.85
@@ -624,14 +645,14 @@ def plot_spatial_probe_figure(
         0.07,
         f"$a_\\sigma^{{\\mathrm{{raw}}}} \\in [{sm['a_sig_raw_min']:+.3f}, {sm['a_sig_raw_max']:+.3f}]$ (std={sm['a_sig_raw_std']:.3f}) | "
         f"$\\sigma_{{\\mathrm{{RL}}}} \\in [{sm['sigma_applied_min']:.3f}, {sm['sigma_applied_max']:.3f}]$ Bohr (std={sm['sigma_applied_std']:.4f}) | "
-        f"Puntos pegados al techo ($a_\\sigma \\geq 1$): {sm['frac_sigma_clipped_pct']:.1f}%",
+        f"Puntos pegados al techo ($a_\\sigma \\geq {sm.get('eff_sig_hi', 1.0):g}$): {sm['frac_sigma_clipped_pct']:.1f}%",
         transform=ax3.transAxes,
         fontsize=8.0 * f_scale,
         bbox=dict(boxstyle="round,pad=0.25", facecolor="white", alpha=0.92, edgecolor="#c51b8a"),
     )
     if not getattr(args, "no_titles", False):
         ax3.set_title(
-            "(c) Respuesta de Ancho de Propuesta $\\sigma_{\\mathrm{RL}}(x)$ vs Techo de Recorte (`clip=1.0`) y MALA Fijo",
+            f"(c) Respuesta de Ancho de Propuesta $\\sigma_{{\\mathrm{{RL}}}}(x)$ vs Techo (`eff_clip={sm.get('eff_sig_hi', 1.0):g}`) y MALA Fijo",
             fontsize=11.0 * f_scale,
             weight="bold",
         )
@@ -707,10 +728,12 @@ def plot_spatial_probe_figure(
 
     if not getattr(args, "no_titles", False):
         run_label = os.path.basename(os.path.dirname(os.path.abspath(sm["h5_path"])))
+        eq_tag = "parity=ON" if sm.get("parity_equivariant", False) else "parity=OFF (legacy)"
+        uc_tag = f"unclip_sig=ON ({sm.get('eff_sig_hi', 1.0):g})" if sm.get("unclip_sigma_action", False) else "clip_sig=1.0 (legacy)"
         fig.suptitle(
-            f"Diagnóstico Espacial del Actor Entrenado (`{run_label}`) — Barrido de Electrón ${spin_sym}$ "
-            f"($N={sm['N']}, \\omega={sm['omega']:g}, g={sm['g']:g}, \\tau={sm['tau']:g}, A={sm['amp']:g}, s_\\sigma={sm['sigma_action_scale']:g}$)",
-            fontsize=12.4 * f_scale,
+            f"Diagnóstico Espacial del Actor (`{run_label}`) — Barrido de Electrón ${spin_sym}$ "
+            f"($N={sm['N']}, \\omega={sm['omega']:g}, g={sm['g']:g}, \\tau={sm['tau']:g}, A={sm['amp']:g}, s_\\sigma={sm['sigma_action_scale']:g}$ | {eq_tag}, {uc_tag})",
+            fontsize=11.6 * f_scale,
             weight="bold",
             y=0.995,
         )

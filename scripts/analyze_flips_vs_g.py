@@ -432,6 +432,10 @@ def load_bundle_walkers_and_meta(h5_path: str) -> Dict[str, Any]:
         "tau": float(tau),
         "actor_amplitude": float(actor_amp),
         "sigma_action_scale": float(sigma_scale),
+        "parity_equivariant": bool(prop_cfg.get("parity_equivariant", False)),
+        "unclip_sigma_action": bool(prop_cfg.get("unclip_sigma_action", False)),
+        "scale_clip_min": _safe_float(prop_cfg.get("scale_clip_min", -5.0), -5.0),
+        "scale_clip_max": _safe_float(prop_cfg.get("scale_clip_max", 1.0), 1.0),
         "n_chains": int(n_chains),
         "n_steps": int(n_steps),
         "n_batch_saved": int(n_batch),
@@ -467,6 +471,10 @@ def compute_flip_statistics(
     actor_params: Optional[Dict[str, Any]] = None,
     is_neural: bool = False,
     npz_path: Optional[str] = None,
+    parity_equivariant: bool = False,
+    unclip_sigma_action: bool = False,
+    scale_clip_min: float = -5.0,
+    scale_clip_max: float = 1.0,
 ) -> Dict[str, Any]:
     """
     Calcula todas las métricas de intercambio entre pares de electrones (flips)
@@ -927,6 +935,10 @@ def compute_flip_statistics(
             actor_params=actor_params,
             is_neural=is_neural,
             npz_path=npz_path,
+            parity_equivariant=parity_equivariant,
+            unclip_sigma_action=unclip_sigma_action,
+            scale_clip_min=scale_clip_min,
+            scale_clip_max=scale_clip_max,
         )
     else:
         aligned_abs_mu_actor_arr = np.empty((0, 2 * window + 1))

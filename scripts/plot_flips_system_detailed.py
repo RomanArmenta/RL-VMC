@@ -228,6 +228,7 @@ def forward_td3_actor_np(
     n_up: int,
     n_dn: int,
     sigma_action_scale: float = 1.0,
+    parity_equivariant: bool = False,
 ) -> np.ndarray:
     """Evalúa exactamente los pesos entrenados de `FlaxTD3Actor` en NumPy sin sesgos."""
     p_inner = params_dict.get("params", params_dict) if isinstance(params_dict, dict) else {}
@@ -236,14 +237,26 @@ def forward_td3_actor_np(
 
     max_same = max(max(n_up - 1, 0), max(n_dn - 1, 0))
     max_opp = max(n_up, n_dn) if (n_up > 0 and n_dn > 0) else 0
+
+    if parity_equivariant:
+        signs = np.asarray(
+            [-1.0, -1.0, -1.0, 1.0]
+            + [1.0, 1.0, 1.0, 1.0, 1.0]
+            + [1.0, -1.0, 1.0] * (max_same + max_opp),
+            dtype=np.float64,
+        )
+        inp = np.stack([state, state * signs], axis=0)
+    else:
+        inp = state
+
     p = 0
-    local_feat = state[..., p : p + 4]
+    local_feat = inp[..., p : p + 4]
     p += 4
-    global_feat = state[..., p : p + 5]
+    global_feat = inp[..., p : p + 5]
     p += 5
-    same_slots = state[..., p : p + 3 * max_same].reshape(state.shape[:-1] + (max_same, 3))
+    same_slots = inp[..., p : p + 3 * max_same].reshape(inp.shape[:-1] + (max_same, 3))
     p += 3 * max_same
-    opp_slots = state[..., p : p + 3 * max_opp].reshape(state.shape[:-1] + (max_opp, 3))
+    opp_slots = inp[..., p : p + 3 * max_opp].reshape(inp.shape[:-1] + (max_opp, 3))
 
     d_loc_in, d_loc_out = (
         ("Dense_1", "Dense_0") if p_inner["Dense_1"]["kernel"].shape[0] == 4 else ("Dense_0", "Dense_1")
@@ -271,8 +284,14 @@ def forward_td3_actor_np(
 
     fused = np.concatenate([h_local, h_global, pool_same, pool_opp], axis=-1)
     h = _silu_np(_dense_np(fused, p_inner["Dense_8"]))
-    mean = np.tanh(_dense_np(h, p_inner["Dense_9"]))
-    scale = float(sigma_action_scale) * np.tanh(_dense_np(h, p_inner["Dense_10"]))
+    raw_mean = _dense_np(h, p_inner["Dense_9"])
+    raw_scale = _dense_np(h, p_inner["Dense_10"])
+    if parity_equivariant:
+        mean = np.tanh(0.5 * (raw_mean[0] - raw_mean[1]))
+        scale = float(sigma_action_scale) * np.tanh(0.5 * (raw_scale[0] + raw_scale[1]))
+    else:
+        mean = np.tanh(raw_mean)
+        scale = float(sigma_action_scale) * np.tanh(raw_scale)
     return np.concatenate([mean, scale], axis=-1)
 
 
@@ -384,6 +403,10 @@ def evaluate_legitimate_actor_on_events(
     actor_params: Optional[Dict[str, Any]],
     is_neural: bool,
     npz_path: Optional[str] = None,
+    parity_equivariant: bool = False,
+    unclip_sigma_action: bool = False,
+    scale_clip_min: float = -5.0,
+    scale_clip_max: float = 1.0,
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
     Evalúa de forma 100% legítima (sin términos artificiales ni prox_boost) sobre
@@ -424,12 +447,24 @@ def evaluate_legitimate_actor_on_events(
         if is_neural and actor_params is not None:
             st_i = build_td3_state_np(w_e, g_e, il, N, n_up, n_dn, omega=omega, gs=g_val)
             st_j = build_td3_state_np(w_e, g_e, jr, N, n_up, n_dn, omega=omega, gs=g_val)
-            act_i = forward_td3_actor_np(st_i, actor_params, n_up, n_dn, sigma_action_scale=sig_sc_eff)
-            act_j = forward_td3_actor_np(st_j, actor_params, n_up, n_dn, sigma_action_scale=sig_sc_eff)
-            res_i = amp_eff * act_i[:, 0]
-            res_j = amp_eff * act_j[:, 0]
-            sc_i = np.clip(act_i[:, 1], -5.0, 1.0)
-            sc_j = np.clip(act_j[:, 1], -5.0, 1.0)
+            act_i = forward_td3_actor_np(
+                st_i, actor_params, n_up, n_dn,
+                sigma_action_scale=sig_sc_eff,
+                parity_equivariant=parity_equivariant,
+            )
+            act_j = forward_td3_actor_np(
+                st_j, actor_params, n_up, n_dn,
+                sigma_action_scale=sig_sc_eff,
+                parity_equivariant=parity_equivariant,
+            )
+            res_i = amp_eff * np.clip(act_i[:, 0], -1.0, 1.0)
+            res_j = amp_eff * np.clip(act_j[:, 0], -1.0, 1.0)
+            if unclip_sigma_action:
+                sc_i = np.clip(act_i[:, 1], scale_clip_min, scale_clip_max)
+                sc_j = np.clip(act_j[:, 1], scale_clip_min, scale_clip_max)
+            else:
+                sc_i = np.clip(np.clip(act_i[:, 1], -1.0, 1.0), scale_clip_min, scale_clip_max)
+                sc_j = np.clip(np.clip(act_j[:, 1], -1.0, 1.0), scale_clip_min, scale_clip_max)
             abs_mu_actor[ev_i] = 0.5 * (np.abs(res_i) + np.abs(res_j))
             abs_mu_total[ev_i] = 0.5 * (np.abs(lang_i + res_i) + np.abs(lang_j + res_j))
             sigma_prop[ev_i] = 0.5 * base_sigma * (np.exp(sc_i) + np.exp(sc_j))
@@ -2346,6 +2381,10 @@ def main(argv: Optional[List[str]] = None) -> int:
                 actor_params=binfo.get("actor_params"),
                 is_neural=(m_b == "RL-MALA"),
                 npz_path=npz_p,
+                parity_equivariant=bool(binfo.get("parity_equivariant", False)),
+                unclip_sigma_action=bool(binfo.get("unclip_sigma_action", False)),
+                scale_clip_min=float(binfo.get("scale_clip_min", -5.0)),
+                scale_clip_max=float(binfo.get("scale_clip_max", 1.0)),
             )
             del binfo["walkers"]
             binfo["stats"] = st

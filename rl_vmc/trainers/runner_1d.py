@@ -130,7 +130,9 @@ def run_experiment_1d(cfg: Experiment1DConfig) -> str:
     )
     print(
         f"  Propuesta : {cfg.proposal.proposal_type} (modo={cfg.proposal.proposal_mode}, "
-        f"tau={cfg.proposal.tau}, amp={cfg.proposal.actor_amplitude}, sig_scale={cfg.proposal.sigma_action_scale}, update={cfg.sampler.update_mode})"
+        f"tau={cfg.proposal.tau}, amp={cfg.proposal.actor_amplitude}, sig_scale={cfg.proposal.sigma_action_scale}, "
+        f"parity_eq={cfg.proposal.parity_equivariant}, unclip_sig={cfg.proposal.unclip_sigma_action}, "
+        f"scale_clip=[{cfg.proposal.scale_clip_min},{cfg.proposal.scale_clip_max}], update={cfg.sampler.update_mode})"
     )
     print(
         f"  Muestreo  : batch_size={cfg.sampler.batch_size}, sweeps_per_step={cfg.sampler.sweeps_per_step}, "

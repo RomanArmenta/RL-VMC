@@ -97,6 +97,9 @@ class TD3Learner1D:
         self.noise_clip = cfg.rl.noise_clip
         self.policy_delay = cfg.rl.policy_delay
         self.batch_size = cfg.rl.rl_batch_size
+        self.unclip_sigma_action = bool(getattr(cfg.proposal, "unclip_sigma_action", False))
+        self.scale_clip_min = float(cfg.proposal.scale_clip_min)
+        self.scale_clip_max = float(cfg.proposal.scale_clip_max)
 
         self.actor_module = proposal.actor_module
         if self.is_flat:
@@ -266,9 +269,15 @@ class TD3Learner1D:
             -self.noise_clip,
             self.noise_clip,
         )
-        next_action = jnp.clip(
-            self.actor_module.apply(t_act, batch["next_state"]) + noise, -1.0, 1.0
-        )
+        raw_next_action = self.actor_module.apply(t_act, batch["next_state"]) + noise
+        if self.unclip_sigma_action:
+            next_drift = jnp.clip(raw_next_action[..., 0:1], -1.0, 1.0)
+            next_scale = jnp.clip(
+                raw_next_action[..., 1:2], self.scale_clip_min, self.scale_clip_max
+            )
+            next_action = jnp.concatenate([next_drift, next_scale], axis=-1)
+        else:
+            next_action = jnp.clip(raw_next_action, -1.0, 1.0)
 
         if self.is_flat:
             q1_next, _ = self.critic_module.apply(

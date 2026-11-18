@@ -247,6 +247,8 @@ def evaluate_walker_flip_proposals(
     sig_sc = float(cfg.proposal.sigma_action_scale)
     clip_min = float(cfg.proposal.scale_clip_min)
     clip_max = float(cfg.proposal.scale_clip_max)
+    parity_eq = bool(getattr(cfg.proposal, "parity_equivariant", False))
+    unclip_sig = bool(getattr(cfg.proposal, "unclip_sigma_action", False))
     max_drift_clip = float(cfg.proposal.max_drift_clip)
     drift_pref = 1.0 if cfg.proposal.legacy_drift_factor else 2.0
     base_sigma = math.sqrt(2.0 * tau)
@@ -275,6 +277,7 @@ def evaluate_walker_flip_proposals(
         hidden_dim_global=int(cfg.proposal.hidden_dim_global),
         hidden_dim_messages=int(cfg.proposal.hidden_dim_messages),
         hidden_dim_actor=int(cfg.proposal.hidden_dim_actor),
+        parity_equivariant=parity_eq,
     )
 
     T_w = len(rel_k)
@@ -302,7 +305,10 @@ def evaluate_walker_flip_proposals(
         a_mu_raw[:, e_idx] = out[:, 0]
         a_sig_raw[:, e_idx] = out[:, 1]
         a_mu_clip[:, e_idx] = np.clip(out[:, 0], -1.0, 1.0)
-        a_sig_clip[:, e_idx] = np.clip(np.clip(out[:, 1], -1.0, 1.0), clip_min, clip_max)
+        if unclip_sig:
+            a_sig_clip[:, e_idx] = np.clip(out[:, 1], clip_min, clip_max)
+        else:
+            a_sig_clip[:, e_idx] = np.clip(np.clip(out[:, 1], -1.0, 1.0), clip_min, clip_max)
 
     langevin_drift = np.clip(drift_pref * tau * g_win, -max_drift_clip, max_drift_clip)
     mu_actor = amp * a_mu_clip

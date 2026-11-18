@@ -111,6 +111,27 @@ def build_td3_state(
     return jnp.concatenate([local_feat, global_feat, same_slots, opp_slots], axis=-1)
 
 
+def reflect_td3_state(state: jax.Array, n_up: int, n_dn: int) -> jax.Array:
+    """
+    Aplica la reflexión exacta de paridad espacial P: x -> -x, F_Q -> -F_Q
+    sobre el vector de características construido por `build_td3_state`:
+      - local_feat = [x_i, x_i - mean(x), tanh(g_i / F_norm), spin_i]  -> signos [-1, -1, -1, +1]
+      - global_feat (5 escalares físicos)                              -> signos [+1, +1, +1, +1, +1]
+      - cada slot vecino = [r / r_scale, sign(dx), mask]               -> signos [+1, -1, +1]
+    Los empates exactos de distancia en `argsort` son inocuos porque el pooling
+    DeepSet (`sum(msg * mask) / sum(mask)`) es estrictamente invariante bajo
+    permutaciones de los slots activos.
+    """
+    max_same = max(max(n_up - 1, 0), max(n_dn - 1, 0))
+    max_opp = max(n_up, n_dn) if (n_up > 0 and n_dn > 0) else 0
+    signs = (
+        [-1.0, -1.0, -1.0, 1.0]
+        + [1.0, 1.0, 1.0, 1.0, 1.0]
+        + [1.0, -1.0, 1.0] * (max_same + max_opp)
+    )
+    return state * jnp.asarray(signs, dtype=state.dtype)
+
+
 class FlaxTD3Actor(nn.Module):
     n_up: int
     n_dn: int
@@ -120,19 +141,28 @@ class FlaxTD3Actor(nn.Module):
     hidden_dim_global: int = 16
     hidden_dim_messages: int = 32
     hidden_dim_actor: int = 64
+    parity_equivariant: bool = False
 
     @nn.compact
     def __call__(self, state: jax.Array) -> jax.Array:
         max_same = max(max(self.n_up - 1, 0), max(self.n_dn - 1, 0))
         max_opp = max(self.n_up, self.n_dn) if (self.n_up > 0 and self.n_dn > 0) else 0
+
+        if self.parity_equivariant:
+            inp = jnp.stack(
+                [state, reflect_td3_state(state, self.n_up, self.n_dn)], axis=0
+            )
+        else:
+            inp = state
+
         p = 0
-        local_feat = state[..., p : p + 4]
+        local_feat = inp[..., p : p + 4]
         p += 4
-        global_feat = state[..., p : p + 5]
+        global_feat = inp[..., p : p + 5]
         p += 5
-        same_slots = state[..., p : p + 3 * max_same].reshape(state.shape[:-1] + (max_same, 3))
+        same_slots = inp[..., p : p + 3 * max_same].reshape(inp.shape[:-1] + (max_same, 3))
         p += 3 * max_same
-        opp_slots = state[..., p : p + 3 * max_opp].reshape(state.shape[:-1] + (max_opp, 3))
+        opp_slots = inp[..., p : p + 3 * max_opp].reshape(inp.shape[:-1] + (max_opp, 3))
 
         h_local = nn.silu(nn.Dense(self.hidden_dim_local)(nn.silu(nn.Dense(self.hidden_dim_local)(local_feat))))
         h_global = nn.silu(nn.Dense(self.hidden_dim_global)(nn.silu(nn.Dense(self.hidden_dim_global)(global_feat))))
@@ -148,8 +178,16 @@ class FlaxTD3Actor(nn.Module):
         fused = jnp.concatenate([h_local, h_global, pool_same, pool_opp], axis=-1)
         h = nn.silu(nn.Dense(self.hidden_dim_actor)(fused))
 
-        mean = nn.tanh(nn.Dense(1, kernel_init=nn.initializers.zeros)(h))
-        scale = self.sigma_action_scale * nn.tanh(nn.Dense(1, kernel_init=nn.initializers.zeros)(h))
+        raw_mean = nn.Dense(1, kernel_init=nn.initializers.zeros)(h)
+        raw_scale = nn.Dense(1, kernel_init=nn.initializers.zeros)(h)
+
+        if self.parity_equivariant:
+            mean = nn.tanh(0.5 * (raw_mean[0] - raw_mean[1]))
+            scale = self.sigma_action_scale * nn.tanh(0.5 * (raw_scale[0] + raw_scale[1]))
+        else:
+            mean = nn.tanh(raw_mean)
+            scale = self.sigma_action_scale * nn.tanh(raw_scale)
+
         return jnp.concatenate([mean, scale], axis=-1)
 
 
@@ -402,6 +440,10 @@ class DeepSetNeuralProposal1D(BaseProposal1D):
         self.use_spatial_gating = cfg.proposal.use_spatial_gating
         self.spatial_gating_radius = cfg.proposal.spatial_gating_radius
         self.proposal_mode = cfg.proposal.proposal_mode
+        self.parity_equivariant = bool(getattr(cfg.proposal, "parity_equivariant", False))
+        self.unclip_sigma_action = bool(getattr(cfg.proposal, "unclip_sigma_action", False))
+        self.scale_clip_min = float(cfg.proposal.scale_clip_min)
+        self.scale_clip_max = float(cfg.proposal.scale_clip_max)
 
         self.actor_module = FlaxTD3Actor(
             n_up=self.n_up,
@@ -412,6 +454,7 @@ class DeepSetNeuralProposal1D(BaseProposal1D):
             hidden_dim_global=cfg.proposal.hidden_dim_global,
             hidden_dim_messages=cfg.proposal.hidden_dim_messages,
             hidden_dim_actor=cfg.proposal.hidden_dim_actor,
+            parity_equivariant=self.parity_equivariant,
         )
         self.legacy_huziel_module = FlaxHuzielLegacyActor(
             n_elec=self.n_elec,
@@ -469,9 +512,18 @@ class DeepSetNeuralProposal1D(BaseProposal1D):
         clip_lim = self.action_rev_limit if is_reverse else 1.0
         if key_explore is not None:
             noise = exploration_std * jax.random.normal(key_explore, base_act.shape)
-            action = jnp.clip(base_act + noise, -clip_lim, clip_lim)
+            raw_act = base_act + noise
         else:
-            action = jnp.clip(base_act, -clip_lim, clip_lim)
+            raw_act = base_act
+
+        if self.unclip_sigma_action:
+            act_drift = jnp.clip(raw_act[..., 0:1], -clip_lim, clip_lim)
+            act_scale = jnp.clip(
+                raw_act[..., 1:2], self.scale_clip_min, self.scale_clip_max
+            )
+            action = jnp.concatenate([act_drift, act_scale], axis=-1)
+        else:
+            action = jnp.clip(raw_act, -clip_lim, clip_lim)
 
         return action
 

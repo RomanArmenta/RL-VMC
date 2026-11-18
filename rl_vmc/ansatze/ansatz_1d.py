@@ -408,18 +408,32 @@ def log_correlation_factor(
 def _build_ho_basis_jax(r: jax.Array, n_basis: int, omega: float) -> jax.Array:
     """
     Evalúa las autofunciones normalizadas del oscilador armónico 1D hasta n_basis-1 en r.
-    Utiliza la recurrencia normalizada de 3 términos:
+    Utiliza la recurrencia normalizada de 3 términos implementada con `jax.lax.scan`:
         psi_n(z) = sqrt(2/n)*z*psi_{n-1}(z) - sqrt((n-1)/n)*psi_{n-2}(z)
-    que es incondicionalmente estable y previene desbordamientos de 2^n y n! para n_basis grandes (e.g. 256).
+    que es incondicionalmente estable, previene desbordamientos para n_basis=256 y
+    evita desenrollar 256 nodos en el grafo XLA (acelerando >1000x la compilación de `jax.hessian`).
     """
     z = jnp.sqrt(omega) * r
     pref = (omega / jnp.pi) ** 0.25 * jnp.exp(-0.5 * z ** 2)
-    psi = [pref]
-    if n_basis > 1:
-        psi.append(jnp.sqrt(2.0) * z * pref)
-    for n in range(2, n_basis):
-        psi.append(jnp.sqrt(2.0 / n) * z * psi[n - 1] - jnp.sqrt((n - 1.0) / n) * psi[n - 2])
-    return jnp.stack(psi[:n_basis], axis=-1)
+    if n_basis <= 1:
+        return pref[..., None]
+    psi0 = pref
+    psi1 = jnp.sqrt(2.0) * z * pref
+    if n_basis == 2:
+        return jnp.stack([psi0, psi1], axis=-1)
+    ns = jnp.arange(2, n_basis, dtype=z.dtype)
+    c1 = jnp.sqrt(2.0 / ns)
+    c2 = jnp.sqrt((ns - 1.0) / ns)
+
+    def _recurrence_step(carry, coeffs):
+        p_prev2, p_prev1 = carry
+        a, b = coeffs
+        p_cur = a * z * p_prev1 - b * p_prev2
+        return (p_prev1, p_cur), p_cur
+
+    _, rest = jax.lax.scan(_recurrence_step, (psi0, psi1), (c1, c2))
+    rest = jnp.moveaxis(rest, 0, -1)
+    return jnp.concatenate([psi0[..., None], psi1[..., None], rest], axis=-1)
 
 
 class BaseAnsatz1D:

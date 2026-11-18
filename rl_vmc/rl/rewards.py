@@ -32,6 +32,13 @@ def compute_rl_reward(
         1.0 - alpha + 1e-8
     )
     r_explore = -alpha * log_q_fwd
+    if getattr(cfg.rl, "cdlb_exact_entropy", False):
+        # Restaura la constante exacta de normalización Gaussiana +(N/2)*log(2*pi)
+        # omitida en gaussian_log_prob (que solo cancela en MH, NO en -alpha*log_q_fwd).
+        # Garantiza entropía diferencial positiva en el rango físico y elimina el exploit alpha -> 0.
+        r_explore = r_explore + alpha * (
+            0.5 * float(cfg.system.n_elec) * jnp.log(2.0 * jnp.pi)
+        )
 
     rtype = cfg.rl.reward_type
     if rtype == "cdlb":
