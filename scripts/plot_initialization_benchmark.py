@@ -53,11 +53,12 @@ COLOR_CASSCF = "#000000"    # Negro para referencia exacta
 
 INIT_LABELS = {
     "alternating_spin": "1 e⁻ por Gaussiana\n(Alternating Spin)",
+    "randomized_wigner": "Wigner Aleatorio\n(Randomized Wigner)",
     "symmetric_gaussian": "Gaussiana x=0\n(Envolvente)",
     "uniform": "Uniforme\n(Caja [-L, L])",
 }
 
-INIT_ORDER = ["alternating_spin", "symmetric_gaussian", "uniform"]
+INIT_ORDER = ["alternating_spin", "randomized_wigner", "symmetric_gaussian", "uniform"]
 
 
 def setup_matplotlib_style(font_scale: float = 1.0, line_width_scale: float = 1.0) -> None:
@@ -125,6 +126,8 @@ def parse_run_info(run_dir: Path) -> Optional[Dict[str, Any]]:
     dirname = run_dir.name
     if "alt_spin" in dirname or "alternating_spin" in dirname:
         init_mode = "alternating_spin"
+    elif "rand_wigner" in dirname or "randomized_wigner" in dirname:
+        init_mode = "randomized_wigner"
     elif "sym_gauss" in dirname or "symmetric_gaussian" in dirname:
         init_mode = "symmetric_gaussian"
     elif "uniform" in dirname:
@@ -140,10 +143,16 @@ def parse_run_info(run_dir: Path) -> Optional[Dict[str, Any]]:
     else:
         model_type = "MALA"
 
-    n_elec = int(sys_cfg.get("n_elec") or csv_row.get("N") or (4 if "N4" in dirname else 8))
+    n_elec = int(sys_cfg.get("n_elec") or csv_row.get("N") or (4 if "N4" in dirname else (6 if "N6" in dirname else 8)))
     g_val = float(sys_cfg.get("interaction_strength") or csv_row.get("g") or 1.0)
     omega = float(sys_cfg.get("omega") or csv_row.get("omega") or 0.1)
     seed = int(train_h.get("seed") or csv_row.get("seed") or 0)
+    casscf_npz_path = (
+        cass.get("casscf_npz_path")
+        or data.get("model_hyperparameters", {}).get("ansatz", {}).get("casscf_npz_path")
+        or csv_row.get("casscf_npz_path")
+        or ""
+    )
 
     e_mean = float(obs.get("E_mean", csv_row.get("E_mean", float("nan"))))
     e_var = float(obs.get("E_var", csv_row.get("E_var", float("nan"))))
@@ -173,6 +182,7 @@ def parse_run_info(run_dir: Path) -> Optional[Dict[str, Any]]:
         "init_mode": init_mode,
         "model_type": model_type,
         "seed": seed,
+        "casscf_npz_path": str(casscf_npz_path),
         "E_mean": e_mean,
         "SE_E": se_e,
         "E_var": e_var,
@@ -188,6 +198,31 @@ def parse_run_info(run_dir: Path) -> Optional[Dict[str, Any]]:
         "kl_total": kl_tot,
         "kl_spin": kl_spin,
     }
+
+
+def _discover_casscf_energies_from_jsons() -> Dict[str, float]:
+    """Lee energías exactas CASSCF desde CASSCF_csv/*.json si está disponible."""
+    energies: Dict[str, float] = {
+        "N4_g1.0": 1.9486219356652614,
+        "N6_g1.0": 4.52405213,
+        "N8_g1.0": 8.07323817198525,
+    }
+    cas_dir = ROOT_PROJECT / "CASSCF_csv"
+    if cas_dir.is_dir():
+        for jp in sorted(cas_dir.glob("*.json")):
+            try:
+                jd = json.loads(jp.read_text(encoding="utf-8"))
+                if not jd.get("converged", False):
+                    continue
+                jc = jd.get("config", {})
+                nel = int(jc.get("n_up", 0)) + int(jc.get("n_down", 0))
+                gv = float(jc.get("g", 0.0))
+                ev = float(jd.get("selected_energy", jd.get("energy", float("nan"))))
+                if nel > 0 and np.isfinite(ev):
+                    energies[f"N{nel}_g{gv}"] = ev
+            except Exception:
+                continue
+    return energies
 
 
 def collect_benchmark_data(root_dir: Path) -> pd.DataFrame:
@@ -217,6 +252,8 @@ def collect_benchmark_data(root_dir: Path) -> pd.DataFrame:
                 init_m = "unknown"
                 if "alt_spin" in dirname or "alternating_spin" in dirname:
                     init_m = "alternating_spin"
+                elif "rand_wigner" in dirname or "randomized_wigner" in dirname:
+                    init_m = "randomized_wigner"
                 elif "sym_gauss" in dirname or "symmetric_gaussian" in dirname:
                     init_m = "symmetric_gaussian"
                 elif "uniform" in dirname:
@@ -224,11 +261,11 @@ def collect_benchmark_data(root_dir: Path) -> pd.DataFrame:
 
                 method = str(row_d.get("proposal_type", ""))
                 m_type = "RL_MALA" if ("TD3" in dirname or "RL_MALA" in dirname or method == "neural_deepset") else "MALA"
-                n_el = int(row_d.get("N", 4 if "N4" in dirname else 8))
+                n_el = int(row_d.get("N", 4 if "N4" in dirname else (6 if "N6" in dirname else 8)))
                 g_v = float(row_d.get("g", 1.0))
 
                 records.append({
-                    "run_dir": str(row_d.get("output_h5", "")),
+                    "run_dir": str(Path(str(row_d.get("output_h5", ""))).parent),
                     "run_name": dirname,
                     "n_elec": n_el,
                     "g": g_v,
@@ -237,6 +274,7 @@ def collect_benchmark_data(root_dir: Path) -> pd.DataFrame:
                     "init_mode": init_m,
                     "model_type": m_type,
                     "seed": int(row_d.get("seed", 0)),
+                    "casscf_npz_path": str(row_d.get("casscf_npz_path", "")),
                     "E_mean": float(row_d.get("E_mean", float("nan"))),
                     "SE_E": float(row_d.get("SE_E", float("nan"))),
                     "E_var": float(row_d.get("E_var", float("nan"))),
@@ -259,36 +297,44 @@ def collect_benchmark_data(root_dir: Path) -> pd.DataFrame:
     if not records:
         import re
         log_files = sorted(list(root_dir.glob("logs/*.log")) + list(root_dir.glob("*.log")))
-        cas_energies = {
-            "N4_g1.0": 1.9486219356652614,
-            "N8_g1.0": 21.723051632802946,
-        }
+        cas_energies = _discover_casscf_energies_from_jsons()
+        # Conservar compatibilidad si es un log histórico N8 a g=4.0 no convergido
+        cas_energies.setdefault("N8_g4.0", 21.723051632802946)
         for lfile in log_files:
             bname = lfile.stem
             if bname in ("master_benchmark", "realtime_global_plots") or bname.startswith("postprocess_"):
                 continue
-            m = re.match(r"(N\d+)_w([\d\.]+)_g([\d\.]+)_([A-Za-z0-9_]+)_(alt_spin|sym_gauss|uniform)_exp(\d+)", bname)
+            m = re.match(
+                r"(N\d+)_w([\d\.]+)_g([\d\.]+)_([A-Za-z0-9_]+)_(alt_spin|rand_wigner|sym_gauss|uniform)_exp(\d+)",
+                bname,
+            )
             if not m:
                 continue
             n_str, w_str, g_str, model_raw, init_tag, exp_id = m.groups()
             n_elec = int(n_str.replace("N", ""))
             g_val = float(g_str)
             omega = float(w_str)
-            sys_tag = f"N{n_elec}_g{g_val}"
-            init_mode = {
-                "alt_spin": "alternating_spin",
-                "sym_gauss": "symmetric_gaussian",
-                "uniform": "uniform",
-            }.get(init_tag, init_tag)
-            model_type = "RL_MALA" if ("RL_MALA" in model_raw or "TD3" in model_raw) else "MALA"
 
             try:
                 content = lfile.read_text(encoding="utf-8")
             except Exception:
                 continue
 
+            m_sys_hdr = re.search(r"Sistema\s*:\s*N=\d+.*?g=([\d\.]+)", content)
+            if m_sys_hdr:
+                g_val = float(m_sys_hdr.group(1))
+
+            sys_tag = f"N{n_elec}_g{g_val}"
+            init_mode = {
+                "alt_spin": "alternating_spin",
+                "rand_wigner": "randomized_wigner",
+                "sym_gauss": "symmetric_gaussian",
+                "uniform": "uniform",
+            }.get(init_tag, init_tag)
+            model_type = "RL_MALA" if ("RL_MALA" in model_raw or "TD3" in model_raw) else "MALA"
+
             chain_matches = re.findall(
-                r"\[Cadena (\d+)\] <E> = ([\d\.]+) \+/- ([\d\.]+) Ha \| Acc = ([\d\.]+)% \| ESJD = ([\d\.]+) \| t = ([\d\.]+)s",
+                r"\[Cadena (\d+)\] <E> = ([\-\d\.eE\+]+) \+/- ([\-\d\.eE\+]+) Ha \| Acc = ([\d\.]+)% \| ESJD = ([\d\.]+) \| t = ([\d\.]+)s",
                 content,
             )
             if not chain_matches:
@@ -314,6 +360,7 @@ def collect_benchmark_data(root_dir: Path) -> pd.DataFrame:
                 "init_mode": init_mode,
                 "model_type": model_type,
                 "seed": int(exp_id),
+                "casscf_npz_path": "",
                 "E_mean": e_mean,
                 "SE_E": float(np.mean(se_vals)),
                 "E_var": float(np.var(e_vals)),
@@ -479,9 +526,10 @@ def plot_system_initialization_comparison(
 
     # Configuración de ejes y etiquetas
     x_tick_labels = [INIT_LABELS.get(k, k) for k in init_keys]
+    tick_fs = 9 if len(init_keys) >= 4 else 10
     for ax in axes[1, :]:
         ax.set_xticks(x_idx)
-        ax.set_xticklabels(x_tick_labels, rotation=0, ha="center")
+        ax.set_xticklabels(x_tick_labels, rotation=0, ha="center", fontsize=tick_fs)
 
     ax_ess.set_title("(a) Eficiencia de Muestreo (ESS/s)")
     ax_ess.set_ylabel("Muestras Efectivas / s (mayor es mejor)")
@@ -529,20 +577,24 @@ def plot_speedup_scaling_summary(
     if not systems:
         return
 
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(13, 5))
-    bar_width = 0.25
+    active_inits = [k for k in INIT_ORDER if k in agg_df["init_mode"].unique()]
+    if not active_inits:
+        active_inits = sorted(agg_df["init_mode"].unique())
+
+    fig_w = 14.5 if len(active_inits) >= 4 else 13.0
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(fig_w, 5.2))
+    bar_width = min(0.32, 0.72 / max(1, len(systems)))
+    x_base = np.arange(len(active_inits))
 
     for s_idx, sys_tag in enumerate(systems):
         s_df = agg_df[agg_df["system_tag"] == sys_tag]
-        init_keys = [k for k in INIT_ORDER if k in s_df["init_mode"].unique()]
-        x_base = np.arange(len(init_keys))
         offset = (s_idx - (len(systems) - 1) / 2.0) * bar_width
 
         speedups = []
         speedup_errs = []
         tau_reductions = []
 
-        for k in init_keys:
+        for k in active_inits:
             m_sub = s_df[(s_df["model_type"] == "MALA") & (s_df["init_mode"] == k)]
             r_sub = s_df[(s_df["model_type"] == "RL_MALA") & (s_df["init_mode"] == k)]
 
@@ -559,7 +611,7 @@ def plot_speedup_scaling_summary(
                     speedups.append(sp)
                     speedup_errs.append(sp_err)
                 else:
-                    speedups.append(1.0)
+                    speedups.append(0.0)
                     speedup_errs.append(0.0)
 
                 tau_m = float(m_sub["tau_int_E_mean"].iloc[0])
@@ -567,7 +619,7 @@ def plot_speedup_scaling_summary(
                 if tau_r > 0 and np.isfinite(tau_m):
                     tau_reductions.append(tau_m / tau_r)
                 else:
-                    tau_reductions.append(1.0)
+                    tau_reductions.append(0.0)
             else:
                 speedups.append(0.0)
                 speedup_errs.append(0.0)
@@ -585,10 +637,11 @@ def plot_speedup_scaling_summary(
             label=f"Sistema {sys_tag}", alpha=0.85, edgecolor="black", linewidth=0.8
         )
 
-    init_labels = [INIT_LABELS.get(k, k) for k in INIT_ORDER if any(k in agg_df["init_mode"].values for _ in [1])]
+    init_labels = [INIT_LABELS.get(k, k) for k in active_inits]
+    tick_fs = 9 if len(active_inits) >= 4 else 10
     for ax in (ax1, ax2):
-        ax.set_xticks(np.arange(len(init_labels)))
-        ax.set_xticklabels(init_labels)
+        ax.set_xticks(x_base)
+        ax.set_xticklabels(init_labels, fontsize=tick_fs)
         ax.axhline(1.0, color="gray", linestyle="--", linewidth=1.2, label="Paridad MALA (1.0×)")
 
     ax1.set_title("Factor de Aceleración Neta $G_{\\mathrm{RL}} = \\mathrm{ESS/s}_{\\mathrm{RL}} / \\mathrm{ESS/s}_{\\mathrm{MALA}}$")
@@ -606,42 +659,101 @@ def plot_speedup_scaling_summary(
     print(f"[Gráfica] Guardada figura resumen en: {out_file}")
 
 
-def resolve_casscf_reference_state(system_tag: str, root_dir: Path) -> Optional[Dict[str, Any]]:
-    """Busca y calcula la densidad analítica CASSCF exacta para el sistema."""
-    search_dirs = [
-        root_dir / "figures",
-        root_dir.parent / "figures",
-        Path("figures"),
-        ROOT_PROJECT / "figures",
-    ]
-    npz_candidates = []
-    if "N4" in system_tag:
-        target_patterns = ["*n4*g1*det6*.npz", "*n4*det6*.npz", "*n4*.npz"]
-    elif "N8" in system_tag:
-        target_patterns = ["*n8*g1*det70*.npz", "*n8*det70*.npz", "*n8*.npz"]
-    else:
-        target_patterns = ["*.npz"]
-
-    for sdir in search_dirs:
-        if sdir.is_dir():
-            for pat in target_patterns:
-                matches = list(sdir.glob(pat))
-                if matches:
-                    npz_candidates.extend(matches)
-                    break
-        if npz_candidates:
-            break
-
-    if not npz_candidates:
+def _read_npz_meta(npz_path: Path) -> Optional[Dict[str, Any]]:
+    """Lee metadatos JSON embebidos en un .npz sin depender de numpy.load con pickle."""
+    import zipfile
+    try:
+        with zipfile.ZipFile(npz_path, "r") as z:
+            raw = z.read("metadata_json.npy")
+            hlen = int.from_bytes(raw[8:10], "little")
+            return json.loads(raw[10 + hlen:].decode("utf-32-le").rstrip("\x00"))
+    except Exception:
         return None
 
-    npz_path = npz_candidates[0]
-    x_max = 14.0 if "N4" in system_tag else 20.0
+
+def resolve_casscf_reference_state(
+    system_tag: str,
+    root_dir: Path,
+    raw_df: Optional[pd.DataFrame] = None,
+) -> Optional[Dict[str, Any]]:
+    """Busca y calcula la densidad analítica CASSCF exacta para el sistema."""
+    import re
+    m_sys = re.match(r"N(\d+)_g([\d\.]+)", system_tag)
+    n_target = int(m_sys.group(1)) if m_sys else None
+    g_target = float(m_sys.group(2)) if m_sys else None
+
+    npz_path: Optional[Path] = None
+
+    # 1. Priorizar exactamente el .npz registrado en los resumenes del sistema
+    if raw_df is not None and not raw_df.empty and "casscf_npz_path" in raw_df.columns:
+        sub = raw_df[raw_df["system_tag"] == system_tag]
+        for p_str in sub["casscf_npz_path"].dropna().tolist():
+            if p_str and Path(p_str).is_file():
+                npz_path = Path(p_str)
+                break
+            if p_str and (ROOT_PROJECT / p_str).is_file():
+                npz_path = ROOT_PROJECT / p_str
+                break
+
+    # 2. Buscar en CASSCF_csv (estados convergidos c0-aN b=256) validando (N, g) en metadata
+    if npz_path is None and n_target is not None and g_target is not None:
+        search_cas_dirs = [
+            ROOT_PROJECT / "CASSCF_csv",
+            root_dir.parent / "CASSCF_csv",
+            Path("CASSCF_csv"),
+        ]
+        for cdir in search_cas_dirs:
+            if not cdir.is_dir():
+                continue
+            for cand in sorted(cdir.glob("*.npz")):
+                meta = _read_npz_meta(cand)
+                if not meta:
+                    continue
+                mcfg = meta.get("config", {})
+                nel = int(mcfg.get("n_up", 0)) + int(mcfg.get("n_down", 0))
+                gv = float(mcfg.get("g", -1.0))
+                if nel == n_target and abs(gv - g_target) < 1e-4 and bool(meta.get("converged", False)):
+                    npz_path = cand
+                    break
+            if npz_path is not None:
+                break
+
+    # 3. Respaldo en figures/ si no hubo match en CASSCF_csv
+    if npz_path is None:
+        search_dirs = [
+            root_dir / "figures",
+            root_dir.parent / "figures",
+            Path("figures"),
+            ROOT_PROJECT / "figures",
+        ]
+        if n_target == 4:
+            target_patterns = ["*n4*g1*det6*.npz", "*n4*det6*.npz", "*n4*.npz"]
+        elif n_target == 6:
+            target_patterns = ["*n6*g1*det*.npz", "*n6*.npz"]
+        elif n_target == 8:
+            target_patterns = ["*n8*g1*det70*.npz", "*n8*det70*.npz", "*n8*.npz"]
+        else:
+            target_patterns = ["*.npz"]
+
+        for sdir in search_dirs:
+            if sdir.is_dir():
+                for pat in target_patterns:
+                    matches = list(sdir.glob(pat))
+                    if matches:
+                        npz_path = matches[0]
+                        break
+            if npz_path is not None:
+                break
+
+    if npz_path is None:
+        return None
+
+    x_max_default = {4: 14.0, 6: 18.0, 8: 22.0, 10: 26.0}.get(n_target or 8, 22.0)
     if compute_exact_casscf_1body_density is not None:
         try:
-            res = compute_exact_casscf_1body_density(npz_path, x_min=-x_max, x_max=x_max, n_grid=600)
+            res = compute_exact_casscf_1body_density(npz_path, x_min=-x_max_default, x_max=x_max_default, n_grid=800)
             res["npz_path"] = str(npz_path)
-            res["x_max"] = x_max
+            res["x_max"] = x_max_default
             return res
         except Exception as e:
             print(f"[Aviso] No se pudo calcular densidad CASSCF exacta desde {npz_path}: {e}")
@@ -777,99 +889,103 @@ def plot_best_models_walker_traces(
         return
 
     n_rows = len(init_modes)
-    fig = plt.figure(figsize=(16.0, 4.4 * n_rows))
-    outer_gs = gridspec.GridSpec(n_rows, 2, hspace=0.35, wspace=0.18)
+    with plt.rc_context({"figure.autolayout": False}):
+        fig = plt.figure(figsize=(16.0, 4.4 * n_rows))
+        outer_gs = gridspec.GridSpec(n_rows, 2, hspace=0.38, wspace=0.18)
 
-    x_max = 12.0 if "N4" in system_tag else 18.0
-    if casscf_ref is not None:
-        x_max = float(casscf_ref.get("x_max", x_max))
+        x_max = 14.0 if "N4" in system_tag else (18.0 if "N6" in system_tag else 22.0)
+        if casscf_ref is not None:
+            x_max = float(casscf_ref.get("x_max", x_max))
 
-    for r_idx, im in enumerate(init_modes):
-        for c_idx, mt in enumerate(("MALA", "RL_MALA")):
-            inner_gs = gridspec.GridSpecFromSubplotSpec(
-                1, 2, subplot_spec=outer_gs[r_idx, c_idx], width_ratios=[3.8, 1.1], wspace=0.06
-            )
-            ax_main = fig.add_subplot(inner_gs[0])
-            ax_hist = fig.add_subplot(inner_gs[1], sharey=ax_main)
-            plt.setp(ax_hist.get_yticklabels(), visible=False)
+        for r_idx, im in enumerate(init_modes):
+            for c_idx, mt in enumerate(("MALA", "RL_MALA")):
+                inner_gs = gridspec.GridSpecFromSubplotSpec(
+                    1, 2, subplot_spec=outer_gs[r_idx, c_idx], width_ratios=[3.8, 1.1], wspace=0.06
+                )
+                ax_main = fig.add_subplot(inner_gs[0])
+                ax_hist = fig.add_subplot(inner_gs[1], sharey=ax_main)
+                plt.setp(ax_hist.get_yticklabels(), visible=False)
 
-            info = best_models[im].get(mt)
-            w_res = loaded_data.get((im, mt))
+                info = best_models[im].get(mt)
+                w_res = loaded_data.get((im, mt))
 
-            col_label = "Mejor MALA Clásico" if mt == "MALA" else "Mejor RL-MALA (TD3)"
-            init_title = INIT_LABELS.get(im, im).replace("\n", " ")
+                col_label = "Mejor MALA Clásico" if mt == "MALA" else "Mejor RL-MALA (TD3)"
+                init_title = INIT_LABELS.get(im, im).replace("\n", " ")
 
-            if info is None or w_res is None:
-                ax_main.text(0.5, 0.5, "Datos de caminantes no disponibles\n(run_bundle.h5 ausente)",
-                             ha="center", va="center", transform=ax_main.transAxes, color="gray")
-                ax_main.set_title(f"{col_label} | {init_title}", fontsize=10)
-                continue
+                if info is None or w_res is None:
+                    ax_main.text(0.5, 0.5, "Datos de caminantes no disponibles\n(run_bundle.h5 ausente)",
+                                 ha="center", va="center", transform=ax_main.transAxes, color="gray")
+                    ax_main.set_title(f"{col_label} | {init_title}", fontsize=10)
+                    continue
 
-            w_single = w_res["w_single"]
-            n_steps, n_elec = w_single.shape
-            n_up = int(info.get("n_elec", n_elec) // 2)
+                w_single = w_res["w_single"]
+                n_steps, n_elec = w_single.shape
+                n_up = int(info.get("n_elec", n_elec) // 2)
 
-            # Submuestreo uniforme para renderizado nítido
-            stride = max(1, n_steps // 2500)
-            steps_sub = np.arange(0, n_steps, stride)
-            w_sub = w_single[::stride, :]
+                # Submuestreo uniforme para renderizado nítido
+                stride = max(1, n_steps // 2500)
+                steps_sub = np.arange(0, n_steps, stride)
+                w_sub = w_single[::stride, :]
 
-            # Trazas de partículas coloreadas por espín
-            for e_i in range(n_elec):
-                c_spin = "#2980b9" if e_i < n_up else "#c0392b"
-                lbl = r"Spin $\uparrow$" if e_i == 0 else (r"Spin $\downarrow$" if e_i == n_up else None)
-                ls = "--" if mt == "MALA" else "-"
-                ax_main.plot(steps_sub, w_sub[:, e_i], color=c_spin, linestyle=ls, lw=1.2, alpha=0.85, label=lbl)
+                # Trazas de partículas coloreadas por espín
+                for e_i in range(n_elec):
+                    c_spin = "#2980b9" if e_i < n_up else "#c0392b"
+                    lbl = r"Spin $\uparrow$" if e_i == 0 else (r"Spin $\downarrow$" if e_i == n_up else None)
+                    ls = "--" if mt == "MALA" else "-"
+                    ax_main.plot(steps_sub, w_sub[:, e_i], color=c_spin, linestyle=ls, lw=1.2, alpha=0.85, label=lbl)
 
-            ax_main.set_ylim(-x_max, x_max)
-            ax_main.set_ylabel(f"{init_title}\nCoordenada $x$ [Bohr]", fontsize=10)
-            if r_idx == n_rows - 1:
-                ax_main.set_xlabel("Paso MCMC (Cadena 0, Caminante 0)", fontsize=10)
+                ax_main.set_ylim(-x_max, x_max)
+                ax_main.set_ylabel(f"{init_title}\nCoordenada $x$ [Bohr]", fontsize=10)
+                if r_idx == n_rows - 1:
+                    ax_main.set_xlabel("Paso MCMC (Cadena 0, Caminante 0)", fontsize=10)
 
-            # Métricas en el título
-            de_val = float(info.get("delta_E_vs_CASSCF", float("nan"))) * 1000.0
-            acc_val = float(info.get("acceptance", float("nan"))) * 100.0
-            esjd_val = float(info.get("ESJD", float("nan")))
-            title_txt = f"{col_label} ({info.get('run_name', '')})\n$\\Delta E = {de_val:+.2f}$ mHa | Acc = {acc_val:.1f}% | ESJD = {esjd_val:.3f}"
-            ax_main.set_title(title_txt, fontsize=10, fontweight="bold")
-            if r_idx == 0 and c_idx == 0:
-                ax_main.legend(loc="upper left", fontsize=8, framealpha=0.85)
+                # Métricas en el título
+                de_val = float(info.get("delta_E_vs_CASSCF", float("nan"))) * 1000.0
+                acc_val = float(info.get("acceptance", float("nan"))) * 100.0
+                esjd_val = float(info.get("ESJD", float("nan")))
+                title_txt = f"{col_label} ({info.get('run_name', '')})\n$\\Delta E = {de_val:+.2f}$ mHa | Acc = {acc_val:.1f}% | ESJD = {esjd_val:.3f}"
+                ax_main.set_title(title_txt, fontsize=10, fontweight="bold")
+                if r_idx == 0 and c_idx == 0:
+                    ax_main.legend(loc="upper left", fontsize=8, framealpha=0.85)
 
-            # Histograma marginal en el panel derecho
-            bins = np.linspace(-x_max, x_max, 100)
-            bin_centers = 0.5 * (bins[:-1] + bins[1:])
-            w_flat = w_res["w_flat"]
-            up_vals = w_flat[:, :n_up].ravel()
-            dn_vals = w_flat[:, n_up:].ravel()
+                # Histograma marginal normalizado respecto al total real de muestras
+                bins = np.linspace(-x_max, x_max, 110)
+                bin_w = float(bins[1] - bins[0])
+                bin_centers = 0.5 * (bins[:-1] + bins[1:])
+                w_flat = w_res["w_flat"]
+                up_vals = w_flat[:, :n_up].ravel()
+                dn_vals = w_flat[:, n_up:].ravel()
 
-            hist_up, _ = np.histogram(up_vals, bins=bins, density=True)
-            hist_dn, _ = np.histogram(dn_vals, bins=bins, density=True)
+                cnt_up, _ = np.histogram(up_vals, bins=bins)
+                cnt_dn, _ = np.histogram(dn_vals, bins=bins)
+                hist_up = cnt_up / max(1.0, float(up_vals.size) * bin_w)
+                hist_dn = cnt_dn / max(1.0, float(dn_vals.size) * bin_w)
 
-            ax_hist.fill_betweenx(bin_centers, 0, hist_up, color="#2980b9", alpha=0.40)
-            ax_hist.plot(hist_up, bin_centers, color="#2980b9", lw=1.2)
-            ax_hist.fill_betweenx(bin_centers, 0, hist_dn, color="#c0392b", alpha=0.40)
-            ax_hist.plot(hist_dn, bin_centers, color="#c0392b", lw=1.2)
+                ax_hist.fill_betweenx(bin_centers, 0, hist_up, color="#2980b9", alpha=0.40)
+                ax_hist.plot(hist_up, bin_centers, color="#2980b9", lw=1.2)
+                ax_hist.fill_betweenx(bin_centers, 0, hist_dn, color="#c0392b", alpha=0.40)
+                ax_hist.plot(hist_dn, bin_centers, color="#c0392b", lw=1.2)
 
-            # Superponer referencia CASSCF exacta
-            if casscf_ref is not None:
-                # La densidad CASSCF por espín = p_total / 2 para espín cerrado
-                p_spin_cas = np.asarray(casscf_ref["p_total"], dtype=np.float64) / 2.0
-                ax_hist.plot(p_spin_cas, casscf_ref["x"], color="black", linestyle="--", lw=1.6, label="CASSCF Exacto")
-                if r_idx == 0 and c_idx == 1:
-                    ax_hist.legend(loc="upper right", fontsize=7, framealpha=0.85)
+                # Superponer referencia CASSCF exacta
+                if casscf_ref is not None:
+                    # La densidad CASSCF por espín = p_total / 2 para espín cerrado
+                    p_spin_cas = np.asarray(casscf_ref["p_total"], dtype=np.float64) / 2.0
+                    ax_hist.plot(p_spin_cas, casscf_ref["x"], color="black", linestyle="--", lw=1.6, label="CASSCF Exacto")
+                    if r_idx == 0 and c_idx == 1:
+                        ax_hist.legend(loc="upper right", fontsize=7, framealpha=0.85)
 
-            ax_hist.set_xlabel("$\\rho(x)$", fontsize=9)
-            ax_hist.set_xlim(0, max(np.max(hist_up), np.max(hist_dn), 0.1) * 1.25)
+                ax_hist.set_xlabel("$p_{\\sigma}(x)$", fontsize=9)
+                ax_hist.set_xlim(0, max(float(np.max(hist_up)), float(np.max(hist_dn)), 0.08) * 1.25)
 
-    plt.suptitle(
-        f"Trazas Temporales de 1 Caminante y Distribuciones Marginales vs Benchmark CASSCF Exacto ({system_tag})",
-        fontsize=13, fontweight="bold", y=0.99
-    )
+        fig.suptitle(
+            f"Trazas Temporales de 1 Caminante y Distribuciones Marginales vs Benchmark CASSCF Exacto ({system_tag})",
+            fontsize=13, fontweight="bold", y=0.995
+        )
 
-    out_file = out_dir / f"benchmark_walker_traces_{system_tag}.{fmt}"
-    fig.savefig(out_file, dpi=dpi, bbox_inches="tight")
-    plt.close(fig)
-    print(f"[Gráfica] Guardada figura de trazas individuales en: {out_file}")
+        out_file = out_dir / f"benchmark_walker_traces_{system_tag}.{fmt}"
+        fig.savefig(out_file, dpi=dpi, bbox_inches="tight")
+        plt.close(fig)
+        print(f"[Gráfica] Guardada figura de trazas individuales en: {out_file}")
 
 
 def plot_best_models_density_distributions(
@@ -882,7 +998,7 @@ def plot_best_models_density_distributions(
     dpi: int = 300,
 ) -> None:
     """
-    Genera figura de 6 subplots comparando la densidad de 1 cuerpo muestreada
+    Genera figura de subplots comparando la densidad de 1 cuerpo muestreada
     por el Mejor MALA y el Mejor RL-MALA contra el benchmark CASSCF exacto para cada inicialización.
     """
     init_modes = [k for k in INIT_ORDER if k in best_models and len(best_models[k]) > 0]
@@ -892,7 +1008,7 @@ def plot_best_models_density_distributions(
     n_rows = len(init_modes)
     fig, axes = plt.subplots(n_rows, 2, figsize=(15.0, 4.0 * n_rows), sharex=True, sharey=True, squeeze=False)
 
-    x_max = 12.0 if "N4" in system_tag else 18.0
+    x_max = 14.0 if "N4" in system_tag else (18.0 if "N6" in system_tag else 22.0)
     if casscf_ref is not None:
         x_max = float(casscf_ref.get("x_max", x_max))
 
@@ -926,17 +1042,19 @@ def plot_best_models_density_distributions(
                 w_flat = w_res["w_flat"]
                 n_elec = w_res["n_elec"]
                 n_up = n_elec // 2
-                bins = np.linspace(-x_max, x_max, 120)
+                n_dn = n_elec - n_up
+                bins = np.linspace(-x_max, x_max, 140)
+                bin_w = float(bins[1] - bins[0])
                 bin_centers = 0.5 * (bins[:-1] + bins[1:])
 
                 up_vals = w_flat[:, :n_up].ravel()
                 dn_vals = w_flat[:, n_up:].ravel()
 
-                hist_up, _ = np.histogram(up_vals, bins=bins, density=True)
-                hist_dn, _ = np.histogram(dn_vals, bins=bins, density=True)
-                # Escalar por número de partículas para obtener rho(x) con integral = N
-                rho_up = hist_up * n_up
-                rho_dn = hist_dn * (n_elec - n_up)
+                # Normalización respecto al tamaño total real de muestras (preserva integral sin sesgar el borde)
+                cnt_up, _ = np.histogram(up_vals, bins=bins)
+                cnt_dn, _ = np.histogram(dn_vals, bins=bins)
+                rho_up = (cnt_up / max(1.0, float(up_vals.size) * bin_w)) * n_up
+                rho_dn = (cnt_dn / max(1.0, float(dn_vals.size) * bin_w)) * n_dn
                 rho_tot = rho_up + rho_dn
 
                 ls = "--" if mt == "MALA" else "-"
@@ -970,22 +1088,26 @@ def plot_best_models_density_distributions(
     print(f"[Gráfica] Guardada figura de densidades vs CASSCF en: {out_file}")
 
 
-def export_markdown_and_csv_reports(agg_df: pd.DataFrame, out_dir: Path) -> None:
+def export_markdown_and_csv_reports(agg_df: pd.DataFrame, out_dir: Path, root_dir: Optional[Path] = None) -> None:
     """Genera tabla ejecutiva en CSV y en Markdown."""
     csv_file = out_dir / "initialization_benchmark_summary_table.csv"
     agg_df.to_csv(csv_file, index=False)
     print(f"[Tabla] Tabla CSV agregada exportada en: {csv_file}")
+    if root_dir is not None and (root_dir / "results_csv").is_dir():
+        import shutil
+        shutil.copy2(csv_file, root_dir / "results_csv" / csv_file.name)
 
     md_file = out_dir / "INITIALIZATION_BENCHMARK_REPORT.md"
     lines = [
         "# Reporte Estadístico: Benchmark de Estrategias de Inicialización (MALA vs RL-MALA)",
         "",
         "Este reporte sintetiza los resultados experimentales evaluando la sensibilidad, estabilidad y aceleración",
-        "de **MALA clásico** frente a **RL-MALA (TD3)** bajo tres condiciones de frontera iniciales:",
+        "de **MALA clásico** frente a **RL-MALA (TD3)** bajo las estrategias de inicialización evaluadas:",
         "",
-        "1. **`alternating_spin`**: Un electrón en cada Gaussiana (red cristalina con jitter térmico local).",
-        "2. **`symmetric_gaussian`**: Distribución normal isotrópica $\\mathcal{N}(0, \\sigma^2)$ cubriendo la envolvente completa.",
-        "3. **`uniform`**: Distribución uniforme $\\mathcal{U}(-L, L)$ sobre la caja del sistema confinante.",
+        "1. **`alternating_spin`**: Un electrón en cada Gaussiana (red cristalina ordenada por espín con jitter térmico).",
+        "2. **`randomized_wigner`**: Red de Wigner centrada con permutación aleatoria de espines por caminante (estándar moderno).",
+        "3. **`symmetric_gaussian`**: Distribución normal isotrópica $\\mathcal{N}(0, \\sigma^2)$ cubriendo la envolvente completa.",
+        "4. **`uniform`**: Distribución uniforme $\\mathcal{U}(-L, L)$ sobre la caja del sistema confinante.",
         "",
         "---",
         "",
@@ -1040,7 +1162,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Graficador y Generador de Tablas del Benchmark de Inicializaciones.")
     parser.add_argument("results_dir", type=str, help="Carpeta raíz con los resultados del benchmark.")
     parser.add_argument("--out_dir", type=str, default=None, help="Carpeta de salida para figuras y reportes (por defecto: results_dir/figures).")
-    parser.add_argument("--system", "-s", type=str, default="all", help="Filtrar por sistema específico (ej. N4, N8, all).")
+    parser.add_argument("--system", "-s", type=str, default="all", help="Filtrar por sistema(s) (ej. N4, N6, N8, 'N4 N8', all).")
     parser.add_argument("--format", "-f", type=str, default="png", choices=["png", "pdf", "both"], help="Formato de exportación gráfica.")
     parser.add_argument("--dpi", type=int, default=300, help="Resolución en puntos por pulgada.")
     parser.add_argument("--font_scale", type=float, default=1.0, help="Escala de fuentes tipográficas.")
@@ -1063,9 +1185,14 @@ def main() -> None:
         print(f"[Aviso] No se encontraron corridas en {root_dir}. Verifica la ruta.")
         sys.exit(0)
 
-    if args.system != "all":
-        s_target = "N4" if "4" in args.system else "N8"
-        raw_df = raw_df[raw_df["system_tag"].str.contains(s_target)].copy()
+    if args.system.lower() not in ("all", "all3", "*"):
+        import re
+        nums = re.findall(r"\d+", args.system)
+        if nums:
+            n_set = {int(x) for x in nums}
+            raw_df = raw_df[raw_df["n_elec"].isin(n_set)].copy()
+        else:
+            raw_df = raw_df[raw_df["system_tag"].str.contains(args.system, case=False)].copy()
         if raw_df.empty:
             print(f"[Aviso] No se encontraron corridas para el sistema {args.system}.")
             sys.exit(0)
@@ -1073,20 +1200,20 @@ def main() -> None:
     print(f"[Benchmark] Encontradas {len(raw_df)} corridas individuales.")
     agg_df = aggregate_statistics(raw_df)
 
-    export_markdown_and_csv_reports(agg_df, out_dir)
+    export_markdown_and_csv_reports(agg_df, out_dir, root_dir=root_dir)
 
     fmts = ["png", "pdf"] if args.format == "both" else [args.format]
     for fmt in fmts:
         for sys_tag in agg_df["system_tag"].unique():
-            casscf_ref = resolve_casscf_reference_state(sys_tag, root_dir)
+            casscf_ref = resolve_casscf_reference_state(sys_tag, root_dir, raw_df=raw_df)
             best_models = find_best_models_per_initialization(raw_df, sys_tag)
-            
+
             # 1. Panel de barras comparativas agregadas
             plot_system_initialization_comparison(agg_df, sys_tag, out_dir, fmt=fmt, dpi=args.dpi)
-            
+
             # 2. Trazas individuales de 1 caminante (Mejor MALA vs Mejor RL-MALA)
             plot_best_models_walker_traces(best_models, sys_tag, casscf_ref, out_dir, root_dir, fmt=fmt, dpi=args.dpi)
-            
+
             # 3. Distribuciones de densidad muestreadas vs Benchmark CASSCF Exacto
             plot_best_models_density_distributions(best_models, sys_tag, casscf_ref, out_dir, root_dir, fmt=fmt, dpi=args.dpi)
 
