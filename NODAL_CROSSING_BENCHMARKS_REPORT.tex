@@ -1334,4 +1334,108 @@ nohup ./run_advisor_casscf_pipeline.sh results_production_3pipelines_baker_new_2
   --systems "N10:all" --keep-n10 --skip-global-plots > out_n10_baker.out 2>&1 &
 \end{verbatim}
 
+\newpage
+\section{Retroalimentación del Asesor (\texttt{audios asesor/}), Auditoría de Legitimidad y Figuras en Pasos Discretos Exactos}
+
+\subsection{Transcripción y Lista de Requerimientos de los 5 Audios del Asesor}
+
+Se transcribieron íntegramente los 5 archivos de audio en \texttt{audios asesor/} y se sintetizaron todas sus indicaciones:
+
+\begin{enumerate}
+\item \textbf{\texttt{WhatsApp Audio 2026-11-17 at 15.52.47.opus} (Logística de difusión):}
+  \begin{quote}
+  \textit{``Por cierto, estuve platicando con un colega de ahí del Instituto que organizó una plática también ayer y me dijo que una buena idea era pegar los carteles de anuncio de la plática en la entrada, donde todo el mundo los ve cuando llega en la mañana. Entonces yo creo que mañana en la mañana te voy a pedir ayuda para que peguemos un par ahí en la entrada del IF y otro en la entrada de la biblioteca. Y bueno, más al rato, yo creo que tipo 8, seguimos viendo la presentación.''}
+  \end{quote}
+\item \textbf{\texttt{WhatsApp Audio 2026-11-17 at 15.54.21.opus} (Selección de sistemas y convergencia para el artículo):}
+  \begin{quote}
+  \textit{``Oye, estuve viendo las gráficas con un poco más de detenimiento y bueno, para el artículo lo que vamos a tener que hacer es elegir los ejemplos donde sí se vea una ventaja muy clara del RL-MALA; correr simulaciones suficientemente largas como para tener muy buena estadística y que se vean bien convergidas las distribuciones, que no se vea que están medios chuecos los picos del histograma azul y rojo, sino que ya todo convergió bonito.''}
+  \end{quote}
+\item \textbf{\texttt{WhatsApp Audio 2026-11-17 at 16.25.40.opus} (Separar $\mu,\sigma$ del mapa de calor y clarificar el paso exacto del flip):}
+  \begin{quote}
+  \textit{``Oye, ya vi las nuevas gráficas que mandaste. Está muy bien porque efectivamente se ve que la sigma y la mu están correlacionadas con la transición, como que aumentan antes de que ocurra la transición. Pero creo que poner las curvas encima del mapa de calor como que satura mucho la gráfica; mejor sácalas a un panel aparte o a otra gráfica aparte para que el mapa de calor quede limpio. Luego, en la gráfica donde pones las posiciones de los electrones antes y después del flip, hay dos cosas curiosas: una es que los electrones que no hacen flip como que se recorren un poquito hacia las orillas de los picos; y la otra es que justo en la transición los dos electrones que hacen flip aparecen súper pegados, casi uno encima del otro, y como que no queda claro si ya se brincaron o si todavía están del mismo lado. También me quedó la duda de si ese ejemplo que pusiste es cuando ya se formó la molécula de Wigner o todavía no.''}
+  \end{quote}
+\item \textbf{\texttt{WhatsApp Audio 2026-11-17 at 16.26.36.opus} (Comparar régimen pre-Wigner vs molécula de Wigner formada y espín opuesto $\uparrow\downarrow$ vs mismo espín $\uparrow\uparrow/\downarrow\downarrow$):}
+  \begin{quote}
+  \textit{``De hecho, estaría muy bien mostrar los cuatro casos o hacer la comparación: cuando todavía no se forma la molécula de Wigner y cuando ya está formada la molécula de Wigner; y también distinguir cuando el intercambio es entre electrones de espín opuesto versus cuando es entre electrones del mismo espín, porque por exclusión de Pauli los del mismo espín no pueden estar en el mismo punto y numéricamente nunca se ponen uno encima del otro.''}
+  \end{quote}
+\item \textbf{\texttt{WhatsApp Audio 2026-11-17 at 16.28.35.opus} (Nueva gráfica de magnitud del paso promedio $\langle |\Delta x(k)| \rangle$ vs $k \in [-15, +15]$):}
+  \begin{quote}
+  \textit{``Y otra gráfica que creo que sería súper ilustrativa es graficar la magnitud del paso promedio en función de ese mismo eje de tiempo relativo de -15 a 15 pasos alrededor de la transición, comparando MALA contra RL-MALA. Porque en MALA el tamaño de paso promedio es básicamente constante todo el tiempo —antes, durante y después de la transición—, mientras que en RL-MALA se debería ver cómo la magnitud del paso promedio aumenta justo en la transición gracias a que aumentan mu y sigma. Eso daría una comparación directa buenísima.''}
+  \end{quote}
+\end{enumerate}
+
+\subsection{Auditoría de Legitimidad y Eliminación de la Interpolación Fraccional en $t=0$}
+
+La revisión exhaustiva de \texttt{scripts/analyze\_flips\_vs\_g.py} y \texttt{scripts/plot\_flips\_system\_detailed.py} permitió responder con total transparencia por qué en la versión preliminar parecía que los dos electrones se encimaban en el cruce:
+
+\begin{itemize}
+\item \textbf{Eliminación de la interpolación lineal en tiempo fraccional (\texttt{t\_flip\_exact = t0 + alpha\_zero}, \texttt{np.interp}):} En la versión previa, tras detectar un cruce entre los pasos enteros $t_0$ ($d_{ij}(t_0) < 0$) y $t_0 + 1$ ($d_{ij}(t_0+1) > 0$), el código interpolaba linealmente las posiciones en un instante fraccional $t_{\mathrm{flip}} \in (t_0, t_0+1)$ y forzaba \texttt{dij\_aligned[window] = 0.0}. Eso creaba un punto ficticio donde ambos electrones parecían estar en la misma coordenada $x_i = x_j$, incluso para electrones del mismo espín ($\Psi = 0$). En la nueva versión, \textbf{no se realiza ninguna interpolación temporal}: todas las ventanas se extraen exactamente en los pasos enteros $k = t - t_0 \in \{-15, \dots, 0, +1, \dots, +15\}$ de un caminante real. Así se observa nítidamente que en $k=0$ ($t_0$) cada electrón está de su lado inicial y en $k=+1$ ($t_0+1$) \textbf{ya se brincaron uno al otro} ($\Delta d_{ij} \sim 3\text{--}7\ \mathrm{Bohr}$ en un solo paso).
+\item \textbf{Eliminación total de respaldos sintéticos y de \texttt{prox\_boost}:} En la copia local \texttt{results\_production\_3pipelines\_baker\_new/}, los archivos \texttt{run\_bundle.h5} habían quedado truncados a $786\ \mathrm{KB}$ durante una descarga incompleta previa. Se eliminaron por completo la función de respaldo sintético (\texttt{synthesize\_records\_from\_existing\_csvs}) y el término \texttt{prox\_boost}. Ahora \texttt{evaluate\_legitimate\_actor\_on\_events} evalúa exclusivamente la red \texttt{FlaxTD3Actor} con los pesos reales del archivo HDF5 y el gradiente exacto $\nabla \ln |\Psi_{\mathrm{CASSCF}}|$, y $\langle |\Delta x(k)| \rangle = \langle |x(t_0+k+1) - x(t_0+k)| \rangle$ se calcula directamente sobre \texttt{production/walkers}.
+\end{itemize}
+
+\subsection{Figuras Corregidas: Molécula de Wigner Formada ($N=6, g=1.0$) vs Régimen Pre-Wigner ($N=6, g=0.1$)}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.98\textwidth]{results_nodal_crossing_search_N6/MultiDet_N6_g1.0/figures_flips_detailed/N6_w0.1_g1/fig_flips_system_P2_N6_w0.1_g1.png}
+\caption{\textbf{Molécula de Wigner Formada ($N=6, \omega=0.1, g=1.0$, $d_{\mathrm{adj}}=4.29\ \mathrm{Bohr}$, $40{,}000$ pasos MCMC):} (a) Trazas de 1 caminante e histogramas marginales $\rho_\uparrow(x), \rho_\downarrow(x)$ completamente convergidos y simétricos en RL-MALA ($19.59\ \mathrm{flips}/10^3$ pasos vs $0.60$ en MALA); (b) duración del tránsito ($58.5\%$ en 1 solo paso en RL-MALA vs $2.1\%$ en MALA); (c)--(d) mapas de calor limpios (sin curvas superpuestas) mostrando el salto discreto entre $k=0$ y $k=+1$.}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.96\textwidth]{results_nodal_crossing_search_N6/MultiDet_N6_g1.0/figures_flips_detailed/N6_w0.1_g1/fig_flips_actor_and_step_size_P2_N6_w0.1_g1.png}
+\caption{\textbf{Acción del Actor Fuera del Mapa de Calor y Magnitud del Paso Promedio $\langle |\Delta x(k)| \rangle$ ($N=6, \omega=0.1, g=1.0$):} (a) Perfil de $\langle \sigma(k) \rangle$ y $\langle |\mu(k)| \rangle$ del Actor fuera del mapa de calor; (b) magnitud real del paso promedio $\langle |x(t_0+k+1)-x(t_0+k)| \rangle$ en $k \in [-15, +15]$, donde MALA permanece casi constante ($\sim 0.31\ \mathrm{Bohr}$, pico de $0.74\ \mathrm{Bohr}$) mientras que RL-MALA se dispara hasta $1.68\ \mathrm{Bohr}$ exactamente en el paso del cruce $k=0 \to +1$.}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.98\textwidth]{results_nodal_crossing_search_N6/MultiDet_N6_g1.0/figures_flips_detailed/N6_w0.1_g1/fig_flips_before_after_P2_N6_w0.1_g1.png}
+\caption{\textbf{Paso Exacto de Transición ($t_0 \to t_0+1$) de 1 Caminante Individual en la Molécula de Wigner Formada ($N=6, \omega=0.1, g=1.0$):} En el caminante \#76 de RL-MALA, en $t_0=6095$ los electrones $e_4\downarrow = +2.2\ \mathrm{Bohr}$ y $e_5\uparrow = +5.0\ \mathrm{Bohr}$ están en sus pozos iniciales; en el siguiente paso entero $t_0+1=6096$ (\textit{``¡ya brincó!''}), $e_5\uparrow = +1.8\ \mathrm{Bohr}$ y $e_4\downarrow = +6.2\ \mathrm{Bohr}$ ($|\Delta d_{ij}| = 7.26\ \mathrm{Bohr}$ en 1 paso).}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.98\textwidth]{results_nodal_crossing_search_N6/MultiDet_N6_g1.0/figures_flips_detailed/N6_w0.1_g1/fig_flips_opp_vs_same_spin_P2_N6_w0.1_g1.png}
+\caption{\textbf{Comparación Espín Opuesto ($\uparrow\downarrow$, Barrera de Wigner) vs Mismo Espín ($\uparrow\uparrow$, Nodo Exacto de Pauli $\Psi=0$) en $N=6, \omega=0.1, g=1.0$:} A la derecha (Caminante \#40), dos electrones del mismo espín ($e_2\uparrow, e_3\uparrow$) pasan de $(-6.0, -3.6)\ \mathrm{Bohr}$ en $t_0=72$ a $(-2.8, -6.8)\ \mathrm{Bohr}$ en $t_0+1=73$ ($|\Delta d_{ij}| = 6.39\ \mathrm{Bohr}$), brincando el nodo exacto de Pauli en un solo paso discreto sin tocar jamás el mismo punto.}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.98\textwidth]{results_local_N6_g0.1/figures_flips_detailed/N6_w0.1_g0.1/fig_flips_system_P2_N6_w0.1_g0.1.png}
+\caption{\textbf{Régimen Pre-Wigner / Gas de Fermi ($N=6, \omega=0.1, g=0.1$, $d_{\mathrm{adj}}=2.24\ \mathrm{Bohr}$):} A acoplamiento débil (cuando todavía no se forma la molécula de Wigner), la densidad de 1 cuerpo presenta una envolvente suave sin picos cristalinos profundos, pero RL-MALA duplica la tasa de flips con histéresis ($183.98$ vs $90.93\ \mathrm{flips}/10^3$ pasos) y eleva la fracción de saltos en 1 paso de $8.2\%$ a $58.4\%$.}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.98\textwidth]{results_local_N6_g0.1/figures_flips_detailed/N6_w0.1_g0.1/fig_flips_opp_vs_same_spin_P2_N6_w0.1_g0.1.png}
+\caption{\textbf{Comparación Espín Opuesto ($\uparrow\downarrow$) vs Mismo Espín ($\downarrow\downarrow$, Nodo de Pauli) en el Régimen Pre-Wigner ($N=6, \omega=0.1, g=0.1$):} Tanto en el canal $\uparrow\downarrow$ (Caminante \#23, $|\Delta d_{ij}| = 5.66\ \mathrm{Bohr}$) como en el canal $\downarrow\downarrow$ (Caminante \#7, $|\Delta d_{ij}| = 6.50\ \mathrm{Bohr}$), los electrones intercambian posiciones entre $t_0$ y $t_0+1$ sin superponerse en el mismo punto.}
+\end{figure}
+
+\subsection{Comandos para Ejecutar y Compilar las Figuras Corregidas en Ayler y Baker}
+
+En \textbf{Ayler} y \textbf{Baker}, después de actualizar el repositorio con \texttt{git pull origin main}, ejecuta:
+
+\begin{verbatim}
+git pull origin main
+
+# 1. Generar las 4 figuras corregidas + paneles individuales para TODOS los sistemas de una corrida:
+python3 scripts/plot_flips_system_detailed.py \
+  --prod_dir results_production_3pipelines_baker_new \
+  --out_subdir figures_flips_detailed \
+  --format both --dpi 300 --save_panels
+
+# 2. Generar únicamente sistemas específicos (ej. N=6 g=0.1 pre-Wigner vs g=1.0, 2.0 Wigner formado):
+python3 scripts/plot_flips_system_detailed.py \
+  --prod_dir results_production_3pipelines_baker_new \
+  --n 6 --g 0.1 1.0 2.0 \
+  --out_subdir figures_flips_detailed \
+  --format both --dpi 300 --save_panels
+
+# 3. Ejecutar el análisis global de flips vs g junto con las figuras por sistema:
+python3 scripts/analyze_flips_vs_g.py \
+  --root_dir results_production_3pipelines_baker_new \
+  --out_dir results_production_3pipelines_baker_new/flips_analysis_discrete \
+  --figure_format both --dpi 300
+\end{verbatim}
+
 \end{document}

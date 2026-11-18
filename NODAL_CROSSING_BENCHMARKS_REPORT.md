@@ -679,4 +679,97 @@ nohup ./run_advisor_casscf_pipeline.sh results_production_3pipelines_baker_new_2
 ```
 (o agregando `--systems "N2:all N8:2.0,3.0,5.0 N10:all" --include-n2 --keep-n10 --skip-global-plots` para lanzar los tres frentes pendientes).
 
+---
+
+## 12. Retroalimentación del Asesor (`audios asesor/`), Auditoría de Legitimidad y Rediseño de Figuras en Pasos Discretos Exactos
+
+### 12.1 Transcripción y Lista de Requerimientos de los 5 Audios del Asesor
+
+Se revisaron y transcribieron íntegramente los 5 archivos de audio en `audios asesor/`:
+
+1. **`WhatsApp Audio 2026-11-17 at 15.52.47.opus` (Logística):**
+   - *"Por cierto, estuve platicando con un colega de ahí del Instituto que organizó una plática también ayer y me dijo que una buena idea era pegar los carteles de anuncio de la plática en la entrada, donde todo el mundo los ve cuando llega en la mañana. Entonces yo creo que mañana en la mañana te voy a pedir ayuda para que peguemos un par ahí en la entrada del IF y otro en la entrada de la biblioteca. Y bueno, más al rato, yo creo que tipo 8, seguimos viendo la presentación."*
+2. **`WhatsApp Audio 2026-11-17 at 15.54.21.opus` (Criterio de selección de figuras para el artículo):**
+   - *"Oye, estuve viendo las gráficas con un poco más de detenimiento y bueno, para el artículo lo que vamos a tener que hacer es elegir los ejemplos donde sí se vea una ventaja muy clara del RL-MALA; correr simulaciones suficientemente largas como para tener muy buena estadística y que se vean bien convergidas las distribuciones, que no se vea que están medios chuecos los picos del histograma azul y rojo, sino que ya todo convergió bonito."*
+3. **`WhatsApp Audio 2026-11-17 at 16.25.40.opus` (Feedback sobre las nuevas gráficas del Actor y del estado antes/después del flip):**
+   - *"Oye, ya vi las nuevas gráficas que mandaste. Está muy bien porque efectivamente se ve que la sigma y la mu están correlacionadas con la transición, como que aumentan antes de que ocurra la transición. Pero creo que poner las curvas encima del mapa de calor como que satura mucho la gráfica; mejor sácalas a un panel aparte o a otra gráfica aparte para que el mapa de calor quede limpio."*
+   - *"Luego, en la gráfica donde pones las posiciones de los electrones antes y después del flip, hay dos cosas curiosas: una es que los electrones que no hacen flip como que se recorren un poquito hacia las orillas de los picos; y la otra es que justo en la transición los dos electrones que hacen flip aparecen súper pegados, casi uno encima del otro, y como que no queda claro si ya se brincaron o si todavía están del mismo lado. También me quedó la duda de si ese ejemplo que pusiste es cuando ya se formó la molécula de Wigner o todavía no."*
+4. **`WhatsApp Audio 2026-11-17 at 16.26.36.opus` (Comparación de regímenes de Wigner y canales de espín $\uparrow\downarrow$ vs $\uparrow\uparrow/\downarrow\downarrow$):**
+   - *"De hecho, estaría muy bien mostrar los cuatro casos o hacer la comparación: cuando todavía no se forma la molécula de Wigner y cuando ya está formada la molécula de Wigner; y también distinguir cuando el intercambio es entre electrones de espín opuesto versus cuando es entre electrones del mismo espín, porque por exclusión de Pauli los del mismo espín no pueden estar en el mismo punto y numéricamente nunca se ponen uno encima del otro."*
+5. **`WhatsApp Audio 2026-11-17 at 16.28.35.opus` (Nueva gráfica de magnitud del paso promedio $\langle |\Delta x(k)| \rangle$ vs paso relativo $k \in [-15, +15]$):**
+   - *"Y otra gráfica que creo que sería súper ilustrativa es graficar la magnitud del paso promedio en función de ese mismo eje de tiempo relativo de -15 a 15 pasos alrededor de la transición, comparando MALA contra RL-MALA. Porque en MALA el tamaño de paso promedio es básicamente constante todo el tiempo —antes, durante y después de la transición—, mientras que en RL-MALA se debería ver cómo la magnitud del paso promedio aumenta justo en la transición gracias a que aumentan mu y sigma. Eso daría una comparación directa buenísima."*
+
+---
+
+### 12.2 Auditoría de Legitimidad: ¿Por qué se veían dos electrones encimados en $t=0$ y qué se corrigió?
+
+Al auditar línea por línea `scripts/analyze_flips_vs_g.py` y `scripts/plot_flips_system_detailed.py`, se identificaron y eliminaron **dos artefactos de posprocesado** que afectaban las figuras preliminares:
+
+1. **Interpolación lineal en tiempo fraccional (`t_flip_exact = t0 + alpha_zero`, `np.interp`) y fijación artificial de `dij_aligned[window] = 0.0`:**
+   - En la versión anterior, después de detectar un salto real de la cadena de Markov entre el paso entero $t_0$ (donde $x_i(t_0) < x_j(t_0)$) y el paso entero $t_0 + 1$ (donde $x_i(t_0+1) > x_j(t_0+1)$), el código calculaba una fracción continua $\alpha_0 = |d_{ij}(t_0)| / (|d_{ij}(t_0)| + |d_{ij}(t_0+1)|) \in (0, 1)$, interpolaba linealmente las trayectorias en $t_{\mathrm{flip}} + k$, y forzaba `dij_aligned[window] = 0.0`.
+   - **Consecuencia física:** Esa interpolación lineal inventaba un instante fraccional ficticio entre dos pasos enteros de Markov donde los dos electrones parecían colocarse exactamente uno encima del otro ($x_i = x_j = x_{\mathrm{cross}}$), ¡incluso para electrones del mismo espín donde $\Psi(x_i=x_j) = 0$!
+   - **Corrección implementada:** Se eliminó por completo `np.interp` y el tiempo fraccional. Ahora todas las ventanas se alinean **exclusivamente sobre los pasos enteros reales de la cadena de Markov** $k = t - t_0 \in \{-15, \dots, 0, +1, \dots, +15\}$: en $k = 0$ ($t = t_0$, justo antes del brinco) cada electrón está en su pozo inicial ($x_i(t_0) < x_j(t_0)$), y en $k = +1$ ($t = t_0 + 1$, justo después del brinco) **ya se brincaron uno al otro** ($x_i(t_0+1) > x_j(t_0+1)$) sin pisar jamás $x_i = x_j$.
+2. **Eliminación total del respaldo sintético para archivos `.h5` truncados y del término `prox_boost`:**
+   - En la copia local `results_production_3pipelines_baker_new/`, los archivos `run_bundle.h5` habían quedado truncados a $786\ \mathrm{KB}$ durante una descarga incompleta previa desde Baker. La primera versión de `plot_flips_system_detailed.py` incluía una función de respaldo (`synthesize_records_from_existing_csvs`) y un término gaussiano `prox_boost`.
+   - **Corrección implementada:** Se eliminaron por completo `synthesize_records_from_existing_csvs` y `prox_boost`. Ahora `evaluate_legitimate_actor_on_events` evalúa **únicamente la red neuronal real `FlaxTD3Actor` con los pesos entrenados del archivo HDF5 y la fuerza cuántica exacta $\nabla \ln |\Psi_{\mathrm{CASSCF}}|$**, y la magnitud del paso promedio $\langle |\Delta x(k)| \rangle = \langle |x(t_0+k+1) - x(t_0+k)| \rangle$ se mide directamente sobre las diferencias de posiciones reales en `production/walkers`.
+
+---
+
+### 12.3 Nuevas Figuras Compiladas en Sistemas Reales Locales ($N=6, g=0.1$, $N=6, g=1.0$ y $N=4, g=4.0$)
+
+#### A. Molécula de Wigner Formada ($N=6, \omega=0.1, g=1.0$, $d_{\mathrm{adj}} = 4.29\ \mathrm{Bohr}$, $40{,}000$ pasos MCMC)
+
+![Caracterización de Flips y Mapas de Calor Limpios (N=6, g=1.0)](results_nodal_crossing_search_N6/MultiDet_N6_g1.0/figures_flips_detailed/N6_w0.1_g1/fig_flips_system_P2_N6_w0.1_g1.png)
+
+![Acción del Actor Fuera del Mapa de Calor y Magnitud del Paso Promedio vs k (N=6, g=1.0)](results_nodal_crossing_search_N6/MultiDet_N6_g1.0/figures_flips_detailed/N6_w0.1_g1/fig_flips_actor_and_step_size_P2_N6_w0.1_g1.png)
+
+![Paso Exacto de Transición t0 -> t0+1 en 1 Caminante Individual (N=6, g=1.0)](results_nodal_crossing_search_N6/MultiDet_N6_g1.0/figures_flips_detailed/N6_w0.1_g1/fig_flips_before_after_P2_N6_w0.1_g1.png)
+
+![Comparación Espín Opuesto (Barrera de Wigner) vs Mismo Espín (Nodo de Pauli) en 1 Caminante (N=6, g=1.0)](results_nodal_crossing_search_N6/MultiDet_N6_g1.0/figures_flips_detailed/N6_w0.1_g1/fig_flips_opp_vs_same_spin_P2_N6_w0.1_g1.png)
+
+#### B. Régimen Pre-Wigner / Gas de Fermi ($N=6, \omega=0.1, g=0.1$, $d_{\mathrm{adj}} = 2.24\ \mathrm{Bohr}$)
+
+![Caracterización de Flips y Mapas de Calor Limpios (N=6, g=0.1)](results_local_N6_g0.1/figures_flips_detailed/N6_w0.1_g0.1/fig_flips_system_P2_N6_w0.1_g0.1.png)
+
+![Acción del Actor Fuera del Mapa de Calor y Magnitud del Paso Promedio vs k (N=6, g=0.1)](results_local_N6_g0.1/figures_flips_detailed/N6_w0.1_g0.1/fig_flips_actor_and_step_size_P2_N6_w0.1_g0.1.png)
+
+![Paso Exacto de Transición t0 -> t0+1 en 1 Caminante Individual (N=6, g=0.1)](results_local_N6_g0.1/figures_flips_detailed/N6_w0.1_g0.1/fig_flips_before_after_P2_N6_w0.1_g0.1.png)
+
+![Comparación Espín Opuesto vs Mismo Espín en 1 Caminante (N=6, g=0.1)](results_local_N6_g0.1/figures_flips_detailed/N6_w0.1_g0.1/fig_flips_opp_vs_same_spin_P2_N6_w0.1_g0.1.png)
+
+#### C. Cristal de Wigner Fuertemente Correlacionado ($N=4, \omega=0.1, g=4.0$)
+
+![Paso Exacto de Transición t0 -> t0+1 en 1 Caminante Individual (N=4, g=4.0)](results/notebook_pipeline_test/figures_flips_detailed/N4_w0.1_g4/fig_flips_before_after_P2_N4_w0.1_g4.png)
+
+---
+
+### 12.4 Comandos para Compilar las Figuras Corregidas en **Ayler** y **Baker**
+
+En **Ayler** y **Baker** residen los archivos `run_bundle.h5` íntegros de todas las corridas de producción ($N \in \{2, 4, 6, 8, 10\}$). Tras hacer `git pull origin main` en cada servidor, ejecuta:
+
+1. **Para compilar las 4 figuras corregidas + paneles individuales de TODOS los sistemas de una carpeta de producción:**
+```bash
+git pull origin main
+python3 scripts/plot_flips_system_detailed.py \
+  --prod_dir results_production_3pipelines_baker_new \
+  --out_subdir figures_flips_detailed \
+  --format both --dpi 300 --save_panels
+```
+2. **Para compilar un sistema específico (por ejemplo, comparar $N=6, g=0.1$ pre-Wigner contra $N=6, g=1.0$ y $N=8, g=2.0$ Wigner formado):**
+```bash
+python3 scripts/plot_flips_system_detailed.py \
+  --prod_dir results_production_3pipelines_baker_new \
+  --n 6 --g 0.1 1.0 2.0 \
+  --out_subdir figures_flips_detailed \
+  --format both --dpi 300 --save_panels
+```
+3. **Para ejecutar el análisis global de flips vs $g$ junto con todas las figuras por sistema:**
+```bash
+python3 scripts/analyze_flips_vs_g.py \
+  --root_dir results_production_3pipelines_baker_new \
+  --out_dir results_production_3pipelines_baker_new/flips_analysis_discrete \
+  --figure_format both --dpi 300
+```
+
+
 

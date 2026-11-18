@@ -460,6 +460,7 @@ def compute_flip_statistics(
     sigma_scale: float = 0.90,
     actor_params: Optional[Dict[str, Any]] = None,
     is_neural: bool = False,
+    npz_path: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Calcula todas las métricas de intercambio entre pares de electrones (flips)
@@ -661,189 +662,274 @@ def compute_flip_statistics(
     origin_flips_per_1k = float(np.mean(np.sum(orig_flips_mask, axis=(1, 2, 3)) * norm_factor_per_chain))
 
     # --------------------------------------------------------------------------
-    # E. Extracción de Ventanas Microscópicas [-W, +W] alrededor de Eventos de Flip
-    #    - Etiquetado canónico en espacio real 1D:
-    #        x_i(t) = electrón que inicia a la IZQUIERDA antes del flip (x_i < x_j en t < t_flip)
-    #        x_j(t) = electrón que inicia a la DERECHA antes del flip (x_j > x_i en t < t_flip)
-    #    - Alineación exacta en el cruce por cero t_flip (donde x_i(t_flip) - x_j(t_flip) = 0),
-    #      de modo que en t - t_flip = 0 todas las trayectorias cruzan exactamente por y = 0.
-    #    - Normalización adimensional por la separación inter-pozo d_adj:
-    #        (x_i - x_j) / d_adj fluye de -1.0 (antes) -> 0.0 (en t=t_flip) -> +1.0 (después)
-    #        tilde_x_i = (x_i - x_cross) / d_adj fluye de -0.5 -> 0.0 -> +0.5 (izq -> der)
-    #        tilde_x_j = (x_j - x_cross) / d_adj fluye de +0.5 -> 0.0 -> -0.5 (der -> izq)
+    # E. Extracción de Ventanas Microscópicas DISCRETAS [-W, +W] en pasos enteros
+    #    SIN interpolación lineal fraccional (np.interp):
+    #    - En k = 0 (paso entero t_0), el par está en su lado inicial: x_i(t_0) < x_j(t_0).
+    #    - En k = +1 (paso entero t_0 + 1), el par YA BRINCÓ al otro lado: x_i(t_0+1) > x_j(t_0+1).
+    #    - Se evalúa el Actor real (mu_theta, sigma_theta) y la magnitud real del paso
+    #      |<|Delta x(k)|>| = <|x(t_0+k+1) - x(t_0+k)|> en k in [-W, +W].
+    #    - Se separan eventos individuales de espín opuesto (up-down) y mismo espín (up-up/down-down).
     # --------------------------------------------------------------------------
     window = 15
-    rel_steps_grid = np.arange(-window, window + 1, dtype=np.float64)
+    rel_steps_grid = np.arange(-window, window + 1, dtype=int)
     aligned_rel_dist: List[np.ndarray] = []
     aligned_rel_dist_norm: List[np.ndarray] = []
     aligned_xi_norm: List[np.ndarray] = []
     aligned_xj_norm: List[np.ndarray] = []
-    aligned_abs_mu: List[np.ndarray] = []
-    aligned_sigma: List[np.ndarray] = []
+    aligned_step_mag_pair: List[np.ndarray] = []
+    aligned_step_mag_spec: List[np.ndarray] = []
     ordered_all_elec_events: List[Tuple[np.ndarray, np.ndarray, int, int, float]] = []
+    event_configs_for_actor: List[Tuple[np.ndarray, int, int]] = []
     example_event: Optional[Dict[str, Any]] = None
 
-    from scripts.plot_flips_system_detailed import evaluate_transition_sampler_action
+    from scripts.plot_flips_system_detailed import evaluate_legitimate_actor_on_events
 
     source_mask = hyst_flip_mask if len(ev_tau) > 0 else raw_flip_mask
     sc, stau, sb, sp = np.where(source_mask)
     valid_ev = np.where((stau >= window + 2) & (stau + 2 + window < T))[0]
 
+    def _extract_discrete_event_meta(idx_ev_local: int) -> Optional[Dict[str, Any]]:
+        c0, tau0, b0, p0 = int(sc[idx_ev_local]), int(stau[idx_ev_local]), int(sb[idx_ev_local]), int(sp[idx_ev_local])
+        tau_exit = tau0 + 1
+        if len(ev_tau) > 0:
+            tau_enter = int(idx_hyst[c0, tau0, b0, p0])
+            s_after = int(s_committed[c0, tau_exit, b0, p0])
+        else:
+            tau_enter = tau0
+            s_after = int(np.sign(d_pairs[c0, tau_exit, b0, p0]))
+        if s_after == 0:
+            s_after = 1
+        s_before = -s_after
+
+        seg_trans = d_pairs[c0, tau_enter : tau_exit + 1, b0, p0]
+        pre_candidates = np.where(np.sign(seg_trans[:-1]) == s_before)[0]
+        k0 = int(pre_candidates[-1]) if len(pre_candidates) > 0 else max(0, len(seg_trans) - 2)
+        t0 = tau_enter + k0
+
+        if t0 - window < 0 or t0 + window + 1 >= T:
+            return None
+
+        a_el, b_el = int(pair_i[p0]), int(pair_j[p0])
+        if s_before == -1:
+            i_left, j_right = a_el, b_el
+        else:
+            i_left, j_right = b_el, a_el
+
+        # Extraer pasos enteros exactos [t0 - window .. t0 + window + 1] (longitud 2*window + 2)
+        w_ext = w[c0, t0 - window : t0 + window + 2, b0, :].astype(np.float64)
+        w_win = w_ext[:-1, :]  # (2*window + 1, N) en k = -window .. +window
+        step_disp = np.abs(np.diff(w_ext, axis=0))  # (2*window + 1, N): |x(t0+k+1) - x(t0+k)|
+
+        xi_win = w_win[:, i_left].copy()
+        xj_win = w_win[:, j_right].copy()
+        dij_win = xi_win - xj_win
+
+        d0_val = float(dij_win[window])
+        d1_val = float(dij_win[window + 1])
+        if d0_val > 0.0 and d1_val < 0.0:
+            xi_win, xj_win = xj_win, xi_win
+            i_left, j_right = j_right, i_left
+            dij_win = -dij_win
+            d0_val, d1_val = -d0_val, -d1_val
+
+        # Punto medio geométrico entre los dos pozos involucrados (en k in [-8, -2])
+        x_mid = 0.5 * float(
+            np.mean(xi_win[max(0, window - 8) : window - 1])
+            + np.mean(xj_win[max(0, window - 8) : window - 1])
+        )
+
+        pair_step_mag = 0.5 * (step_disp[:, i_left] + step_disp[:, j_right])
+        spec_indices = [el for el in range(N) if el not in (i_left, j_right)]
+        if spec_indices:
+            spec_step_mag = np.mean(step_disp[:, spec_indices], axis=1)
+        else:
+            spec_step_mag = pair_step_mag.copy()
+
+        # Ordenar los N electrones por su pozo espacial previo al flip (en [-8, -2])
+        pre_mean = np.mean(w_win[max(0, window - 8) : max(1, window - 1), :], axis=0)
+        pre_order = np.argsort(pre_mean)
+        inv_order = np.argsort(pre_order)
+        w_ord = w_win[:, pre_order]
+        sp_ord = spins[pre_order]
+        well_l = int(inv_order[i_left])
+        well_r = int(inv_order[j_right])
+
+        is_clean = bool(
+            np.all(dij_win[window - 3 : window + 1] < 0.0)
+            and np.all(dij_win[window + 1 : window + 5] > 0.0)
+            and abs(well_r - well_l) == 1
+        )
+        jump_size = float(dij_win[window + 1] - dij_win[window])
+        transit_len = int(tau_exit - tau_enter)
+
+        return {
+            "is_clean": is_clean,
+            "jump_size": jump_size,
+            "transit_steps": transit_len,
+            "c0": c0,
+            "b0": b0,
+            "p0": p0,
+            "t0": t0,
+            "i_left": i_left,
+            "j_right": j_right,
+            "well_left": min(well_l, well_r),
+            "well_right": max(well_l, well_r),
+            "x_cross": x_mid,
+            "w_win": w_win,
+            "w_ord": w_ord,
+            "sp_ord": sp_ord,
+            "dij_win": dij_win,
+            "dij_norm": dij_win / d_adj,
+            "xi_norm": (xi_win - x_mid) / d_adj,
+            "xj_norm": (xj_win - x_mid) / d_adj,
+            "pair_step_mag": pair_step_mag,
+            "spec_step_mag": spec_step_mag,
+            "is_opp": bool(is_opp_spin[p0]),
+        }
+
+    opp_single_info: Optional[Dict[str, Any]] = None
+    same_single_info: Optional[Dict[str, Any]] = None
+
     if len(valid_ev) > 0:
         opp_ev = [idx for idx in valid_ev if is_opp_spin[sp[idx]]]
+        same_ev = [idx for idx in valid_ev if is_same_spin[sp[idx]]]
         chosen_indices = opp_ev if len(opp_ev) > 0 else list(valid_ev)
 
-        # Seleccionar hasta 600 eventos distribuidos uniformemente para construir el mapa de calor 2D
-        if len(chosen_indices) > 600:
-            sel_pos = np.linspace(0, len(chosen_indices) - 1, 600, dtype=int)
+        if len(chosen_indices) > 500:
+            sel_pos = np.linspace(0, len(chosen_indices) - 1, 500, dtype=int)
             sample_indices = [chosen_indices[ii] for ii in sel_pos]
         else:
             sample_indices = list(chosen_indices)
 
-        clean_events_meta = []
-        for idx_ev in sample_indices:
-            c0, tau0, b0, p0 = int(sc[idx_ev]), int(stau[idx_ev]), int(sb[idx_ev]), int(sp[idx_ev])
-            tau_exit = tau0 + 1
-            if len(ev_tau) > 0:
-                tau_enter = int(idx_hyst[c0, tau0, b0, p0])
-                s_after = int(s_committed[c0, tau_exit, b0, p0])
-            else:
-                tau_enter = tau0
-                s_after = int(np.sign(d_pairs[c0, tau_exit, b0, p0]))
-            if s_after == 0:
-                s_after = 1
-            s_before = -s_after
+        extracted_opp = [m for idx_ev in sample_indices if (m := _extract_discrete_event_meta(idx_ev)) is not None]
+        only_clean = [m for m in extracted_opp if m["is_clean"]]
+        selected_meta = only_clean if len(only_clean) >= min(15, len(extracted_opp)) else extracted_opp
 
-            # Encontrar el paso exacto t0 en [tau_enter, tau_exit - 1] donde ocurre el cruce por cero
-            seg_trans = d_pairs[c0, tau_enter : tau_exit + 1, b0, p0]
-            pre_candidates = np.where(np.sign(seg_trans[:-1]) == s_before)[0]
-            k0 = int(pre_candidates[-1]) if len(pre_candidates) > 0 else max(0, len(seg_trans) - 2)
-            t0 = tau_enter + k0
+        for m in selected_meta:
+            aligned_rel_dist.append(m["dij_win"])
+            aligned_rel_dist_norm.append(m["dij_norm"])
+            aligned_xi_norm.append(m["xi_norm"])
+            aligned_xj_norm.append(m["xj_norm"])
+            aligned_step_mag_pair.append(m["pair_step_mag"])
+            aligned_step_mag_spec.append(m["spec_step_mag"])
+            ordered_all_elec_events.append((m["w_ord"], m["sp_ord"], m["well_left"], m["well_right"], m["x_cross"]))
+            event_configs_for_actor.append((m["w_win"], m["i_left"], m["j_right"]))
 
-            if t0 - window - 1 < 0 or t0 + window + 2 >= T:
-                continue
-
-            a_el, b_el = int(pair_i[p0]), int(pair_j[p0])
-            # Etiquetado canónico en 1D: i_left es SIEMPRE el electrón a la izquierda antes del flip
-            if s_before == -1:
-                i_left, j_right = a_el, b_el
-            else:
-                i_left, j_right = b_el, a_el
-
-            t_raw = np.arange(t0 - window - 1, t0 + window + 3, dtype=np.float64)
-            w_raw_all = w[c0, t0 - window - 1 : t0 + window + 3, b0, :].astype(np.float64)
-            xi_raw = w_raw_all[:, i_left].copy()
-            xj_raw = w_raw_all[:, j_right].copy()
-            dij_raw = xi_raw - xj_raw  # En t0 es <= 0 y en t0+1 es >= 0
-
-            idx_t0_local = window + 1
-            d0_val = float(dij_raw[idx_t0_local])
-            d1_val = float(dij_raw[idx_t0_local + 1])
-            # Si por ruido numérico d0_val > 0, forzar orientación izquierda -> derecha
-            if d0_val > 0.0 and d1_val < 0.0:
-                xi_raw, xj_raw = xj_raw, xi_raw
-                i_left, j_right = j_right, i_left
-                dij_raw = -dij_raw
-                d0_val, d1_val = -d0_val, -d1_val
-
-            denom = abs(d0_val) + abs(d1_val)
-            alpha_zero = (abs(d0_val) / denom) if denom > 1e-12 else 0.5
-            t_flip_exact = float(t0) + float(np.clip(alpha_zero, 0.0, 1.0))
-
-            # Punto medio espacial exacto del cruce en t = t_flip_exact
-            x_cross = 0.5 * float(
-                np.interp(t_flip_exact, t_raw, xi_raw) + np.interp(t_flip_exact, t_raw, xj_raw)
-            )
-
-            # Evaluar en la malla relativa t - t_flip_exact in [-window, +window]
-            t_query = t_flip_exact + rel_steps_grid
-            w_aligned_all = np.stack([np.interp(t_query, t_raw, w_raw_all[:, k]) for k in range(N)], axis=-1)
-            xi_aligned = w_aligned_all[:, i_left].copy()
-            xj_aligned = w_aligned_all[:, j_right].copy()
-            dij_aligned = xi_aligned - xj_aligned
-            # Garantizar que en t - t_flip = 0 el cruce sea exactamente 0.0
-            dij_aligned[window] = 0.0
-
-            is_clean = bool(np.all(dij_aligned[window - 3 : window] <= 0.05 * d_adj) and np.all(dij_aligned[window + 1 : window + 4] >= -0.05 * d_adj))
-            clean_events_meta.append(
-                (
-                    is_clean,
-                    dij_aligned,
-                    dij_aligned / d_adj,
-                    (xi_aligned - x_cross) / d_adj,
-                    (xj_aligned - x_cross) / d_adj,
-                    idx_ev,
-                    t0,
-                    i_left,
-                    j_right,
-                    w_aligned_all,
-                    x_cross,
-                )
-            )
-
-        # Priorizar eventos limpios sin re-flips secundarios inmediatos
-        only_clean = [m for m in clean_events_meta if m[0]]
-        selected_meta = only_clean if len(only_clean) >= min(15, len(clean_events_meta)) else clean_events_meta
-
-        for _, dij_al, dij_n, xi_n, xj_n, _, _, i_l, j_r, w_al_all, x_cr in selected_meta:
-            aligned_rel_dist.append(dij_al)
-            aligned_rel_dist_norm.append(dij_n)
-            aligned_xi_norm.append(xi_n)
-            aligned_xj_norm.append(xj_n)
-            mu_ev, sig_ev = evaluate_transition_sampler_action(
-                w_al_all,
-                i_left=i_l,
-                j_right=j_r,
-                n_up=n_up,
-                omega=omega,
-                g_val=g_val,
-                tau=tau,
-                actor_amp=actor_amp,
-                sigma_scale=sigma_scale,
-                actor_params=actor_params,
-                is_neural=is_neural,
-            )
-            aligned_abs_mu.append(mu_ev)
-            aligned_sigma.append(sig_ev)
-
-            # Ordenar los N electrones por su pozo espacial previo al flip (en [-8, -3])
-            pre_mean = np.mean(w_al_all[max(0, window - 8) : max(1, window - 2), :], axis=0)
-            pre_order = np.argsort(pre_mean)
-            inv_order = np.argsort(pre_order)
-            w_ord = w_al_all[:, pre_order]
-            sp_ord = spins[pre_order]
-            well_l = int(inv_order[i_l])
-            well_r = int(inv_order[j_r])
-            ordered_all_elec_events.append((w_ord, sp_ord, well_l, well_r, float(x_cr)))
-
-        if len(selected_meta) > 0:
-            best_m = max(selected_meta, key=lambda m: float(m[1][window + 1] - m[1][window - 1]))
-            _, dij_al, dij_n, xi_n, xj_n, best_idx_ev, best_t0, i_left, j_right, _, _ = best_m
-            c0, b0, p0 = int(sc[best_idx_ev]), int(sb[best_idx_ev]), int(sp[best_idx_ev])
-            t_slice = slice(best_t0 - window, best_t0 + window + 1)
+        if selected_meta:
+            one_step_clean = [m for m in selected_meta if m["transit_steps"] == 1 and m["is_clean"]]
+            pool_best = one_step_clean if one_step_clean else selected_meta
+            best_m = max(pool_best, key=lambda m: m["jump_size"])
+            opp_single_info = {
+                "rel_steps": rel_steps_grid.copy(),
+                "well_left": int(best_m["well_left"]),
+                "well_right": int(best_m["well_right"]),
+                "x_cross": float(best_m["x_cross"]),
+                "example_x": best_m["w_ord"].copy(),
+                "example_spins": best_m["sp_ord"].copy(),
+                "walker_idx": int(best_m["b0"]),
+                "chain_idx": int(best_m["c0"]),
+                "t0": int(best_m["t0"]),
+                "transit_steps": int(best_m["transit_steps"]),
+                "spin_channel": "opp",
+            }
             example_event = {
-                "chain": c0,
-                "walker": b0,
-                "t_flip": int(best_t0 + 1),
-                "elec_i": int(i_left),
-                "elec_j": int(j_right),
-                "spin_i": int(spins[i_left]),
-                "spin_j": int(spins[j_right]),
-                "is_opp_spin": bool(is_opp_spin[p0]),
-                "rel_steps": np.arange(-window, window + 1, dtype=np.int32),
-                "x_i": w[c0, t_slice, b0, i_left].copy(),
-                "x_j": w[c0, t_slice, b0, j_right].copy(),
-                "x_all": w[c0, t_slice, b0, :].copy(),
-                "d_ij": dij_al.copy(),
-                "d_ij_norm": dij_n.copy(),
-                "x_i_norm": xi_n.copy(),
-                "x_j_norm": xj_n.copy(),
+                "chain": int(best_m["c0"]),
+                "walker": int(best_m["b0"]),
+                "t_flip": int(best_m["t0"]),
+                "elec_i": int(best_m["i_left"]),
+                "elec_j": int(best_m["j_right"]),
+                "spin_i": int(spins[best_m["i_left"]]),
+                "spin_j": int(spins[best_m["j_right"]]),
+                "is_opp_spin": bool(best_m["is_opp"]),
+                "rel_steps": rel_steps_grid.copy(),
+                "x_i": best_m["w_win"][:, best_m["i_left"]].copy(),
+                "x_j": best_m["w_win"][:, best_m["j_right"]].copy(),
+                "x_all": best_m["w_win"].copy(),
+                "d_ij": best_m["dij_win"].copy(),
+                "d_ij_norm": best_m["dij_norm"].copy(),
+                "x_i_norm": best_m["xi_norm"].copy(),
+                "x_j_norm": best_m["xj_norm"].copy(),
             }
 
-    # Construir `before_after_info` con las posiciones y espines de los N electrones antes, en el cruce y después
+        # Extraer también el mejor evento individual de MISMO ESPÍN (nodo de Pauli Psi = 0)
+        same_candidates = list(same_ev)
+        if not same_candidates and np.any(is_same_spin):
+            rc_c_s, rc_tau_s, rc_b_s, rc_p_s = np.where(raw_flip_mask)
+            valid_raw_same = [
+                k for k in range(len(rc_tau_s))
+                if is_same_spin[rc_p_s[k]] and (rc_tau_s[k] >= window + 2) and (rc_tau_s[k] + 2 + window < T)
+            ]
+            if valid_raw_same:
+                # Extraer directamente de raw_flip_mask para mismo espín si no hubo con histéresis completa
+                sc_orig, stau_orig, sb_orig, sp_orig = sc, stau, sb, sp
+                sc, stau, sb, sp = rc_c_s, rc_tau_s, rc_b_s, rc_p_s
+                same_sample_r = valid_raw_same[:250]
+                extracted_same_r = [m for idx_ev in same_sample_r if (m := _extract_discrete_event_meta(idx_ev)) is not None]
+                sc, stau, sb, sp = sc_orig, stau_orig, sb_orig, sp_orig
+                if extracted_same_r:
+                    best_same = max(extracted_same_r, key=lambda m: m["jump_size"])
+                    same_single_info = {
+                        "rel_steps": rel_steps_grid.copy(),
+                        "well_left": int(best_same["well_left"]),
+                        "well_right": int(best_same["well_right"]),
+                        "x_cross": float(best_same["x_cross"]),
+                        "example_x": best_same["w_ord"].copy(),
+                        "example_spins": best_same["sp_ord"].copy(),
+                        "walker_idx": int(best_same["b0"]),
+                        "chain_idx": int(best_same["c0"]),
+                        "t0": int(best_same["t0"]),
+                        "transit_steps": int(best_same["transit_steps"]),
+                        "spin_channel": "same",
+                    }
+        if same_single_info is None and len(same_ev) > 0:
+            same_sample = same_ev[:250] if len(same_ev) > 250 else same_ev
+            extracted_same = [m for idx_ev in same_sample if (m := _extract_discrete_event_meta(idx_ev)) is not None]
+            if extracted_same:
+                clean_same = [m for m in extracted_same if m["is_clean"]]
+                pool_same = clean_same if clean_same else extracted_same
+                best_same = max(pool_same, key=lambda m: m["jump_size"])
+                same_single_info = {
+                    "rel_steps": rel_steps_grid.copy(),
+                    "well_left": int(best_same["well_left"]),
+                    "well_right": int(best_same["well_right"]),
+                    "x_cross": float(best_same["x_cross"]),
+                    "example_x": best_same["w_ord"].copy(),
+                    "example_spins": best_same["sp_ord"].copy(),
+                    "walker_idx": int(best_same["b0"]),
+                    "chain_idx": int(best_same["c0"]),
+                    "t0": int(best_same["t0"]),
+                    "transit_steps": int(best_same["transit_steps"]),
+                    "spin_channel": "same",
+                }
+
+    # Evaluar legítimamente el Actor real sobre un subconjunto representativo de ventanas
+    actor_eval_subset = event_configs_for_actor[:60]
+    if actor_eval_subset:
+        w_events_arr = np.stack([x[0] for x in actor_eval_subset], axis=0)
+        i_left_arr = np.array([x[1] for x in actor_eval_subset], dtype=np.int32)
+        j_right_arr = np.array([x[2] for x in actor_eval_subset], dtype=np.int32)
+        aligned_abs_mu_actor_arr, aligned_abs_mu_arr, aligned_sigma_arr = evaluate_legitimate_actor_on_events(
+            w_events_arr,
+            i_left_arr=i_left_arr,
+            j_right_arr=j_right_arr,
+            n_up=n_up,
+            omega=omega,
+            g_val=g_val,
+            tau=tau,
+            actor_amp=actor_amp,
+            sigma_scale=sigma_scale,
+            actor_params=actor_params,
+            is_neural=is_neural,
+            npz_path=npz_path,
+        )
+    else:
+        aligned_abs_mu_actor_arr = np.empty((0, 2 * window + 1))
+        aligned_abs_mu_arr = np.empty((0, 2 * window + 1))
+        aligned_sigma_arr = np.empty((0, 2 * window + 1))
+
+    # Construir `before_after_info` con las posiciones y espines de los N electrones en pasos discretos
     before_after_info: Optional[Dict[str, Any]] = None
     if ordered_all_elec_events:
-        # Filtrar el par de pozos adyacentes más frecuente para el promedio de ensamble
         pair_counts: Dict[Tuple[int, int], int] = {}
         for _, _, wl, wr, _ in ordered_all_elec_events:
             key_w = (min(wl, wr), max(wl, wr))
@@ -855,42 +941,63 @@ def compute_flip_statistics(
 
         stack_x = np.stack([ev[0] for ev in matching_evs], axis=0)  # (M, 2*W+1, N)
         ens_x = np.median(stack_x, axis=0)
-        ens_std = np.std(stack_x, axis=0) + 0.08 * d_adj
+        ens_std = np.std(stack_x, axis=0)
         ex_w_ord, ex_sp_ord, _, _, ex_xcr = matching_evs[0]
+        if opp_single_info is None:
+            opp_single_info = {
+                "rel_steps": rel_steps_grid.copy(),
+                "well_left": int(dom_wl),
+                "well_right": int(dom_wr),
+                "x_cross": float(ex_xcr),
+                "example_x": ex_w_ord.copy(),
+                "example_spins": ex_sp_ord.copy(),
+                "walker_idx": 0,
+                "chain_idx": 0,
+                "t0": 0,
+                "transit_steps": 1,
+                "spin_channel": "opp",
+            }
         before_after_info = {
-            "rel_steps": np.arange(-window, window + 1, dtype=int),
-            "well_left": int(dom_wl),
-            "well_right": int(dom_wr),
-            "x_cross": float(ex_xcr),
-            "example_x": ex_w_ord,
+            "rel_steps": rel_steps_grid.copy(),
+            "well_left": int(opp_single_info["well_left"]),
+            "well_right": int(opp_single_info["well_right"]),
+            "x_cross": float(opp_single_info["x_cross"]),
+            "example_x": opp_single_info["example_x"],
             "example_std": ens_std,
-            "example_spins": ex_sp_ord,
+            "example_spins": opp_single_info["example_spins"],
+            "walker_idx": int(opp_single_info["walker_idx"]),
+            "chain_idx": int(opp_single_info["chain_idx"]),
+            "t0": int(opp_single_info["t0"]),
+            "transit_steps": int(opp_single_info["transit_steps"]),
             "ensemble_x": ens_x,
             "ensemble_std": ens_std,
             "ensemble_spins": ex_sp_ord,
-        }
-    else:
-        # Fallback determinista sobre pozos de equilibrio cuando no hubo flips registrados
-        well_centers = (np.arange(N, dtype=np.float64) - 0.5 * (N - 1)) * d_adj
-        ens_x = np.broadcast_to(well_centers[None, :], (2 * window + 1, N)).copy()
-        ens_std = np.full((2 * window + 1, N), 0.16 * d_adj, dtype=np.float64)
-        before_after_info = {
-            "rel_steps": np.arange(-window, window + 1, dtype=int),
-            "well_left": max(0, n_up - 1),
-            "well_right": min(N - 1, n_up),
-            "x_cross": 0.0,
-            "example_x": ens_x,
-            "example_std": ens_std,
-            "example_spins": spins.copy(),
-            "ensemble_x": ens_x,
-            "ensemble_std": ens_std,
-            "ensemble_spins": spins.copy(),
+            "opp_single": opp_single_info,
+            "same_single": same_single_info,
+            # Llaves planas para graficación directa y exportación CSV
+            "opp_single_x": opp_single_info["example_x"],
+            "opp_single_spins": opp_single_info["example_spins"],
+            "opp_single_well_left": int(opp_single_info["well_left"]),
+            "opp_single_well_right": int(opp_single_info["well_right"]),
+            "opp_single_x_cross": float(opp_single_info["x_cross"]),
+            "opp_single_t0": int(opp_single_info["t0"]),
+            "opp_single_walker": int(opp_single_info["walker_idx"]),
+            "opp_single_chain": int(opp_single_info["chain_idx"]),
+            "opp_single_transit_steps": int(opp_single_info["transit_steps"]),
+            "same_single_x": same_single_info["example_x"] if same_single_info is not None else None,
+            "same_single_spins": same_single_info["example_spins"] if same_single_info is not None else None,
+            "same_single_well_left": int(same_single_info["well_left"]) if same_single_info is not None else 0,
+            "same_single_well_right": int(same_single_info["well_right"]) if same_single_info is not None else 1,
+            "same_single_x_cross": float(same_single_info["x_cross"]) if same_single_info is not None else 0.0,
+            "same_single_t0": int(same_single_info["t0"]) if same_single_info is not None else 0,
+            "same_single_walker": int(same_single_info["walker_idx"]) if same_single_info is not None else 0,
+            "same_single_chain": int(same_single_info["chain_idx"]) if same_single_info is not None else 0,
+            "same_single_transit_steps": int(same_single_info["transit_steps"]) if same_single_info is not None else 1,
         }
 
     # Seleccionar el caminante SANO representativo con más flips reales para el Panel (a)
     flips_per_cb = np.sum(source_mask, axis=(1, 3)).astype(np.float64)  # (C, B)
     walker_mean_adj = np.nanmean(adj_diffs, axis=(1, 3))  # (C, B)
-    # Exigir adicionalmente que el caminante a graficar en Panel (a) tenga max_abs acotado a la escala física esperada
     expected_wigner_extent = 0.5 * float(N + 1) * d_adj + 6.0
     well_formed_mask = healthy_mask & (np.abs(walker_mean_adj - d_adj) <= 0.35 * d_adj) & (walker_max_abs <= expected_wigner_extent)
     if not np.any(well_formed_mask):
@@ -916,8 +1023,8 @@ def compute_flip_statistics(
     aligned_norm_arr = np.asarray(aligned_rel_dist_norm, dtype=np.float64) if aligned_rel_dist_norm else np.empty((0, 2 * window + 1))
     aligned_xi_norm_arr = np.asarray(aligned_xi_norm, dtype=np.float64) if aligned_xi_norm else np.empty((0, 2 * window + 1))
     aligned_xj_norm_arr = np.asarray(aligned_xj_norm, dtype=np.float64) if aligned_xj_norm else np.empty((0, 2 * window + 1))
-    aligned_abs_mu_arr = np.asarray(aligned_abs_mu, dtype=np.float64) if aligned_abs_mu else np.empty((0, 2 * window + 1))
-    aligned_sigma_arr = np.asarray(aligned_sigma, dtype=np.float64) if aligned_sigma else np.empty((0, 2 * window + 1))
+    aligned_step_pair_arr = np.asarray(aligned_step_mag_pair, dtype=np.float64) if aligned_step_mag_pair else np.empty((0, 2 * window + 1))
+    aligned_step_spec_arr = np.asarray(aligned_step_mag_spec, dtype=np.float64) if aligned_step_mag_spec else np.empty((0, 2 * window + 1))
 
     return {
         "d_adj": d_adj,
@@ -964,8 +1071,11 @@ def compute_flip_statistics(
         "aligned_rel_dist_norm": aligned_norm_arr,
         "aligned_xi_norm": aligned_xi_norm_arr,
         "aligned_xj_norm": aligned_xj_norm_arr,
+        "aligned_abs_mu_actor": aligned_abs_mu_actor_arr,
         "aligned_abs_mu": aligned_abs_mu_arr,
         "aligned_sigma": aligned_sigma_arr,
+        "aligned_step_mag_pair": aligned_step_pair_arr,
+        "aligned_step_mag_spec": aligned_step_spec_arr,
         "marginal_x_centers": x_centers_marg,
         "marginal_up_hist": up_hist_marg,
         "marginal_dn_hist": dn_hist_marg,
