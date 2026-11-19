@@ -1806,4 +1806,28 @@ Para que el muestreador basado en RL obtenga una ventaja irreproducible por cual
 \item \textbf{Benchmarks multi-escala:} validar en sistemas Coulombianos con cúspides nucleares (escala core vs valencia) y en $N=8\text{–}10, g=5\text{–}8$, donde RWMH isotrópico colapsa exponencialmente.
 \end{enumerate}
 
+\subsection{Paradoja $D_{\mathrm{KL}}^{\mathrm{spin}}$ vs Cruces Nodales (Sesgo + Varianza) y Trazas Comparativas}
+
+En las corridas largas de Ayler ($3\times 40{,}000$ pasos), \texttt{B1\_RWMH\_matched} ($\sigma=1.22$) logra una divergencia KL de espín $4\times\text{--}5.5\times$ menor que \texttt{B2\_RL\_MALA\_eq\_unclip} ($\sigma=2.71\text{--}3.30$) pese a realizar $3\times\text{--}6\times$ menos cruces nodales. Esta aparente paradoja obedece exactamente a la descomposición sesgo--varianza de la divergencia KL de un histograma de $K_{\mathrm{bins}} = 400$ celdas con $N_{\mathrm{eff}}$ muestras efectivas:
+\begin{equation}
+\mathbb{E}\!\left[D_{\mathrm{KL}}(\hat{\rho}_T \,\|\, \rho_{\mathrm{exact}})\right] \;\approx\; \underbrace{D_{\mathrm{KL}}(\bar{\rho}_T \,\|\, \rho_{\mathrm{exact}})}_{\text{Sesgo ergódico (flips de espín)}} \;+\; \underbrace{\frac{K_{\mathrm{bins}} - 1}{2\,N_{\mathrm{eff}}}}_{\text{Varianza de muestra finita ($\propto 1/\mathrm{Acc}$)}}.
+\end{equation}
+Durante $40{,}000$ pasos, \texttt{RWMH($\sigma=1.22$)} acumula ya $\sim 104$ flips/caminante ($N=4$) y $\sim 866$ flips/caminante ($N=6$), eliminando por completo el sesgo de inicialización ($<10^{-6}$) igual que \texttt{RL-MALA($\sigma=3.30$)}. A partir de ese punto, $D_{\mathrm{KL}}^{\mathrm{spin}}$ mide únicamente la varianza intra-pozo ($N_{\mathrm{eff}} \propto \mathrm{Acc}\cdot T$): la caída de aceptación de $45.2\% \to 7.9\%$ ($5.7\times$ en $N=4$) y de $31.5\% \to 6.0\%$ ($5.3\times$ en $N=6$) explica cuantitativamente el deterioro de $D_{\mathrm{KL}}^{\mathrm{spin}}$ en $4.7\times$ ($N=4$) y $5.5\times$ ($N=6$). En cadenas cortas ($2\times 4{,}000$ pasos), en cambio, \texttt{RWMH(1.22)} aún está dominado por sesgo ($\sim 10$ flips/caminante) y el orden se invierte.
+
+Para visualizar directamente este compromiso entre mezcla inter-pozo (flips) y congelamiento escalonado intra-pozo (baja aceptación), se implementó \texttt{scripts/plot\_ablation\_traces\_and\_marginals.py} (integrado en \texttt{run\_actor\_ablation\_benchmarks.sh}), cuyas salidas sobre los 8 modelos de $N=4, g=2.0$ se muestran en las Figuras~\ref{fig:ablation_traces_n4} y~\ref{fig:ablation_marginals_n4}.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.98\textwidth]{figures/actor_ablation_N4_g2.0/fig_ablation_traces_and_marginals_N4_w0.1_g2.png}
+\caption{\textbf{Trazas de un caminante individual alineadas con sus densidades marginales $\rho_\uparrow(x), \rho_\downarrow(x)$ (B1 + B2, $N=4, \omega=0.1, g=2.0$, corrida local $2\times 4{,}000$ pasos):} \texttt{MALA base} queda atrapado por completo en su sector inicial; \texttt{RWMH($\sigma=1.22$)} difunde suavemente dentro de los pozos con pocos saltos; \texttt{RL-MALA eq+unclip} ($\sigma=2.71\text{--}3.30$) logra numerosos cruces nodales pero exhibe mesetas horizontales en escalera por baja aceptación ($9\%\text{--}14\%$).}
+\label{fig:ablation_traces_n4}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.98\textwidth]{figures/actor_ablation_N4_g2.0/fig_ablation_marginals_spin_symmetry_N4_w0.1_g2.png}
+\caption{\textbf{Simetría de espín $\rho_\uparrow(x)$ vs $\rho_\downarrow(x)$ y error residual respecto a CASSCF exacto ($N=4, \omega=0.1, g=2.0$):} El efecto escalera de \texttt{RL-MALA eq+unclip} ($9\%\text{--}14\%$ de aceptación) se traduce directamente en picos dentados de alta varianza estadística sobre las crestas de densidad, mecanismo que domina $D_{\mathrm{KL}}^{\mathrm{spin}}$ en las corridas largas de Ayler ($3\times 40{,}000$ pasos).}
+\label{fig:ablation_marginals_n4}
+\end{figure}
+
 \end{document}

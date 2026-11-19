@@ -44,8 +44,15 @@ from rl_vmc.config import Experiment1DConfig, PostProcessConfig
 from rl_vmc.core.io_bundle import load_run_bundle_h5
 from rl_vmc.postprocess.diagnostics import summarize_bundle_diagnostics
 from scripts.analyze_flips_vs_g import compute_flip_statistics, load_bundle_walkers_and_meta
-from scripts.plot_flips_system_detailed import _compute_exact_casscf_density_np
-from scripts.probe_actor_spatial_response import run_spatial_actor_probe
+from scripts.plot_flips_system_detailed import (
+    _compute_exact_casscf_density_np,
+    _find_casscf_npz_for_system,
+)
+from scripts.probe_actor_spatial_response import (
+    find_wigner_well_centers,
+    plot_spatial_probe_figure,
+    run_spatial_actor_probe,
+)
 
 
 # Orden canónico y estilos de presentación para B1 + B2
@@ -406,8 +413,8 @@ def plot_spatial_overlay(
 ) -> List[str]:
     if not probes:
         return []
-    plt.rcParams.update({"font.size": 9.2, "axes.spines.top": False, "axes.spines.right": False})
-    fig, axes = plt.subplots(3, 1, figsize=(13.2, 11.2), dpi=220, gridspec_kw={"height_ratios": [1.15, 1.15, 0.95]})
+    plt.rcParams.update({"font.size": 9.0, "axes.spines.top": False, "axes.spines.right": False})
+    fig, axes = plt.subplots(3, 1, figsize=(14.6, 14.8), dpi=240, gridspec_kw={"height_ratios": [1.15, 1.15, 0.95]})
     ax1, ax2, ax3 = axes
 
     first_pr = next(iter(probes.values()))["probe"]
@@ -418,14 +425,14 @@ def plot_spatial_overlay(
 
     for ax in (ax1, ax2):
         for idx_s, xs in enumerate(same_fx):
-            ax.axvline(xs, color="#d62728", ls="--", lw=1.2, alpha=0.55, label=("Electrón fijo mismo espín (nodo Pauli)" if (ax is ax1 and idx_s == 0) else None))
+            ax.axvline(xs, color="#d62728", ls="--", lw=1.2, alpha=0.55, label=("Fijo mismo espín (nodo Pauli)" if (ax is ax1 and idx_s == 0) else None))
         for idx_o, xo in enumerate(opp_fx):
-            ax.axvline(xo, color="#1f77b4", ls=":", lw=1.1, alpha=0.45, label=("Electrón fijo espín opuesto" if (ax is ax1 and idx_o == 0) else None))
+            ax.axvline(xo, color="#1f77b4", ls=":", lw=1.1, alpha=0.45, label=("Fijo espín opuesto" if (ax is ax1 and idx_o == 0) else None))
         ax.axvspan(empty_x - 0.5, empty_x + 0.5, color="#2ca02c", alpha=0.10, label=("Pozo Wigner vacío" if ax is ax1 else None))
 
     ax1.axhline(0.0, color="#222222", lw=0.9, alpha=0.6)
-    ax2.axhline(first_pr["summary"]["base_sigma_mala"], color="#636363", ls=":", lw=1.4, label=f"MALA base $\\sigma={first_pr['summary']['base_sigma_mala']:.3f}$ Bohr")
-    ax2.axhline(first_pr["summary"]["base_sigma_mala"] * math.e, color="#d95f02", ls="-.", lw=1.3, label=f"Techo legado / MALA-match $\\sigma={first_pr['summary']['base_sigma_mala']*math.e:.3f}$ Bohr")
+    ax2.axhline(first_pr["summary"]["base_sigma_mala"], color="#636363", ls=":", lw=1.4, label=f"MALA base ($\\sigma={first_pr['summary']['base_sigma_mala']:.3f}$ Bohr)")
+    ax2.axhline(first_pr["summary"]["base_sigma_mala"] * math.e, color="#d95f02", ls="-.", lw=1.3, label=f"Techo legado ($\\sigma={first_pr['summary']['base_sigma_mala']*math.e:.3f}$ Bohr)")
 
     names_bar, par_mu_vals, sig_std_vals, fq_sens_vals, cols_bar = [], [], [], [], []
     for dname, item in probes.items():
@@ -436,7 +443,7 @@ def plot_spatial_overlay(
         ls = "--" if not sm.get("parity_equivariant", False) else "-"
         lw = 2.4 if sm.get("unclip_sigma_action", False) else 1.8
 
-        ax1.plot(pr["x_grid"], pr["mu_actor"], color=col, ls=ls, lw=lw, label=f"{lbl} (asimet. par={sm['mean_parity_asymmetry_mu']:.3f})")
+        ax1.plot(pr["x_grid"], pr["mu_actor"], color=col, ls=ls, lw=lw, label=f"{lbl} (par={sm['mean_parity_asymmetry_mu']:.3f})")
         ax2.plot(pr["x_grid"], pr["sigma_applied"], color=col, ls=ls, lw=lw, label=f"{lbl} ($\\sigma \\in [{sm['sigma_applied_min']:.2f}, {sm['sigma_applied_max']:.2f}]$, clip={sm['frac_sigma_clipped_pct']:.0f}%)")
 
         names_bar.append(lbl)
@@ -447,16 +454,34 @@ def plot_spatial_overlay(
 
     ax1.set_xlim(xg[0], xg[-1])
     ax1.set_ylabel(r"$\mu_{\mathrm{actor}}(x)$ [Bohr]", weight="bold")
-    ax1.set_title("(a) Deriva Aprendida $\\mu_{\\mathrm{actor}}(x)$: Eliminación del Sesgo de Paridad y Escalado Físico de Amplitud", weight="bold")
+    ax1.set_title("(a) Deriva Aprendida $\\mu_{\\mathrm{actor}}(x)$: Eliminación del Sesgo de Paridad y Escalado Físico de Amplitud", weight="bold", pad=46)
     ax1.grid(True, alpha=0.25, ls="--")
-    ax1.legend(loc="upper right", fontsize=7.6, ncol=2, framealpha=0.92)
+    ax1.legend(
+        loc="lower center",
+        bbox_to_anchor=(0.5, 1.015),
+        fontsize=6.9,
+        ncol=4,
+        framealpha=0.72,
+        borderpad=0.3,
+        columnspacing=0.85,
+        handlelength=1.8,
+    )
 
     ax2.set_xlim(xg[0], xg[-1])
     ax2.set_xlabel(r"Posición del electrón de prueba $x_{\mathrm{probe}}$ [Bohr]", weight="bold")
     ax2.set_ylabel(r"$\sigma_{\mathrm{RL}}(x)$ [Bohr]", weight="bold")
-    ax2.set_title("(b) Modulación Espacial del Ancho $\\sigma_{\\mathrm{RL}}(x)$: Desbloqueo del Techo Legado (`clip=1.0`)", weight="bold")
+    ax2.set_title("(b) Modulación Espacial del Ancho $\\sigma_{\\mathrm{RL}}(x)$: Desbloqueo del Techo Legado (clip=1.0)", weight="bold", pad=46)
     ax2.grid(True, alpha=0.25, ls="--")
-    ax2.legend(loc="upper right", fontsize=7.6, ncol=2, framealpha=0.92)
+    ax2.legend(
+        loc="lower center",
+        bbox_to_anchor=(0.5, 1.015),
+        fontsize=6.9,
+        ncol=3,
+        framealpha=0.72,
+        borderpad=0.3,
+        columnspacing=0.85,
+        handlelength=1.8,
+    )
 
     # Panel (c): Barras agrupadas de diagnósticos de calidad estructural del actor
     idx_b = np.arange(len(names_bar))
@@ -472,17 +497,26 @@ def plot_spatial_overlay(
     ax3.set_xticks(idx_b)
     ax3.set_xticklabels(names_bar, rotation=10, ha="right", fontsize=8.2)
     ax3.set_ylabel("Magnitud Diagnóstica", weight="bold")
-    ax3.set_title("(c) Diagnósticos Estructurales: Paridad Exacta, Modulación de $\\sigma(x)$ y Sensibilidad a la Fuerza Cuántica $F_Q$", weight="bold")
+    ax3.set_ylim(0, max(max(par_mu_vals + sig_std_vals + fq_sens_vals), 0.1) * 1.18)
+    ax3.set_title("(c) Diagnósticos Estructurales: Paridad Exacta, Modulación de $\\sigma(x)$ y Sensibilidad a la Fuerza Cuántica $F_Q$", weight="bold", pad=28)
     ax3.grid(True, axis="y", alpha=0.25, ls="--")
-    ax3.legend(loc="upper right", fontsize=8.0, framealpha=0.92)
+    ax3.legend(
+        loc="lower center",
+        bbox_to_anchor=(0.5, 1.015),
+        fontsize=7.4,
+        ncol=3,
+        framealpha=0.72,
+        borderpad=0.3,
+        columnspacing=1.0,
+    )
 
     fig.suptitle(
         f"Benchmark 2 — Comparativa Directa de Respuesta Espacial del Actor ($N={sys_meta['N']}, \\omega={sys_meta['omega']:g}, g={sys_meta['g']:g}$)",
         fontsize=12.4,
         weight="bold",
-        y=0.99,
+        y=0.988,
     )
-    fig.tight_layout(rect=[0.0, 0.0, 1.0, 0.965])
+    fig.tight_layout(rect=[0.0, 0.0, 1.0, 0.958], h_pad=3.2)
 
     saved = []
     os.makedirs(out_dir, exist_ok=True)
@@ -496,13 +530,239 @@ def plot_spatial_overlay(
     return saved
 
 
+def _extract_fixed_positions_from_dmin(x_grid: np.ndarray, d_min: np.ndarray) -> np.ndarray:
+    """Reconstruye con precisión de máquina las posiciones fijas desde los mínimos locales de d_min(x)."""
+    if len(x_grid) < 3 or np.all(np.isnan(d_min)):
+        return np.array([], dtype=np.float64)
+    dx = float(np.median(np.diff(x_grid)))
+    found: List[float] = []
+    for k in range(1, len(x_grid) - 1):
+        if np.isfinite(d_min[k]) and d_min[k] <= d_min[k - 1] and d_min[k] <= d_min[k + 1] and d_min[k] < 1.5 * dx:
+            # En el lado izquierdo de la V (k-1), x_f = x[k-1] + d_min[k-1]
+            # En el lado derecho de la V (k+1), x_f = x[k+1] - d_min[k+1]
+            xf = 0.5 * ((x_grid[k - 1] + d_min[k - 1]) + (x_grid[k + 1] - d_min[k + 1]))
+            if not found or abs(xf - found[-1]) > 0.25:
+                found.append(float(xf))
+    return np.asarray(sorted(found), dtype=np.float64)
+
+
+def replot_spatial_from_csv_dir(
+    csv_dir: str,
+    out_dir: Optional[str] = None,
+    casscf_npz: Optional[str] = None,
+    probe_spin: str = "down",
+    replot_individual_probes: bool = True,
+) -> Tuple[List[str], List[str]]:
+    """
+    Re-grafica `fig_ablation_b2_spatial_overlay_*.{png,pdf}` (y opcionalmente cada
+    `fig_actor_spatial_probe_*.{png,pdf}`) directamente desde `ablation_summary_*.csv`
+    y `spatial_probes/data_fig_actor_spatial_probe_*.csv` sin necesitar los `.h5`.
+    """
+    import glob
+    import re
+
+    summary_csvs = sorted(glob.glob(os.path.join(csv_dir, "ablation_summary_*.csv")))
+    if not summary_csvs:
+        raise FileNotFoundError(f"No se encontró ablation_summary_*.csv en {csv_dir}")
+    summary_csv = summary_csvs[0]
+    m_tag = re.match(r"ablation_summary_N(\d+)_w([0-9.]+)_g([0-9.]+)\.csv$", os.path.basename(summary_csv))
+    if not m_tag:
+        raise ValueError(f"No se pudo parsear N/omega/g de {summary_csv}")
+    N = int(m_tag.group(1))
+    omega = float(m_tag.group(2))
+    g_val = float(m_tag.group(3))
+    n_up = N // 2
+    n_dn = N - n_up
+    sys_tag = f"N{N}_w{omega:g}_g{g_val:g}"
+
+    if casscf_npz is None:
+        casscf_npz = _find_casscf_npz_for_system([PROJECT_ROOT], N, omega, g_val)
+    well_centers_ref, casscf_ref = find_wigner_well_centers({}, N, omega, g_val, npz_path=casscf_npz)
+
+    with open(summary_csv, "r", encoding="utf-8") as fh:
+        summary_rows = list(csv.DictReader(fh))
+    row_by_key = {r["model_key"]: r for r in summary_rows}
+
+    sp_dir = os.path.join(csv_dir, "spatial_probes")
+    probes: Dict[str, Dict[str, Any]] = {}
+    target_out = out_dir or csv_dir
+    probe_out_dir = os.path.join(target_out, "spatial_probes") if replot_individual_probes else target_out
+
+    plot_args = argparse.Namespace(
+        figure_format="both",
+        dpi=300,
+        font_scale=1.0,
+        no_titles=False,
+        no_legends=False,
+    )
+
+    saved_probes: List[str] = []
+    for dname, disp, col, _grp in MODEL_ORDER:
+        if dname not in row_by_key:
+            continue
+        r = row_by_key[dname]
+        if r.get("proposal_type") not in ("neural_deepset", "neural_flat"):
+            continue
+        data_csv = os.path.join(sp_dir, f"data_fig_actor_spatial_probe_{dname}_spin_{probe_spin}.csv")
+        if not os.path.isfile(data_csv):
+            continue
+
+        cols_data: Dict[str, List[float]] = {}
+        with open(data_csv, "r", encoding="utf-8") as fh:
+            reader = csv.DictReader(fh)
+            for c_name in (reader.fieldnames or []):
+                cols_data[c_name] = []
+            for rec in reader:
+                for c_name, val in rec.items():
+                    cols_data[c_name].append(float(val))
+        arr = {k: np.asarray(v, dtype=np.float64) for k, v in cols_data.items()}
+
+        xg = arr["x_probe"]
+        same_fx = _extract_fixed_positions_from_dmin(xg, arr["d_min_same"])
+        opp_fx = _extract_fixed_positions_from_dmin(xg, arr["d_min_opp"])
+        all_fx = np.sort(np.concatenate([same_fx, opp_fx]))
+
+        # Pozo vacío: el único centro de `well_centers_ref` (o el reflejo de `all_fx`) no presente en `all_fx`
+        if len(well_centers_ref) == N and len(all_fx) == N - 1:
+            dists = [float(np.min(np.abs(wc - all_fx))) for wc in well_centers_ref]
+            empty_idx = int(np.argmax(dists))
+            empty_x = float(well_centers_ref[empty_idx])
+            well_centers = np.sort(np.append(all_fx, empty_x))
+        else:
+            # Simetría del potencial armónico 1D
+            mirrors = -all_fx
+            dists = [float(np.min(np.abs(m - all_fx))) for m in mirrors]
+            empty_x = float(mirrors[int(np.argmax(dists))]) if len(mirrors) > 0 else 0.0
+            well_centers = np.sort(np.append(all_fx, empty_x))
+
+        tau = float(r["tau"])
+        amp = float(r["actor_amplitude"])
+        sig_sc = float(r["sigma_action_scale"])
+        clip_max = float(r["scale_clip_max"])
+        parity_eq = str(r["parity_equivariant"]).strip().lower() == "true"
+        unclip_sig = str(r["unclip_sigma_action"]).strip().lower() == "true"
+        eff_sig_hi = clip_max if unclip_sig else min(clip_max, 1.0)
+        eff_sig_lo = -5.0 if unclip_sig else -1.0
+        base_sigma = math.sqrt(2.0 * tau)
+
+        a_mu_clip = arr["a_mu_clip"]
+        a_sig_raw = arr["a_sig_raw"]
+        mu_actor = arr["mu_actor"]
+        sigma_applied = arr["sigma_applied"]
+
+        if "mu_actor_parity_expected" in arr:
+            mu_par_exp = arr["mu_actor_parity_expected"]
+        elif parity_eq:
+            mu_par_exp = mu_actor.copy()
+        else:
+            mu_par_exp = -mu_actor[::-1]
+
+        sm = {
+            "h5_path": os.path.join(dname, "run_bundle.h5"),
+            "N": N,
+            "n_up": n_up,
+            "n_dn": n_dn,
+            "omega": omega,
+            "g": g_val,
+            "tau": tau,
+            "amp": amp,
+            "sigma_action_scale": sig_sc,
+            "scale_clip_max": clip_max,
+            "parity_equivariant": parity_eq,
+            "unclip_sigma_action": unclip_sig,
+            "eff_sig_hi": eff_sig_hi,
+            "eff_sig_lo": eff_sig_lo,
+            "base_sigma_mala": base_sigma,
+            "sigma_ceiling": base_sigma * math.exp(eff_sig_hi),
+            "probe_spin": probe_spin,
+            "empty_well_x": empty_x,
+            "a_mu_min": float(np.min(a_mu_clip)),
+            "a_mu_max": float(np.max(a_mu_clip)),
+            "a_mu_mean": float(np.mean(a_mu_clip)),
+            "a_mu_std": float(np.std(a_mu_clip)),
+            "mu_actor_range_bohr": float(np.max(mu_actor) - np.min(mu_actor)),
+            "frac_mu_saturated_pct": float(np.mean(np.abs(a_mu_clip) >= 0.99) * 100.0),
+            "a_sig_raw_min": float(np.min(a_sig_raw)),
+            "a_sig_raw_max": float(np.max(a_sig_raw)),
+            "a_sig_raw_std": float(np.std(a_sig_raw)),
+            "sigma_applied_min": float(np.min(sigma_applied)),
+            "sigma_applied_max": float(np.max(sigma_applied)),
+            "sigma_applied_std": float(np.std(sigma_applied)),
+            "frac_sigma_clipped_pct": float(r["frac_sigma_clipped_pct"]),
+            "max_fq_sensitivity_mu": float(r["max_fq_sensitivity_mu"]),
+            "max_fq_sensitivity_sig": float(r["max_fq_sensitivity_sig"]),
+            "mean_parity_asymmetry_mu": float(r["mean_parity_asymmetry_mu"]),
+            "mean_parity_asymmetry_sig": float(r["mean_parity_asymmetry_sig"]),
+        }
+
+        pr = {
+            "summary": sm,
+            "x_grid": xg,
+            "well_centers": well_centers,
+            "same_fixed_x": same_fx,
+            "opp_fixed_x": opp_fx,
+            "empty_well_x": empty_x,
+            "cond_prob": arr["cond_prob_norm"],
+            "casscf_ref": casscf_ref,
+            "fq_probe": arr["fq_probe"],
+            "langevin_drift": arr["langevin_drift"],
+            "a_mu_raw": arr["a_mu_raw"],
+            "a_mu_clip": a_mu_clip,
+            "a_sig_raw": a_sig_raw,
+            "a_sig_clip": arr["a_sig_clip"],
+            "mu_actor": mu_actor,
+            "mu_actor_nofq": arr["mu_actor_nofq"],
+            "mu_actor_parity_expected": mu_par_exp,
+            "mu_total_disp": arr["mu_total_disp"],
+            "sigma_applied": sigma_applied,
+            "sigma_unclipped": arr["sigma_unclipped"],
+            "sigma_nofq": arr["sigma_nofq"],
+            "d_min_same": arr["d_min_same"],
+            "d_min_opp": arr["d_min_opp"],
+        }
+        probes[dname] = {"probe": pr, "label": disp.replace("\n", " "), "color": col}
+
+        if replot_individual_probes:
+            stem = f"fig_actor_spatial_probe_{dname}_spin_{probe_spin}"
+            saved_probes.extend(plot_spatial_probe_figure(pr, probe_out_dir, stem, plot_args))
+
+    sys_meta = {
+        "N": N,
+        "n_up": n_up,
+        "n_dn": n_dn,
+        "omega": omega,
+        "g": g_val,
+        "sys_tag": sys_tag,
+    }
+    saved_overlay = plot_spatial_overlay(probes, sys_meta, target_out)
+    return saved_overlay, saved_probes
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Análisis y graficación comparativa de Benchmarks B1 y B2.")
-    parser.add_argument("--sys-dir", required=True, help="Directorio del sistema con subcarpetas B1_*/B2_*.")
+    parser.add_argument("--sys-dir", default=None, help="Directorio del sistema con subcarpetas B1_*/B2_*.")
+    parser.add_argument(
+        "--replot-from-csv-dir",
+        default=None,
+        help="Re-grafica spatial overlay y spatial probes desde una carpeta figures_ablation con CSVs (sin .h5).",
+    )
     parser.add_argument("--casscf-npz", default=None, help="Ruta opcional al archivo CASSCF .npz de referencia.")
     parser.add_argument("--out-dir", default=None, help="Directorio de salida para CSV y figuras.")
     parser.add_argument("--probe-spin", default="down", choices=["up", "down"])
     args = parser.parse_args()
+
+    if args.replot_from_csv_dir:
+        replot_spatial_from_csv_dir(
+            args.replot_from_csv_dir,
+            out_dir=args.out_dir,
+            casscf_npz=args.casscf_npz,
+            probe_spin=args.probe_spin,
+            replot_individual_probes=True,
+        )
+        return 0
+
+    if not args.sys_dir:
+        parser.error("Debe especificar --sys-dir o --replot-from-csv-dir.")
 
     out_dir = args.out_dir or os.path.join(args.sys_dir, "figures_ablation")
     os.makedirs(out_dir, exist_ok=True)

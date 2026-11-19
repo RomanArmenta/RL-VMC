@@ -541,8 +541,8 @@ def plot_spatial_probe_figure(
     spin_sym = r"\uparrow" if p_spin == "up" else r"\downarrow"
     f_scale = float(getattr(args, "font_scale", 1.0))
 
-    fig = plt.figure(figsize=(15.5, 13.8))
-    gs = GridSpec(4, 1, figure=fig, height_ratios=[0.95, 1.05, 1.05, 1.05], hspace=0.34)
+    fig = plt.figure(figsize=(15.8, 17.8))
+    gs = GridSpec(4, 1, figure=fig, height_ratios=[1.0, 1.05, 1.05, 1.05], hspace=0.78, top=0.925, bottom=0.045)
     ax1 = fig.add_subplot(gs[0, 0])
     ax2 = fig.add_subplot(gs[1, 0], sharex=ax1)
     ax3 = fig.add_subplot(gs[2, 0], sharex=ax1)
@@ -573,13 +573,24 @@ def plot_spatial_probe_figure(
     if not getattr(args, "no_titles", False):
         ax1.set_title(
             f"(a) Ambiente Físico Local al Barrer el Electrón ${spin_sym}$ ($N={sm['N']}, g={sm['g']:g}$, {sm['N']-1} electrones fijos en pozos de Wigner)",
-            fontsize=11.0 * f_scale,
+            fontsize=10.8 * f_scale,
             weight="bold",
+            pad=46,
         )
     if not getattr(args, "no_legends", False):
         h1, l1 = ax1.get_legend_handles_labels()
         h2, l2 = ax1_r.get_legend_handles_labels()
-        ax1.legend(h1 + h2, l1 + l2, loc="upper left", fontsize=7.6 * f_scale, ncol=3, framealpha=0.92)
+        ax1.legend(
+            h1 + h2,
+            l1 + l2,
+            loc="lower center",
+            bbox_to_anchor=(0.5, 1.015),
+            fontsize=7.0 * f_scale,
+            ncol=3,
+            framealpha=0.72,
+            borderpad=0.3,
+            columnspacing=0.95,
+        )
 
     # --------------------------------------------------------------------------
     # Panel (b): Deriva Residual del Actor mu_actor(x) = A * a_mu(x) CON SIGNO
@@ -593,28 +604,39 @@ def plot_spatial_probe_figure(
     ax2.plot(xg, res["mu_actor_nofq"], color="#9467bd", lw=1.8, ls="--", alpha=0.88, label=r"Ablación sin fuerza cuántica ($F_Q \equiv 0$, solo posiciones DeepSet)")
     ax2.plot(xg, res["mu_actor_parity_expected"], color="#7f7f7f", lw=1.3, ls="-.", alpha=0.72, label=r"Simetría esperada por paridad ($-\mu_{\mathrm{actor}}(-x, -F_Q)$)")
 
-    amp_pad = max(sm["amp"] * 1.28, 0.04)
+    amp_pad = max(sm["amp"] * 1.42, 0.04)
     ax2.set_ylim(-amp_pad, amp_pad)
     ax2.set_ylabel(r"Deriva Actor $\mu_{\mathrm{actor}}(x)$ [Bohr]", fontsize=9.8 * f_scale, weight="bold")
     ax2.grid(True, alpha=0.25, ls="--")
     ax2.text(
-        0.012,
-        0.06,
+        0.50,
+        0.03,
         f"$a_\\mu \\in [{sm['a_mu_min']:+.3f}, {sm['a_mu_max']:+.3f}]$ (std={sm['a_mu_std']:.3f}, sat={sm['frac_mu_saturated_pct']:.1f}%) | "
         f"Sensibilidad a $F_Q$: max $|\\Delta a_\\mu|={sm['max_fq_sensitivity_mu']:.3f}$ | "
         f"Asimetría paridad: $\\langle|a_\\mu(x)+a_\\mu(-x)|\\rangle={sm['mean_parity_asymmetry_mu']:.3f}$",
         transform=ax2.transAxes,
-        fontsize=8.0 * f_scale,
-        bbox=dict(boxstyle="round,pad=0.25", facecolor="white", alpha=0.92, edgecolor="#1f77b4"),
+        ha="center",
+        va="bottom",
+        fontsize=7.4 * f_scale,
+        bbox=dict(boxstyle="round,pad=0.22", facecolor="white", alpha=0.72, edgecolor="#1f77b4", lw=0.7),
     )
     if not getattr(args, "no_titles", False):
         ax2.set_title(
             "(b) Respuesta de Deriva del Actor $\\mu_{\\mathrm{actor}}(x)$ (Con Signo): ¿Empuja Izquierda/Derecha o Está Saturado?",
-            fontsize=11.0 * f_scale,
+            fontsize=10.8 * f_scale,
             weight="bold",
+            pad=46,
         )
     if not getattr(args, "no_legends", False):
-        ax2.legend(loc="upper right", fontsize=7.8 * f_scale, ncol=2, framealpha=0.92)
+        ax2.legend(
+            loc="lower center",
+            bbox_to_anchor=(0.5, 1.015),
+            fontsize=7.1 * f_scale,
+            ncol=2,
+            framealpha=0.72,
+            borderpad=0.3,
+            columnspacing=1.0,
+        )
 
     # --------------------------------------------------------------------------
     # Panel (c): Ancho de Propuesta sigma_RL(x) — Aplicado (clipped) vs Sin Clip
@@ -622,42 +644,70 @@ def plot_spatial_probe_figure(
     _draw_fixed_electron_markers(ax3, same_fx, opp_fx, empty_x, p_spin, add_labels=False)
     ax3.axhline(sm["base_sigma_mala"], color="#d62728", lw=1.6, ls=":", label=f"MALA fijo $\\sigma_{{\\mathrm{{MALA}}}} = \\sqrt{{2\\tau}} = {sm['base_sigma_mala']:.3f}$ Bohr")
     clip_lbl = (
-        f"Techo desbloqueado (`scale_clip_max={sm['scale_clip_max']:g}`)"
+        f"Techo desbloqueado (clip={sm['scale_clip_max']:g})"
         if sm.get("unclip_sigma_action", False)
-        else f"Techo duro legado (`clip=1.0`, `scale_clip_max={sm['scale_clip_max']:g}`)"
+        else f"Techo duro legado (clip={sm.get('eff_sig_hi', 1.0):g})"
     )
     ax3.axhline(sm["sigma_ceiling"], color="#222222", lw=1.3, ls="-.", alpha=0.80, label=f"{clip_lbl}: $\\sigma_{{\\max}} = {sm['sigma_ceiling']:.3f}$ Bohr")
 
-    ax3.plot(xg, res["sigma_unclipped"], color="#ff7f0e", lw=1.9, ls="--", alpha=0.90, label=r"Salida red SIN recorte $\sqrt{2\tau}\,e^{a_\sigma^{\mathrm{raw}}(x)}$")
+    ax3.plot(xg, res["sigma_unclipped"], color="#ff7f0e", lw=1.9, ls="--", alpha=0.90, label=r"Salida red sin recorte $\sqrt{2\tau}\,e^{a_\sigma^{\mathrm{raw}}}$")
     sig_clip_tex = (
-        rf"Ancho aplicado $\sigma_{{\mathrm{{RL}}}}(x) = \sqrt{{2\tau}}\,e^{{\mathrm{{clip}}(a_\sigma, {sm.get('eff_sig_lo', -5.0):g}, {sm.get('eff_sig_hi', 1.0):g})}}$"
+        rf"Ancho aplicado $\sigma_{{\mathrm{{RL}}}}(x)$ (clip $\in [{sm.get('eff_sig_lo', -5.0):g}, {sm.get('eff_sig_hi', 1.0):g}]$)"
     )
     ax3.plot(xg, res["sigma_applied"], color="#c51b8a", lw=2.5, label=sig_clip_tex)
     ax3.plot(xg, res["sigma_nofq"], color="#17becf", lw=1.4, ls=":", alpha=0.85, label=r"Ablación sin fuerza cuántica ($F_Q \equiv 0$)")
 
-    y_lo = min(sm["base_sigma_mala"], float(np.min(res["sigma_applied"])), float(np.min(res["sigma_unclipped"]))) * 0.85
+    y_lo = max(0.0, min(sm["base_sigma_mala"], float(np.min(res["sigma_applied"])), float(np.min(res["sigma_unclipped"]))) * 0.55)
     y_hi = max(sm["sigma_ceiling"], float(np.max(res["sigma_unclipped"]))) * 1.12
-    ax3.set_ylim(max(0.0, y_lo), y_hi)
+    ax3.set_ylim(y_lo, y_hi)
     ax3.set_ylabel(r"Ancho $\sigma(x)$ [Bohr]", fontsize=9.8 * f_scale, weight="bold")
     ax3.grid(True, alpha=0.25, ls="--")
+
+    # Ubicar la caja estadística en la banda blanca libre entre MALA base y sigma_RL
+    sig_curves_min = min(
+        float(np.min(res["sigma_applied"])),
+        float(np.min(res["sigma_unclipped"])),
+        float(np.min(res["sigma_nofq"])),
+    )
+    band_gap = sig_curves_min - sm["base_sigma_mala"]
+    if band_gap > 0.20 * (y_hi - y_lo):
+        y_box = 0.5 * (sm["base_sigma_mala"] + sig_curves_min)
+        box_transform = ax3.get_yaxis_transform()
+        box_va = "center"
+    else:
+        y_box = 0.03
+        box_transform = ax3.transAxes
+        box_va = "bottom"
+
     ax3.text(
-        0.012,
-        0.07,
+        0.50,
+        y_box,
         f"$a_\\sigma^{{\\mathrm{{raw}}}} \\in [{sm['a_sig_raw_min']:+.3f}, {sm['a_sig_raw_max']:+.3f}]$ (std={sm['a_sig_raw_std']:.3f}) | "
         f"$\\sigma_{{\\mathrm{{RL}}}} \\in [{sm['sigma_applied_min']:.3f}, {sm['sigma_applied_max']:.3f}]$ Bohr (std={sm['sigma_applied_std']:.4f}) | "
         f"Puntos pegados al techo ($a_\\sigma \\geq {sm.get('eff_sig_hi', 1.0):g}$): {sm['frac_sigma_clipped_pct']:.1f}%",
-        transform=ax3.transAxes,
-        fontsize=8.0 * f_scale,
-        bbox=dict(boxstyle="round,pad=0.25", facecolor="white", alpha=0.92, edgecolor="#c51b8a"),
+        transform=box_transform,
+        ha="center",
+        va=box_va,
+        fontsize=7.4 * f_scale,
+        bbox=dict(boxstyle="round,pad=0.22", facecolor="white", alpha=0.72, edgecolor="#c51b8a", lw=0.7),
     )
     if not getattr(args, "no_titles", False):
         ax3.set_title(
-            f"(c) Respuesta de Ancho de Propuesta $\\sigma_{{\\mathrm{{RL}}}}(x)$ vs Techo (`eff_clip={sm.get('eff_sig_hi', 1.0):g}`) y MALA Fijo",
-            fontsize=11.0 * f_scale,
+            f"(c) Respuesta de Ancho de Propuesta $\\sigma_{{\\mathrm{{RL}}}}(x)$ vs Techo (eff_clip={sm.get('eff_sig_hi', 1.0):g}) y MALA Fijo",
+            fontsize=10.8 * f_scale,
             weight="bold",
+            pad=46,
         )
     if not getattr(args, "no_legends", False):
-        ax3.legend(loc="upper right", fontsize=7.8 * f_scale, ncol=2, framealpha=0.92)
+        ax3.legend(
+            loc="lower center",
+            bbox_to_anchor=(0.5, 1.015),
+            fontsize=7.0 * f_scale,
+            ncol=3,
+            framealpha=0.72,
+            borderpad=0.3,
+            columnspacing=0.9,
+        )
 
     # --------------------------------------------------------------------------
     # Panel (d): Propuestas Gaussianas q_RL(x'|x_0) vs q_MALA(x'|x_0) en 4 puntos
@@ -720,22 +770,31 @@ def plot_spatial_probe_figure(
     if not getattr(args, "no_titles", False):
         ax4.set_title(
             "(d) Distribuciones Gaussianas de Propuesta $q_{\\mathrm{RL}}(x' \\mid x_0)$ (relleno) vs $q_{\\mathrm{MALA}}(x' \\mid x_0)$ (punteado) en 4 Puntos de la Caja",
-            fontsize=11.0 * f_scale,
+            fontsize=10.8 * f_scale,
             weight="bold",
+            pad=46,
         )
     if not getattr(args, "no_legends", False):
-        ax4.legend(loc="upper right", fontsize=7.6 * f_scale, ncol=2, framealpha=0.92)
+        ax4.legend(
+            loc="lower center",
+            bbox_to_anchor=(0.5, 1.015),
+            fontsize=7.0 * f_scale,
+            ncol=3,
+            framealpha=0.72,
+            borderpad=0.3,
+            columnspacing=0.9,
+        )
 
     if not getattr(args, "no_titles", False):
         run_label = os.path.basename(os.path.dirname(os.path.abspath(sm["h5_path"])))
         eq_tag = "parity=ON" if sm.get("parity_equivariant", False) else "parity=OFF (legacy)"
         uc_tag = f"unclip_sig=ON ({sm.get('eff_sig_hi', 1.0):g})" if sm.get("unclip_sigma_action", False) else "clip_sig=1.0 (legacy)"
         fig.suptitle(
-            f"Diagnóstico Espacial del Actor (`{run_label}`) — Barrido de Electrón ${spin_sym}$ "
+            f"Diagnóstico Espacial del Actor ({run_label}) — Barrido de Electrón ${spin_sym}$ "
             f"($N={sm['N']}, \\omega={sm['omega']:g}, g={sm['g']:g}, \\tau={sm['tau']:g}, A={sm['amp']:g}, s_\\sigma={sm['sigma_action_scale']:g}$ | {eq_tag}, {uc_tag})",
-            fontsize=11.6 * f_scale,
+            fontsize=11.4 * f_scale,
             weight="bold",
-            y=0.995,
+            y=0.985,
         )
 
     saved: List[str] = []
@@ -768,6 +827,7 @@ def save_probe_csv(res: Dict[str, Any], out_csv: str) -> None:
         "a_mu_clip",
         "mu_actor",
         "mu_actor_nofq",
+        "mu_actor_parity_expected",
         "mu_total_disp",
         "a_sig_raw",
         "a_sig_clip",
@@ -791,6 +851,7 @@ def save_probe_csv(res: Dict[str, Any], out_csv: str) -> None:
                     "a_mu_clip": float(res["a_mu_clip"][k]),
                     "mu_actor": float(res["mu_actor"][k]),
                     "mu_actor_nofq": float(res["mu_actor_nofq"][k]),
+                    "mu_actor_parity_expected": float(res["mu_actor_parity_expected"][k]),
                     "mu_total_disp": float(res["mu_total_disp"][k]),
                     "a_sig_raw": float(res["a_sig_raw"][k]),
                     "a_sig_clip": float(res["a_sig_clip"][k]),

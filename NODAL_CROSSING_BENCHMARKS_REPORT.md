@@ -1052,6 +1052,45 @@ Para transformar RL-MCMC en un algoritmo que derrote de forma inequívoca e irre
 5. **Ampliar los benchmarks a sistemas heterogéneos / multi-escala:**
    - Evaluar en átomos/moléculas 1D-3D con potencial Coulombiano atractivo (escala core vs valencia) y en $N=8\text{–}10, g=5.0\text{–}8.0$, donde la falla de RWMH isotrópico es exponencial y matemáticamente inevitable.
 
+---
+
+### 14.6 Paradoja $D_{\mathrm{KL}}^{\mathrm{spin}}$ vs Cruces Nodales (Sesgo + Varianza) y Diagnóstico Visual de Trazas + Marginales de Espín
+
+Una pregunta clave que surge al inspeccionar las tablas de Ayler ($3\times 40{,}000$ pasos) es: **¿por qué `B1_RWMH_matched` ($\sigma=1.22$) logra una divergencia KL de espín $4\times\text{–}5.5\times$ menor que `B2_RL_MALA_eq_unclip` ($\sigma=2.71\text{–}3.30$) a pesar de realizar $3\times\text{–}6\times$ menos cruces nodales?**
+
+La explicación es exacta y proviene de la **descomposición sesgo–varianza** de la divergencia KL estimada sobre un histograma de $K_{\mathrm{bins}} = 400$ celdas con $N_{\mathrm{eff}}$ muestras independientes:
+
+$$\mathbb{E}\!\left[D_{\mathrm{KL}}(\hat{\rho}_T \,\|\, \rho_{\mathrm{exact}})\right] \;\approx\; \underbrace{D_{\mathrm{KL}}(\bar{\rho}_T \,\|\, \rho_{\mathrm{exact}})}_{\text{Sesgo ergódico (mezcla de espines / flips)}} \;+\; \underbrace{\frac{K_{\mathrm{bins}} - 1}{2\,N_{\mathrm{eff}}}}_{\text{Varianza de muestra finita ($\propto \tau_{\mathrm{int}} / T \propto 1/\mathrm{Acc}$)}}.$$
+
+1. **Régimen de cadenas largas (Ayler $3\times 40{,}000$ pasos, $96$ caminantes-cadena):**
+   - **El sesgo ya se anuló para ambos métodos:** Incluso con $2.61\ \mathrm{flips}/1\mathrm{k}$ ($N=4$) y $21.65\ \mathrm{flips}/1\mathrm{k}$ ($N=6$), `RWMH(σ=1.22)` acumula **$\sim 104$ flips por caminante en $N=4$** y **$\sim 866$ flips por caminante en $N=6$** durante los $40{,}000$ pasos. Esto borra por completo la asimetría inicial de `spin_ordered_offset`, llevando el término de sesgo por debajo de $10^{-6}$ tanto para `RWMH(1.22)` como para `RL-MALA(3.30)`.
+   - **Domina el término de varianza intra-pozo ($\propto 1/\mathrm{Acc}$):** Al aceptar únicamente el **$7.9\%$** ($N=4$) y **$6.0\%$** ($N=6$) de las propuestas, cada caminante de `RL-MALA(σ=3.30)` permanece **congelado exactamente en la misma coordenada durante $13\text{–}17$ pasos consecutivos** (mesetas escalonadas en las trazas), reduciendo $N_{\mathrm{eff}}$ en un factor directo igual a la razón de aceptaciones:
+     - $N=4, g=2.0$: razón de aceptaciones $\frac{45.2\%}{7.9\%} = \mathbf{5.7\times}$ frente a razón medida de KL $\frac{5.95\times 10^{-4}}{1.26\times 10^{-4}} = \mathbf{4.7\times}$.
+     - $N=6, g=1.0$: razón de aceptaciones $\frac{31.5\%}{6.0\%} = \mathbf{5.3\times}$ frente a razón medida de KL $\frac{7.61\times 10^{-4}}{1.39\times 10^{-4}} = \mathbf{5.5\times}$.
+2. **Por qué el orden se invierte en cadenas cortas ($2\times 4{,}000$ pasos, corrida local):**
+   - Con solo $4{,}000$ pasos, `RWMH(σ=1.22)` apenas completa $\sim 10$ flips por caminante y permanece dominado por **sesgo** ($D_{\mathrm{KL}}^{\mathrm{spin}} = 0.0161$), donde `RL-MALA(σ=2.71)` con $\sim 45$ flips/caminante gana por $3\times$ ($D_{\mathrm{KL}}^{\mathrm{spin}} = 0.0052$). En cuanto la cadena supera $\sim 50$ flips/caminante, el sesgo desaparece y `RWMH(1.22)` recupera el liderazgo por $5\times$ en varianza.
+3. **Verificación visual directa mediante trazas y marginales de espín (`scripts/plot_ablation_traces_and_marginals.py`):**
+   - Se incorporó el script automatizado [`scripts/plot_ablation_traces_and_marginals.py`](scripts/plot_ablation_traces_and_marginals.py) (conectado también al final de [`run_actor_ablation_benchmarks.sh`](run_actor_ablation_benchmarks.sh)) que grafica lado a lado las **trayectorias de un caminante individual** ($x_i(t)$ por espín $\uparrow$/$\downarrow$, marcando explícitamente cada cruce nodal) junto con las **densidades marginales $\rho_\uparrow(x)$ y $\rho_\downarrow(x)$ frente a CASSCF exacto** para los 8 muestreadores de B1/B2.
+   - En las figuras locales de $N=4, g=2.0$ ($2\times 4{,}000$ pasos) se observan simultáneamente los tres regímenes: (i) **congelamiento por sesgo** en `MALA base` ($\tau=0.10$, sin cruces, $\rho_\uparrow$ y $\rho_\downarrow$ completamente separados), (ii) **difusión suave intra-pozo** en `RWMH(σ=1.22)` (trazas continuas y picos lisos), y (iii) **efecto escalera por baja aceptación** en `RL-MALA eq+unclip` ($\sigma=2.71\text{–}3.30$, múltiples cruces rápidos pero largas mesetas planas que producen ruido dentado sobre las crestas de $\rho_\uparrow, \rho_\downarrow$).
+
+![Trazas de Caminante Individual y Marginales de Espín B1/B2 en N=4, g=2.0](figures/actor_ablation_N4_g2.0/fig_ablation_traces_and_marginals_N4_w0.1_g2.png)
+
+![Comparativa de Simetría de Espín rho_up vs rho_down y Error Residual en N=4, g=2.0](figures/actor_ablation_N4_g2.0/fig_ablation_marginals_spin_symmetry_N4_w0.1_g2.png)
+
+Para generar exactamente estas mismas gráficas de trazas y marginales sobre los `.h5` completos de producción en Ayler ($3\times 40{,}000$ pasos):
+
+```bash
+python3 scripts/plot_ablation_traces_and_marginals.py \
+  --sys-dir results_actor_ablation_ayler/N4_w0.1_g2.0 \
+  --casscf-npz CASSCF_csv/casscf_statecas_n4_g2.0_omega0.1_soft0.1_b256_c0-a4_det6.npz \
+  --max-steps-trace 4000
+
+python3 scripts/plot_ablation_traces_and_marginals.py \
+  --sys-dir results_actor_ablation_ayler/N6_w0.1_g1.0 \
+  --casscf-npz CASSCF_csv/casscf_state_cas_n6_g1.0_omega0.1_soft0.1_b256_c0-a6_det-20.npz \
+  --max-steps-trace 4000
+```
+
 
 
 

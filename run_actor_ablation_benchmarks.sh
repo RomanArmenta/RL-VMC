@@ -427,6 +427,15 @@ for sys_pair in $SYSTEMS_LIST; do
             --out-dir "$FIG_DIR" || echo "  [AVISO] Falló plot_actor_ablation_comparison.py para ${SYS_TAG}"
     fi
 
+    # 1b) Comparativa de trazas de caminantes y marginales de espín por sampler
+    if [[ -f "${SCRIPT_DIR}/scripts/plot_ablation_traces_and_marginals.py" ]]; then
+        CUDA_VISIBLE_DEVICES="" "$PYTHON_BIN" "${SCRIPT_DIR}/scripts/plot_ablation_traces_and_marginals.py" \
+            --sys-dir "$SYS_DIR" \
+            --casscf-npz "$NPZ_PATH" \
+            --out-dir "$FIG_DIR" \
+            --trace-steps 4000 || echo "  [AVISO] Falló plot_ablation_traces_and_marginals.py para ${SYS_TAG}"
+    fi
+
     # 2) Sonda espacial detallada de cada actor neuronal entrenado
     for rl_h5 in "${SYS_DIR}"/B*_RL_MALA_*/run_bundle.h5; do
         if [[ -f "$rl_h5" ]]; then
