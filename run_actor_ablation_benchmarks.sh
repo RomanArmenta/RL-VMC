@@ -436,6 +436,19 @@ for sys_pair in $SYSTEMS_LIST; do
             --trace-steps 4000 || echo "  [AVISO] Falló plot_ablation_traces_and_marginals.py para ${SYS_TAG}"
     fi
 
+    # 1c) Velocidad de convergencia (cold-start desde t=0 + convergencia acumulada en producción)
+    if [[ -f "${SCRIPT_DIR}/scripts/plot_sampler_convergence.py" ]]; then
+        CUDA_VISIBLE_DEVICES="" "$PYTHON_BIN" "${SCRIPT_DIR}/scripts/plot_sampler_convergence.py" \
+            --sys-dir "$SYS_DIR" \
+            --casscf-npz "$NPZ_PATH" \
+            --out-dir "$FIG_DIR" \
+            --mode both \
+            --cold-walkers 128 \
+            --cold-steps 2500 \
+            --init-mode spin_ordered_offset \
+            --extra-rwmh-sigmas 2.705 3.304 || echo "  [AVISO] Falló plot_sampler_convergence.py para ${SYS_TAG}"
+    fi
+
     # 2) Sonda espacial detallada de cada actor neuronal entrenado
     for rl_h5 in "${SYS_DIR}"/B*_RL_MALA_*/run_bundle.h5; do
         if [[ -f "$rl_h5" ]]; then

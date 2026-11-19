@@ -448,7 +448,7 @@ def main() -> int:
     parser.add_argument("--sys-dir", required=True, help="Directorio del sistema (con subcarpetas B1_*/B2_*).")
     parser.add_argument("--casscf-npz", default=None, help="Ruta opcional al archivo .npz de CASSCF.")
     parser.add_argument("--out-dir", default=None, help="Directorio de salida (por defecto <sys-dir>/figures_ablation).")
-    parser.add_argument("--trace-steps", type=int, default=4000, help="Número de pasos a mostrar en la traza izquierda.")
+    parser.add_argument("--trace-steps", "--max-steps-trace", dest="trace_steps", type=int, default=4000, help="Número de pasos a mostrar en la traza izquierda.")
     parser.add_argument("--chain-idx", type=int, default=0, help="Índice de cadena para la traza.")
     parser.add_argument("--walker-idx", type=int, default=None, help="Índice de caminante (None = representativo mediano).")
     parser.add_argument("--format", default="both", choices=["png", "pdf", "both"])
