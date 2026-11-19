@@ -1672,4 +1672,138 @@ python3 cli/run_1d.py ... \
   --scale_clip_min -0.5 --scale_clip_max 1.8
 \end{lstlisting}
 
+\newpage
+\section{Resultados de Producción en Ayler (B1 y B2 en $N=4, g=2.0$ y $N=6, g=1.0$), Veredicto Crítico frente a RWMH y Hoja de Ruta}
+
+\subsection{Resultados Consolidados de Producción en Ayler ($3 \times 40{,}000$ pasos, \texttt{batch=128}, $6{,}000$ pasos RL)}
+
+Las corridas completas de producción ejecutadas en Ayler (\texttt{results\_ablation\_ayler/}, copiadas en \texttt{figures/actor\_ablation\_ayler/}) para $N=4, g=2.0$ y $N=6, g=1.0$ ($3$ cadenas $\times 40{,}000$ pasos desde \texttt{spin\_ordered\_offset}, \texttt{batch=128}, $6{,}000$ pasos TD3) permiten emitir un veredicto definitivo y científicamente transparente sobre el rendimiento real del actor RL-MALA actual frente a controles clásicos justos.
+
+\begin{table}[H]
+\centering
+\caption{Resultados de producción en Ayler ($3\times 40{,}000$ pasos) para $N=4, \omega=0.1, g=2.0$ ($E_{\mathrm{CASSCF}} = 2.802268\,E_h$).}
+\label{tab:ayler_n4_g2}
+\begin{adjustbox}{max width=\textwidth}
+\begin{tabular}{lccccccccccc}
+\toprule
+\textbf{Modelo (Ayler $3\times 40$k)} & $\langle\sigma\rangle$ & \textbf{Acc} & \textbf{ESJD} & $\tau_{\mathrm{int}}(E)$ & $\tau_{\mathrm{pos}}$ & $D_{\mathrm{KL}}^{\mathrm{spin}}$ & \textbf{$\uparrow\downarrow$/1k} & \textbf{Pauli/1k} & $\langle E_L\rangle \pm \mathrm{SE}$ [$E_h$] & \textbf{Par.} & $\mathrm{std}(\sigma)$ (\textbf{clip}) \\
+\midrule
+\texttt{B1\_MALA\_base} ($\tau=0.10$) & $0.45$ & $88.3\%$ & $0.69$ & $11.0$ & $1448$ & $0.345300$ & $0.02$ & $0.02$ & $2.80263 \pm 0.00030$ & --- & --- \\
+\texttt{B1\_MALA\_large} ($\tau=0.50$) & $1.00$ & $73.2\%$ & $2.76$ & $16.9$ & $2858$ & $0.030836$ & $0.24$ & $0.13$ & $2.80235 \pm 0.00033$ & --- & --- \\
+\texttt{B1\_MALA\_matched} ($\tau=0.74$) & $1.22$ & $67.1\%$ & \textbf{3.68} & \textbf{2.7} & $2903$ & $0.006129$ & $0.45$ & $0.22$ & $2.80208 \pm 0.00014$ & --- & --- \\
+\textbf{\texttt{B1\_RWMH\_matched} (deriva$=0$)} & \textbf{1.22} & \textbf{45.2\%} & $2.07$ & $5.1$ & $2303$ & \textbf{0.000126} & \textbf{1.75} & \textbf{0.86} & \textbf{2.80232 $\pm$ 0.00020} & --- & --- \\
+\texttt{B1\_RL\_MALA\_legacy} & $1.22$ & $45.7\%$ & $2.13$ & $4.7$ & $2402$ & $0.000477$ & $1.43$ & $0.74$ & $2.80225 \pm 0.00020$ & $1.957$ & $0.000$ ($100\%$) \\
+\texttt{B2\_RL\_MALA\_parity\_only} & $1.22$ & $45.5\%$ & $2.12$ & $4.5$ & $2483$ & $0.000129$ & $1.43$ & $0.54$ & $2.80232 \pm 0.00019$ & $0.000$ & $0.000$ ($100\%$) \\
+\texttt{B2\_RL\_MALA\_eq\_unclip} ($0.80, 1.8$) & $2.70$ & $12.3\%$ & $1.97$ & $7.0$ & $925$ & $0.000506$ & $8.52$ & $3.80$ & $2.80216 \pm 0.00024$ & $0.000$ & $0.024$ ($31\%$) \\
+\texttt{B2\_RL\_MALA\_eq\_unclip} ($1.20, 2.0$) & $3.30$ & $7.9\%$ & $1.78$ & $9.0$ & \textbf{861} & $0.000595$ & \textbf{11.59} & $2.48$ & $2.80241 \pm 0.00028$ & $0.000$ & $0.011$ ($47\%$) \\
+\bottomrule
+\end{tabular}
+\end{adjustbox}
+\end{table}
+
+\begin{table}[H]
+\centering
+\caption{Resultados de producción en Ayler ($3\times 40{,}000$ pasos) para $N=6, \omega=0.1, g=1.0$ ($E_{\mathrm{CASSCF}} = 4.524052\,E_h$).}
+\label{tab:ayler_n6_g1}
+\begin{adjustbox}{max width=\textwidth}
+\begin{tabular}{lccccccccccc}
+\toprule
+\textbf{Modelo (Ayler $3\times 40$k)} & $\langle\sigma\rangle$ & \textbf{Acc} & \textbf{ESJD} & $\tau_{\mathrm{int}}(E)$ & $\tau_{\mathrm{pos}}$ & $D_{\mathrm{KL}}^{\mathrm{spin}}$ & \textbf{$\uparrow\downarrow$/1k} & \textbf{Pauli/1k} & $\langle E_L\rangle \pm \mathrm{SE}$ [$E_h$] & \textbf{Par.} & $\mathrm{std}(\sigma)$ (\textbf{clip}) \\
+\midrule
+\texttt{B1\_MALA\_base} ($\tau=0.10$) & $0.45$ & $83.4\%$ & $0.98$ & $8.2$ & $2764$ & $0.119801$ & $0.25$ & $0.19$ & $4.52419 \pm 0.00038$ & --- & --- \\
+\texttt{B1\_MALA\_large} ($\tau=0.50$) & $1.00$ & $61.8\%$ & $3.53$ & \textbf{4.3} & $2705$ & $0.001530$ & $2.86$ & $1.98$ & $4.52411 \pm 0.00027$ & --- & --- \\
+\texttt{B1\_MALA\_matched} ($\tau=0.74$) & $1.22$ & $53.0\%$ & \textbf{4.40} & $253.0$ (!!) & $2288$ & $0.000146$ & $4.99$ & $3.32$ & $4.52524 \pm 0.00157$ & --- & --- \\
+\textbf{\texttt{B1\_RWMH\_matched} (deriva$=0$)} & \textbf{1.22} & \textbf{31.5\%} & $2.22$ & $6.1$ & $1569$ & \textbf{0.000139} & \textbf{13.01} & \textbf{8.64} & \textbf{4.52430 $\pm$ 0.00033} & --- & --- \\
+\texttt{B1\_RL\_MALA\_legacy} & $1.22$ & $32.0\%$ & $2.28$ & $5.9$ & $1658$ & $0.000214$ & $11.46$ & $7.63$ & $4.52440 \pm 0.00032$ & $2.000$ & $0.000$ ($100\%$) \\
+\texttt{B2\_RL\_MALA\_parity\_only} & $1.22$ & $31.5\%$ & $2.23$ & $5.5$ & $1747$ & $0.000254$ & $10.86$ & $6.90$ & $4.52434 \pm 0.00031$ & $0.000$ & $0.000$ ($100\%$) \\
+\texttt{B2\_RL\_MALA\_eq\_unclip} ($0.80, 1.8$) & $2.71$ & $9.8\%$ & $3.30$ & $11.8$ & $630$ & $0.000444$ & $33.37$ & $24.68$ & $4.52446 \pm 0.00046$ & $0.000$ & $0.001$ ($69\%$) \\
+\texttt{B2\_RL\_MALA\_eq\_unclip} ($1.20, 2.0$) & $3.30$ & $6.0\%$ & $3.10$ & $20.4$ & \textbf{550} & $0.000761$ & \textbf{38.56} & \textbf{24.70} & $4.52367 \pm 0.00059$ & $0.000$ & $0.023$ ($79\%$) \\
+\bottomrule
+\end{tabular}
+\end{adjustbox}
+\end{table}
+
+\begin{table}[H]
+\centering
+\caption{Control estricto a igual ancho de propuesta ($\sigma_{\mathrm{RWMH}} = \sigma_{\mathrm{RL}} \in \{1.22, 2.71, 3.30\}\ \mathrm{Bohr}$): RWMH puro (deriva $=0$, sin red) frente a RL-MALA entrenado $6{,}000$ pasos en Ayler.}
+\label{tab:rwmh_vs_rl_matched_all}
+\begin{adjustbox}{max width=\textwidth}
+\begin{tabular}{lccccccc}
+\toprule
+\textbf{Sistema} & $\sigma$ [Bohr] & \textbf{Acc (RWMH vs RL)} & \textbf{ESJD (RWMH vs RL)} & \textbf{Flips/1k (RWMH vs RL)} & \textbf{$\Delta$ Flips} & \textbf{Deriva aprendida por RL} \\
+\midrule
+$N=4, g=2.0$ & $1.216$ & $45.2\%$ vs $45.5\%$ & $2.07$ vs $2.12$ & \textbf{2.61} vs $1.96$ & \textbf{$-$25\%} & Hacia afuera ($\pm 0.15$) \\
+$N=4, g=2.0$ & $2.705$ & \textbf{15.6\%} vs $12.3\%$ & \textbf{2.64} vs $1.97$ & \textbf{18.70} vs $12.32$ & \textbf{$-$34\%} & Hacia afuera ($\pm 0.80$) \\
+$N=4, g=2.0$ & $3.304$ & \textbf{11.1\%} vs $7.9\%$ & \textbf{2.73} vs $1.78$ & \textbf{24.58} vs $14.07$ & \textbf{$-$43\%} & Hacia afuera ($\pm 1.20$) \\
+$N=6, g=1.0$ & $1.216$ & $31.5\%$ vs $31.5\%$ & $2.22$ vs $2.23$ & \textbf{21.65} vs $17.76$ & \textbf{$-$18\%} & Hacia afuera ($\pm 0.15$) \\
+$N=6, g=1.0$ & $2.705$ & $9.2\%$ vs \textbf{9.8\%} & $2.84$ vs \textbf{3.30} & $57.04$ vs \textbf{58.05} & $+2\%$ (ESJD $+16\%$) & Hacia adentro ($\mp 0.80$) \\
+$N=6, g=1.0$ & $3.304$ & $6.4\%$ vs $6.0\%$ & $2.91$ vs \textbf{3.10} & $60.36$ vs \textbf{63.26} & $+5\%$ (ESJD $+7\%$) & Hacia adentro ($\mp 1.20$) \\
+\bottomrule
+\end{tabular}
+\end{adjustbox}
+\end{table}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.98\textwidth]{figures/actor_ablation_ayler/N4_w0.1_g2.0/fig_ablation_b1_b2_metrics_N4_w0.1_g2.png}
+\caption{\textbf{Resultados de producción en Ayler ($3\times 40{,}000$ pasos) para $N=4, \omega=0.1, g=2.0$:} \texttt{RWMH\_matched} ($\sigma=1.22$, magenta) alcanza el mejor $D_{\mathrm{KL}}^{\mathrm{spin}} = 1.26\times 10^{-4}$, superando a todos los actores RL-MALA sin necesidad de red neuronal ni gradientes.}
+\label{fig:ayler_metrics_n4}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.98\textwidth]{figures/actor_ablation_ayler/N6_w0.1_g1.0/fig_ablation_b1_b2_metrics_N6_w0.1_g1.png}
+\caption{\textbf{Resultados de producción en Ayler ($3\times 40{,}000$ pasos) para $N=6, \omega=0.1, g=1.0$:} Mientras \texttt{MALA\_matched} ($\tau=0.74$) colapsa en autocorrelación ($\tau_{\mathrm{int}}(E)=253.0$, $\mathrm{SE}=1.57\ \mathrm{mHa}$), \texttt{RWMH\_matched} ($\sigma=1.22$) logra $D_{\mathrm{KL}}^{\mathrm{spin}}=1.39\times 10^{-4}$, $\tau_{\mathrm{int}}(E)=6.09$ y $21.65\ \mathrm{flips}/1\mathrm{k}$, superando a RL-MALA legado y paridad.}
+\label{fig:ayler_metrics_n6}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.98\textwidth]{figures/actor_ablation_ayler/fig_rwmh_vs_rlmala_matched_sigma_verdict.png}
+\caption{\textbf{Veredicto crítico a ancho emparejado ($\sigma_{\mathrm{RWMH}} = \sigma_{\mathrm{RL}} \in \{1.22, 2.71, 3.30\}\ \mathrm{Bohr}$):} En $N=4, g=2.0$ (fila superior), la deriva hacia afuera aprendida por RL-MALA degrada la aceptación, ESJD y flips entre $-25\%$ y $-43\%$ respecto a un RWMH isotrópico simple. En $N=6, g=1.0$ (fila inferior), cuando RL-MALA aprende deriva hacia adentro en $s_\sigma\ge 1.8$, apenas alcanza empate o mejoras marginales de $+2\%$ a $+16\%$.}
+\label{fig:rwmh_verdict}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.95\textwidth]{figures/actor_ablation_ayler/N4_w0.1_g2.0/fig_ablation_b2_spatial_overlay_N4_w0.1_g2.png}
+\caption{\textbf{Superposición espacial en Ayler ($6{,}000$ pasos TD3, $N=4, g=2.0$):} Al converger plenamente, los actores \texttt{eq+unclip} vuelven a aplanarse contra sus nuevos techos ($\sigma=2.705$ y $3.304\ \mathrm{Bohr}$) y saturan $\mu_{\mathrm{actor}}(x)$ en una función escalón hacia afuera ($\pm 0.80, \pm 1.20\ \mathrm{Bohr}$).}
+\label{fig:ayler_overlay_n4}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.95\textwidth]{figures/actor_ablation_ayler/N6_w0.1_g1.0/fig_ablation_b2_spatial_overlay_N6_w0.1_g1.png}
+\caption{\textbf{Superposición espacial en Ayler ($6{,}000$ pasos TD3, $N=6, g=1.0$):} Aunque $\sigma_{\mathrm{RL}}(x)$ vuelve a aplanarse al techo ($69\%\text{--}79\%$ saturado), $\mu_{\mathrm{actor}}(x)$ exhibe picos agudos en las posiciones de los electrones fijos (combinación del cambio de signo discontinuo en \texttt{sign(dx)} y el polo de $F_Q$, afectando $<7.7\%$ de la caja; mediana $|\mu-\mu_{F_Q\equiv 0}|=0.000001\ \mathrm{Bohr}$).}
+\label{fig:ayler_overlay_n6}
+\end{figure}
+
+\subsection{Implicaciones Físicas y Algorítmicas: ¿Por Qué RL-MALA Se Reduce a RWMH e Ignora $F_Q$?}
+
+Las Tablas~\ref{tab:ayler_n4_g2}--\ref{tab:rwmh_vs_rl_matched_all} y las Figuras~\ref{fig:ayler_metrics_n4}--\ref{fig:ayler_overlay_n6} revelan cuatro conclusiones fundamentales:
+
+\begin{enumerate}
+\item \textbf{RL-MALA diagonal actual equivale (o pierde frente) a RWMH con $\sigma$ apropiada:} Con $\sigma=1.22\ \mathrm{Bohr}$, RWMH sin red neuronal vence a RL-MALA legado y paridad en $D_{\mathrm{KL}}^{\mathrm{spin}}$ y flips ($+12\%$ a $+25\%$). Con $\sigma=2.71\text{--}3.30\ \mathrm{Bohr}$, RL-MALA vuelve a aplanarse al nuevo techo y pierde $-25\%$ a $-43\%$ frente a RWMH en $N=4$ (deriva hacia afuera) o apenas empata/supera por $+2\%\text{--}16\%$ en $N=6$ (deriva hacia adentro), mientras la caída de aceptación ($6\%\text{--}12\%$) duplica o triplica $\tau_{\mathrm{int}}(E)$ y empeora $\mathrm{SE}(E)$ y $D_{\mathrm{KL}}^{\mathrm{spin}}$ por varianza de muestra finita.
+\item \textbf{Inestabilidad genuina de MALA grande ($\tau=0.74$):} En $N=6, g=1.0$, \texttt{MALA\_matched} explotó a $\tau_{\mathrm{int}}(E) = 253.0$ ($\mathrm{SE}=1.57\ \mathrm{mHa}$) por sobrepasos balísticos cerca de los polos nodales $1/(x_i-x_j)$. Esto demuestra que el defecto real de MALA es acoplar $\sigma=\sqrt{2\tau}$ con la deriva confinante $\tau F_Q$, pero desacoplarlos no requiere todavía una red neuronal diagonal.
+\item \textbf{Cuatro causas exactas por las que el actor ignora $F_Q = \nabla \ln|\Psi|$} (mediana $|\mu - \mu_{F_Q\equiv 0}| = 0.000000\ \mathrm{Bohr}$ en $>92\%$ de la caja):
+  \begin{itemize}
+  \item \textit{Anticorrelación física:} $F_Q$ confina hacia el centro de cada pozo y repele de los nodos de Pauli, frenando los intercambios; toda recompensa de exploración aprende a ignorarla o contrarrestarla.
+  \item \textit{Desbalance de escala en \texttt{build\_td3\_state}:} \texttt{local\_feat} entrega $|x_i| \sim 12$ sin normalizar junto a $|\tanh(F_Q/5)| \sim 0.15$ dentro de los pozos ($50\times\text{--}80\times$ menor), ahogando el gradiente respecto a $F_Q$ salvo sobre los polos $|F_Q| \gg 5$.
+  \item \textit{Asignación de crédito multi-agente ($1/N$):} \texttt{TD3Learner1D.push\_transitions} replica la misma recompensa escalar global de los $N$ electrones a cada electrón individual mientras el crítico solo observa $(s_i, a_i)$, diluyendo la señal local de $F_{Q,i}$ como $1/N$.
+  \item \textit{Homogeneidad del cristal 1D + sesgo de CDLB:} todos los pozos de Wigner tienen anchura similar ($\sigma_{\mathrm{well}}\approx 1.4\ \mathrm{Bohr}$) y CDLB ($-\alpha\log q \propto \alpha N \ln\sigma$) empuja monotónicamente $\sigma \to \sigma_{\max}$.
+  \end{itemize}
+\item \textbf{Comportamiento en correlaciones más fuertes ($g=5\text{–}8, N=8\text{–}10$) y sistemas multi-escala:} En cristales de Wigner profundos ($d_{\mathrm{adj}} \sim 6\text{–}9\ \mathrm{Bohr}$), \emph{tanto} RWMH isotrópico como RL-MALA diagonal golpean un muro exponencial: $\sigma$ pequeña congela los flips ($\exp(-d_{\mathrm{adj}}^2/2\sigma^2) \sim 10^{-10}$), mientras que $\sigma \sim d_{\mathrm{adj}}/2$ desploma la aceptación simultánea como $\alpha \sim (\sigma_{\mathrm{well}}/\sigma)^N \sim (0.28)^{10} \approx 3\times 10^{-6}$. Por otro lado, en sistemas multi-escala heterogéneos (átomos/moléculas con electrones core $1s$ a $0.05\ \mathrm{Bohr}$ y valencia a $2\text{–}3\ \mathrm{Bohr}$, o nodos curvos en 2D/3D), RWMH isotrópico falla estructuralmente por carecer de escala adaptativa.
+\end{enumerate}
+
+\subsection{Hoja de Ruta para un RL-MCMC Genuinamente Superior a Cualquier RWMH o MALA}
+
+Para que el muestreador basado en RL obtenga una ventaja irreproducible por cualquier RWMH o MALA:
+\begin{enumerate}
+\item \textbf{Propuesta multimodal / correlacionada de 2 cuerpos (o Normalizing Flow):} combinar difusión local pequeña para los $N-2$ espectadores ($\sigma_{\mathrm{spec}}\approx 0.5\ \mathrm{Bohr}$) con saltos acoplados de intercambio de pares $(x_i \leftrightarrow x_j)$ propuestos por el actor DeepSet, rompiendo la barrera exponencial $(\sigma_{\mathrm{well}}/\sigma)^N$ en $N=8\text{–}10, g=5\text{–}8$.
+\item \textbf{Eliminar el ruido de crédito $1/N$:} usar actualizaciones de 1 electrón (\texttt{--update\_mode single\_electron}) o un crítico centralizado $Q(X,A)$ / gradiente reparametrizado on-policy (\texttt{REINFORCELearner1D}).
+\item \textbf{Recompensa alineada con eficiencia VMC real:} sustituir CDLB puro por ESJD con piso suave de aceptación ($\alpha \ge 0.25\text{–}0.35$) o salto cuadrático esperado en energía local $\alpha(E_L(X')-E_L(X))^2$ más bono de flips, evitando sacrificar $\tau_{\mathrm{int}}(E)$ y $\mathrm{SE}(E)$.
+\item \textbf{Normalización física de entradas y modo \texttt{full\_gaussian}:} escalar $x_i / L_{\mathrm{box}}$, codificar $F_Q$ con $\mathrm{asinh}(F_Q)$, reemplazar \texttt{sign(dx)} discontinuo por bases radiales suaves con signo y permitir que el actor aprenda la deriva total sin imponer $\tau F_Q$ confinante.
+\item \textbf{Benchmarks multi-escala:} validar en sistemas Coulombianos con cúspides nucleares (escala core vs valencia) y en $N=8\text{–}10, g=5\text{–}8$, donde RWMH isotrópico colapsa exponencialmente.
+\end{enumerate}
+
 \end{document}
