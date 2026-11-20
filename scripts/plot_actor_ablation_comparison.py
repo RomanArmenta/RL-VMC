@@ -61,9 +61,11 @@ MODEL_ORDER = [
     ("B1_MALA_large_tau0.50", "MALA grande\n($\\tau=0.50, \\sigma=1.00$)", "#969696", "B1"),
     ("B1_MALA_matched_tau0.7389", "MALA $\\sigma$-match\n($\\tau=0.74, \\sigma=1.22$)", "#d95f02", "B1"),
     ("B1_RWMH_matched_sig1.2156", "RWMH $\\sigma$-match\n(deriva$=0, \\sigma=1.22$)", "#e7298a", "B1"),
+    ("B1_RWMH_matched_sig2.7055", "RWMH $\\sigma$-match\n(deriva$=0, \\sigma=2.71$)", "#ce1256", "B1"),
     ("B1_RL_MALA_legacy", "RL-MALA legado\n(par=OFF, clip=1.0)", "#1f77b4", "B1/B2"),
     ("B2_RL_MALA_parity_only", "RL-MALA paridad\n(par=ON, clip=1.0)", "#7570b3", "B2"),
     ("B2_RL_MALA_eq_unclip_amp0.80_sig1.8", "RL-MALA eq+unclip\n($A=0.80, s_\\sigma=1.8$)", "#1b9e77", "B2"),
+    ("B2_RL_MALA_confined_amp0.80_sig1.8", "RL-MALA confined\n($A=0.80, s_\\sigma=1.8$)", "#006837", "B2"),
     ("B2_RL_MALA_eq_unclip_amp1.20_sig2.0", "RL-MALA eq+unclip\n($A=1.20, s_\\sigma=2.0$)", "#2ca02c", "B2"),
 ]
 

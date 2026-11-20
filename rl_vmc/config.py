@@ -115,6 +115,8 @@ class RL1DConfig:
     use_reward_centering: bool = True
     reward_centering_lr: float = 0.01
     cdlb_exact_entropy: bool = False
+    confinement_weight: float = 0.0
+    outward_drift_penalty: float = 0.0
     use_lr_scheduler: bool = True
     lr_scheduler_type: Literal["cosine", "exponential", "linear", "constant"] = "cosine"
     lr_warmup_steps: int = 100
@@ -391,6 +393,8 @@ def build_experiment_argparser() -> argparse.ArgumentParser:
     g_rl.add_argument("--use_reward_centering", action=argparse.BooleanOptionalAction, default=True, help="Activa centrado adaptativo de recompensa (Reward Centering, Alg. 2 de Wang et al. 2025) en TD3.")
     g_rl.add_argument("--reward_centering_lr", type=float, default=0.01, help="Tasa de aprendizaje (EMA) para la media móvil de recompensa en Reward Centering.")
     g_rl.add_argument("--cdlb_exact_entropy", action=argparse.BooleanOptionalAction, default=False, help="Si es True incluye la constante exacta +(N/2)*log(2*pi) en r_explore=-alpha*log_q_fwd de CDLB, eliminando recompensas negativas para sigma<0.606 Bohr y el colapso alpha->0.")
+    g_rl.add_argument("--confinement_weight", type=float, default=0.0, help="Peso lambda_conf de la penalización armónica de escape rechazado -(1-alpha)*ReLU(V_trap(X')-V_trap(X)) (0.0 = desactivado).")
+    g_rl.add_argument("--outward_drift_penalty", type=float, default=0.0, help="Peso lambda_out de la penalización par-simétrica a la deriva saliente ReLU(A*a_mu*tanh(sqrt(omega)*x)) (0.0 = desactivado).")
 
     # 6. Entrenamiento
     g_trn = parser.add_argument_group("6. Régimen y Planificación de Entrenamiento")
@@ -684,6 +688,8 @@ def parse_experiment_args(argv: Optional[list[str]] = None) -> Experiment1DConfi
             use_reward_centering=args.use_reward_centering,
             reward_centering_lr=args.reward_centering_lr,
             cdlb_exact_entropy=args.cdlb_exact_entropy,
+            confinement_weight=args.confinement_weight,
+            outward_drift_penalty=args.outward_drift_penalty,
             use_lr_scheduler=args.use_lr_scheduler,
             lr_scheduler_type=args.lr_scheduler_type,
             lr_warmup_steps=args.lr_warmup_steps,

@@ -226,6 +226,8 @@ class MHSampler1D:
             "proposed_disp": proposed_disp,
             "disp_sq": disp_sq,
             "accepted": accepted,
+            "walkers_curr": w_curr,
+            "walkers_prop": w_prop,
         }
         return next_state, stats, rl_info
 
@@ -405,6 +407,8 @@ class MHSampler1D:
             "proposed_disp": mean_pdisp,
             "disp_sq": (mean_pdisp ** 2) * float(self.n_elec),
             "accepted": mean_acc > 0.5,
+            "walkers_curr": w_init,
+            "walkers_prop": next_state.walkers,
         }
         return next_state, stats, rl_info
 

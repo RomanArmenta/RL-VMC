@@ -552,6 +552,8 @@ class REINFORCELearner1D:
                 "proposed_disp": proposed_disp,
                 "disp_sq": disp_sq,
                 "action": aux_fwd["action"],
+                "walkers_curr": state.walkers,
+                "walkers_prop": w_prop,
             }
             rewards, _ = compute_rl_reward(rl_info, self.cfg)
             return -jnp.mean(rewards), jnp.mean(rewards)
