@@ -419,6 +419,12 @@ def run_experiment_1d(cfg: Experiment1DConfig) -> str:
                     f"ESJD={float(jnp.mean(stats.esjd)):.5f}"
                 )
 
+    @jax.jit
+    def _eval_eloc_for_log(p_psi, walkers):
+        return hamiltonian.local_energy(
+            ansatz.apply, p_psi, walkers, chunk_size=cfg.eval.eloc_chunk_size
+        )
+
     def _run_rl_block(n_sweeps: int, phase_label: str):
         nonlocal key, state, params_actor, params_critic1, params_critic2, global_step
         if learner is None:
@@ -470,9 +476,7 @@ def run_experiment_1d(cfg: Experiment1DConfig) -> str:
                 c_loss = 0.0
 
             if sw % max(1, cfg.train.n_log // 2) == 0 or sw == 1 or sw == n_sweeps:
-                e_loc_now = hamiltonian.local_energy(
-                    ansatz.apply, params_psi, state.walkers
-                )
+                e_loc_now = _eval_eloc_for_log(params_psi, state.walkers)
                 training_history.append(
                     {
                         "Step": global_step,
